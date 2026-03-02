@@ -20,7 +20,9 @@ if (!admin.apps.length) {
     }
 }
 
-const db = getFirestore(admin.app(), process.env.FIREBASE_DATABASE_ID);
+const dbId = process.env.FIREBASE_DATABASE_ID;
+if (!dbId) throw new Error("FIREBASE_DATABASE_ID environment variable is not set");
+const db = getFirestore(admin.app(), dbId);
 
 async function seed() {
     console.log("Seeding Firebase database...");
