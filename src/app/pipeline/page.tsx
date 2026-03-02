@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { getPipelines, bulkCreateOpportunities, deleteOpportunity, updateOpportunity, getBaseNames, getUsers, createNewDeal } from "./actions"
+import { getPipelines, bulkCreateOpportunities, deleteOpportunity, updateOpportunity, getBaseNames, getUsers, createNewDeal, markOpportunitySeen } from "./actions"
 import { getSpecialAccommodations } from "@/app/settings/system-properties/actions"
 import { CSVImportDialog } from "@/components/ui/CSVImportDialog"
 import { PipelineManagerDialog } from "@/components/ui/PipelineManagerDialog"
@@ -217,6 +217,8 @@ function PipelineContent() {
                     setActivePipelineKey(key);
                     setActiveTab('details');
                     setSelectedDeal(deal);
+                    // Best-effort: clear "new/unread" indicator when opened
+                    markOpportunitySeen(dealId);
                     break;
                 }
             }
@@ -232,6 +234,25 @@ function PipelineContent() {
         }
         fetchRole();
     }, [session]);
+
+    const openDeal = (deal: any) => {
+        setActiveTab("details");
+        setSelectedDeal(deal);
+
+        if (deal?.id && deal?.unread) {
+            markOpportunitySeen(String(deal.id));
+            setPipelines((prev: any) => {
+                const next = { ...prev };
+                const p = next[activePipelineKey];
+                if (!p?.deals) return prev;
+                next[activePipelineKey] = {
+                    ...p,
+                    deals: p.deals.map((d: any) => d.id === deal.id ? { ...d, unread: false, lastSeenAt: new Date() } : d)
+                };
+                return next;
+            });
+        }
+    };
 
     const handleSyncCalculatorValue = (val: number, type: "BAH" | "VA" | "ON_BASE" | "OFF_BASE") => {
         let updatedValue = val;
@@ -333,6 +354,8 @@ function PipelineContent() {
                     priority: selectedDeal.priority,
                     startDate: selectedDeal.startDate || "",
                     endDate: selectedDeal.endDate || "",
+                    base: selectedDeal.base || undefined,
+                    notes: selectedDeal.notes,
                     contactId: selectedDeal.contactId,
                     assigneeId: selectedDeal.assigneeId || null,
                     specialAccommodationId: selectedDeal.specialAccommodationId || null,
@@ -544,26 +567,49 @@ function PipelineContent() {
                                     </div>
 
                                     <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-                                        {stageDeals.map((deal: any) => (
+                                        {stageDeals.map((deal: any) => {
+                                            const isNewInquiry = deal.unread === true;
+                                                // Priority color mapping based on days from now until start date
+                                                let priorityColorClass = "bg-blue-500"; // default to blue (>45 days)
+                                                if (deal.startDate && deal.startDate !== "-") {
+                                                    const start = new Date(deal.startDate);
+                                                    const now = new Date();
+                                                    const diffTime = start.getTime() - now.getTime();
+                                                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                                    
+                                                    if (diffDays <= 14) {
+                                                        priorityColorClass = "bg-red-500";
+                                                    } else if (diffDays <= 30) {
+                                                        priorityColorClass = "bg-yellow-500";
+                                                    } else {
+                                                        priorityColorClass = "bg-blue-500";
+                                                    }
+                                                }
+
+                                            return (
                                             <div
                                                 key={deal.id}
                                                 draggable
                                                 onDragStart={(e) => handleDragStart(e, deal.id)}
                                                 onDragEnd={handleDragEnd}
-                                                onClick={() => { setActiveTab("details"); setSelectedDeal(deal); }}
-                                                className={`bg-card cursor-grab border border-border/60 hover:border-primary/40 hover:shadow-lg transition-all rounded-xl p-4 shadow-sm group relative overflow-hidden flex flex-col gap-3 ${draggedDealId === deal.id ? "opacity-40 scale-95" : ""
-                                                    }`}
+                                                onClick={() => openDeal(deal)}
+                                                className={`bg-card cursor-grab border hover:border-primary/40 transition-all rounded-xl p-4 shadow-sm group relative overflow-hidden flex flex-col gap-3 ${draggedDealId === deal.id ? "opacity-40 scale-95" : ""} ${isNewInquiry ? "border-primary/80 ring-2 ring-primary bg-primary/10 shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse" : "border-border/60 hover:shadow-lg"}`}
                                             >
                                                 {/* Colored accent bar on the left based on priority */}
-                                                <div className={`absolute left-0 top-0 bottom-0 w-1 ${deal.priority === "HIGH" ? "bg-red-500" : deal.priority === "MEDIUM" ? "bg-amber-500" : "bg-blue-500"}`}></div>
+                                                <div className={`absolute left-0 top-0 bottom-0 w-1 ${deal.startDate && deal.startDate !== "-" ? priorityColorClass : (deal.priority === "HIGH" ? "bg-red-500" : deal.priority === "MEDIUM" ? "bg-amber-500" : "bg-blue-500")}`}></div>
 
                                                 <div className="flex items-start justify-between pl-1">
                                                     <div className="flex items-center gap-3">
                                                         <Avatar className="h-9 w-9 border-2 border-background shadow-sm shrink-0">
                                                             <AvatarFallback className="bg-gradient-to-br from-slate-700 to-slate-900 text-white text-xs font-medium">{deal.name.charAt(6)}</AvatarFallback>
                                                         </Avatar>
-                                                        <div className="flex flex-col">
-                                                            <span className="font-semibold text-sm group-hover:text-primary transition-colors tracking-tight">{deal.name}</span>
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="font-semibold text-sm group-hover:text-primary transition-colors tracking-tight">{deal.name}</span>
+                                                                {isNewInquiry && (
+                                                                    <Badge className="shrink-0 text-[10px] font-bold tracking-wider bg-primary text-primary-foreground border-0 px-1.5 py-0">New</Badge>
+                                                                )}
+                                                            </div>
                                                             {showBase && (
                                                                 <span className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                                                                     <MapPin className="h-3 w-3" />
@@ -594,12 +640,14 @@ function PipelineContent() {
                                                                 <Badge
                                                                     variant="outline"
                                                                     className={`text-[10px] font-bold tracking-wider rounded-sm
-                                                                        ${deal.priority === "HIGH" ? "bg-red-500/10 text-red-600 border-red-500/20" : ""}
-                                                                        ${deal.priority === "MEDIUM" ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : ""}
-                                                                        ${deal.priority === "LOW" ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : ""}
+                                                                        ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-red-500") || (!deal.startDate && deal.priority === "HIGH") ? "bg-red-500/10 text-red-600 border-red-500/20" : ""}
+                                                                        ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-yellow-500") || (!deal.startDate && deal.priority === "MEDIUM") ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : ""}
+                                                                        ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-blue-500") || (!deal.startDate && deal.priority === "LOW") ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : ""}
                                                                     `}
                                                                 >
-                                                                    {deal.priority}
+                                                                    {deal.startDate && deal.startDate !== "-" ? 
+                                                                        (priorityColorClass === "bg-red-500" ? "URGENT" : priorityColorClass === "bg-yellow-500" ? "SOON" : "PLANNED")
+                                                                    : deal.priority}
                                                                 </Badge>
                                                             </div>
                                                         )}
@@ -663,7 +711,8 @@ function PipelineContent() {
                                                     </div>
                                                 )}
                                             </div>
-                                        ))}
+                                        );
+                                        })}
                                         {stageDeals.length === 0 && (
                                             <div className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-muted-foreground/20 rounded-xl text-muted-foreground bg-muted/10">
                                                 <span className="text-xs font-medium">No deals in this stage</span>
@@ -692,20 +741,44 @@ function PipelineContent() {
                             </TableHeader>
                             <TableBody>
                                 {sortedDeals.map((deal) => (
-                                    <TableRow key={deal.id} className="cursor-pointer hover:bg-muted/30" onClick={() => { setActiveTab("details"); setSelectedDeal(deal); }}>
+                                    <TableRow key={deal.id} className={`cursor-pointer hover:bg-muted/30 ${deal.unread === true ? "bg-primary/[0.04]" : ""}`} onClick={() => openDeal(deal)}>
                                         <TableCell>
-                                            <div className="font-semibold">{deal.name}</div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-semibold">{deal.name}</span>
+                                                {deal.unread === true && (
+                                                    <Badge className="text-[10px] font-bold tracking-wider bg-primary text-primary-foreground border-0 px-1.5 py-0">New</Badge>
+                                                )}
+                                            </div>
                                             <div className="text-xs text-muted-foreground hidden sm:block">{deal.email} • {deal.phone}</div>
                                         </TableCell>
                                         <TableCell><Badge variant="secondary" className="font-medium bg-muted text-muted-foreground border-border">{deal.stage}</Badge></TableCell>
                                         {showBase && <TableCell className="text-muted-foreground">{deal.base}</TableCell>}
                                         {showPriority && <TableCell>
                                             <Badge variant="outline" className={`text-[10px] font-bold tracking-wider rounded-sm
-                                                ${deal.priority === "HIGH" ? "bg-red-500/10 text-red-600 border-red-500/20" : ""}
-                                                ${deal.priority === "MEDIUM" ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : ""}
-                                                ${deal.priority === "LOW" ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : ""}
+                                                ${(() => {
+                                                    let color = "";
+                                                    if (deal.startDate && deal.startDate !== "-") {
+                                                        const diffDays = Math.ceil((new Date(deal.startDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                                                        if (diffDays <= 14) color = "bg-red-500/10 text-red-600 border-red-500/20";
+                                                        else if (diffDays <= 30) color = "bg-amber-500/10 text-amber-600 border-amber-500/20";
+                                                        else color = "bg-blue-500/10 text-blue-600 border-blue-500/20";
+                                                    } else {
+                                                        if (deal.priority === "HIGH") color = "bg-red-500/10 text-red-600 border-red-500/20";
+                                                        else if (deal.priority === "MEDIUM") color = "bg-amber-500/10 text-amber-600 border-amber-500/20";
+                                                        else color = "bg-blue-500/10 text-blue-600 border-blue-500/20";
+                                                    }
+                                                    return color;
+                                                })()}
                                             `}>
-                                                {deal.priority}
+                                                {(() => {
+                                                    if (deal.startDate && deal.startDate !== "-") {
+                                                        const diffDays = Math.ceil((new Date(deal.startDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                                                        if (diffDays <= 14) return "URGENT";
+                                                        if (diffDays <= 30) return "SOON";
+                                                        return "PLANNED";
+                                                    }
+                                                    return deal.priority;
+                                                })()}
                                             </Badge>
                                         </TableCell>}
                                         {showValue && <TableCell className="font-mono font-medium">${deal.value.toLocaleString()}</TableCell>}

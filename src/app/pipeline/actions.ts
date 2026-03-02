@@ -85,6 +85,27 @@ export async function getPipelines() {
                 }
             }
 
+            const base = data.militaryBase || contact?.militaryBase || null;
+            const startDate = toDateInput(data.stayStartDate || contact?.stayStartDate);
+            const endDate = toDateInput(data.stayEndDate || contact?.stayEndDate);
+            let notes = data.notes || null;
+            if (!notes && data.contactId) {
+                try {
+                    const notesSnap = await adminDb
+                        .collection('contacts')
+                        .doc(data.contactId)
+                        .collection('notes')
+                        .orderBy('createdAt', 'desc')
+                        .limit(1)
+                        .get();
+                    if (!notesSnap.empty) {
+                        notes = notesSnap.docs[0].data()?.content || null;
+                    }
+                } catch {
+                    // Ignore notes fallback failures
+                }
+            }
+
             return {
                 id: doc.id,
                 pipelineId,
@@ -92,19 +113,27 @@ export async function getPipelines() {
                 name: contact?.name || "Unknown",
                 email: contact?.email || null,
                 phone: contact?.phone || null,
-                base: contact?.militaryBase || null,
+                base,
                 stage: stageName,
                 value: data.opportunityValue || 0,
                 margin: data.estimatedProfit || 0,
                 priority: data.priority || "MEDIUM",
-                startDate: toDateInput(contact?.stayStartDate),
-                endDate: toDateInput(contact?.stayEndDate),
+                startDate,
+                endDate,
                 assigneeId: data.assigneeId || null,
                 assignee: assignee ? assignee.name?.split(" ").map((w: string) => w[0]).join("").toUpperCase() : "—",
                 assigneeName: assignee?.name || "Unassigned",
                 leadSourceId: data.leadSourceId || null,
                 tags: data.tags || [],
                 specialAccommodationId: data.specialAccommodationId || null,
+                source: data.source || null,
+                unread: data.unread ?? false,
+                unreadAt: data.unreadAt?.toDate ? data.unreadAt.toDate() : data.unreadAt || null,
+                lastSeenAt: data.lastSeenAt?.toDate ? data.lastSeenAt.toDate() : data.lastSeenAt || null,
+                lastSeenBy: data.lastSeenBy || null,
+                notes,
+                reasonForStay: data.reasonForStay || null,
+                specialAccommodationLabels: data.specialAccommodationLabels || [],
                 createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt
             };
         });
@@ -121,6 +150,28 @@ export async function getPipelines() {
     } catch (error) {
         console.error("Failed to fetch pipelines:", error);
         return { success: false, error: "Failed to fetch pipeline data" };
+    }
+}
+
+export async function markOpportunitySeen(id: string) {
+    try {
+        const session = await auth();
+        if (!session?.user) return { success: false, error: "Unauthorized" };
+
+        const seenBy = (session.user as any).email || session.user.name || "unknown";
+
+        await adminDb.collection('opportunities').doc(id).update({
+            unread: false,
+            lastSeenAt: new Date(),
+            lastSeenBy: seenBy,
+            updatedAt: new Date()
+        });
+
+        revalidatePath("/pipeline");
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to mark opportunity seen:", error);
+        return { success: false, error: "Failed to mark seen" };
     }
 }
 
@@ -392,6 +443,14 @@ export async function createNewDeal(data: any, pipelineId?: string) {
             priority: data.priority || "MEDIUM",
             assigneeId: data.assigneeId || null,
             specialAccommodationId: data.specialAccommodationId || null,
+            militaryBase: data.base || null,
+            stayStartDate: data.startDate ? new Date(data.startDate).toISOString() : null,
+            stayEndDate: data.endDate ? new Date(data.endDate).toISOString() : null,
+            notes: data.notes || null,
+            unread: true,
+            unreadAt: new Date(),
+            lastSeenAt: null,
+            lastSeenBy: null,
             createdAt: new Date(),
             updatedAt: new Date()
         });
@@ -421,6 +480,8 @@ export async function updateOpportunity(id: string, data: {
     priority?: string;
     startDate?: string;
     endDate?: string;
+    base?: string;
+    notes?: string;
     contactId?: string;
     assigneeId?: string | null;
     leadSourceId?: string | null;
@@ -429,7 +490,7 @@ export async function updateOpportunity(id: string, data: {
 }) {
     try {
         const updateData: any = { updatedAt: new Date() };
-        
+
         if (data.pipelineStageId !== undefined) updateData.pipelineStageId = data.pipelineStageId;
         if (data.name !== undefined) updateData.name = data.name;
         if (data.value !== undefined) updateData.opportunityValue = data.value;
@@ -438,6 +499,10 @@ export async function updateOpportunity(id: string, data: {
         if (data.assigneeId !== undefined) updateData.assigneeId = data.assigneeId;
         if (data.leadSourceId !== undefined) updateData.leadSourceId = data.leadSourceId;
         if (data.specialAccommodationId !== undefined) updateData.specialAccommodationId = data.specialAccommodationId;
+        if (data.base !== undefined) updateData.militaryBase = data.base || null;
+        if (data.startDate !== undefined) updateData.stayStartDate = data.startDate ? new Date(data.startDate).toISOString() : null;
+        if (data.endDate !== undefined) updateData.stayEndDate = data.endDate ? new Date(data.endDate).toISOString() : null;
+        if (data.notes !== undefined) updateData.notes = data.notes || null;
 
         if (data.tagIds !== undefined) {
             updateData.tags = await Promise.all(data.tagIds.map(async (tagId) => {
@@ -450,11 +515,26 @@ export async function updateOpportunity(id: string, data: {
             await adminDb.collection('opportunities').doc(id).update(updateData);
         }
 
-        if (data.contactId && (data.startDate !== undefined || data.endDate !== undefined)) {
+        if (data.contactId && data.notes !== undefined) {
+            const content = data.notes ? String(data.notes).trim() : "";
+            if (content) {
+                await adminDb.collection('contacts').doc(data.contactId).collection('notes').add({
+                    content,
+                    contactId: data.contactId,
+                    opportunityId: id,
+                    source: "opportunity",
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                });
+            }
+        }
+
+        if (data.contactId && (data.startDate !== undefined || data.endDate !== undefined || data.base !== undefined)) {
             const contactUpdate: any = { updatedAt: new Date() };
             if (data.startDate !== undefined) contactUpdate.stayStartDate = data.startDate ? new Date(data.startDate).toISOString() : null;
             if (data.endDate !== undefined) contactUpdate.stayEndDate = data.endDate ? new Date(data.endDate).toISOString() : null;
-            
+            if (data.base !== undefined) contactUpdate.militaryBase = data.base || null;
+
             await adminDb.collection('contacts').doc(data.contactId).update(contactUpdate);
         }
 

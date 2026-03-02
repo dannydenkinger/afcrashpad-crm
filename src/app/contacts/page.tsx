@@ -683,10 +683,19 @@ function ContactsContent() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredAndSortedContacts.map((contact) => (
+                            {filteredAndSortedContacts.map((contact) => {
+                                const isNewContact = (() => {
+                                    if (!contact.createdAt) return false;
+                                    const createdDate = new Date(contact.createdAt);
+                                    const now = new Date();
+                                    const diffDays = Math.ceil((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+                                    return diffDays <= 3;
+                                })();
+                                
+                                return (
                                 <TableRow
                                     key={contact.id}
-                                    className={`cursor-pointer hover:bg-muted/50 ${selectedContactIds.has(contact.id) ? 'bg-muted/30' : ''}`}
+                                    className={`cursor-pointer hover:bg-muted/50 transition-all ${selectedContactIds.has(contact.id) ? 'bg-muted/30' : ''} ${isNewContact ? "bg-primary/[0.04] shadow-[inset_4px_0_0_rgba(59,130,246,1)]" : ""}`}
                                     onClick={() => contact.id !== 'new' && handleSelectContact(contact)}
                                 >
                                     <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
@@ -703,10 +712,15 @@ function ContactsContent() {
                                             case 'name': return (
                                                 <TableCell key={col.id} className="font-medium whitespace-nowrap overflow-hidden text-ellipsis" style={{ maxWidth: col.width }}>
                                                     <div className="flex items-center gap-3 truncate">
-                                                        <Avatar className="h-6 w-6">
+                                                        <Avatar className="h-6 w-6 shrink-0">
                                                             <AvatarFallback className="text-[10px] bg-primary/10 text-primary">{contact.name.charAt(6)}</AvatarFallback>
                                                         </Avatar>
-                                                        <span className="whitespace-nowrap">{contact.name}</span>
+                                                        <div className="flex items-center gap-2 truncate">
+                                                            <span className="whitespace-nowrap">{contact.name}</span>
+                                                            {isNewContact && (
+                                                                <Badge className="shrink-0 text-[10px] font-bold tracking-wider bg-primary text-primary-foreground border-0 px-1.5 py-0 h-4 shadow-[0_0_10px_rgba(59,130,246,0.6)] animate-pulse">New</Badge>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </TableCell>
                                             );
@@ -769,7 +783,8 @@ function ContactsContent() {
                                         }
                                     })}
                                 </TableRow>
-                            ))}
+                            );
+                            })}
                         </TableBody>
                     </Table>
                 </CardContent>
