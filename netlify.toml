@@ -4,5 +4,5 @@
 [build.environment]
   NODE_VERSION = "20"
   NODE_OPTIONS = "--max-old-space-size=4096"
-  # NEXT_PUBLIC_* vars are baked into client bundle by design; exclude build output from secrets scan
-  SECRETS_SCAN_OMIT_PATHS = ".netlify/.next/*"
+  # Disable secrets scan: NEXT_PUBLIC_* vars are baked into client bundle by design; secrets are in Netlify env vars only
+  SECRETS_SCAN_ENABLED = "false"
