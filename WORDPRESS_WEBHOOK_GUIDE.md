@@ -15,7 +15,7 @@ You will need the following information to configure your form plugin:
 - **Data Format:** `JSON`
 - **Authorization Header:** 
   - **Key:** `Authorization`
-  - **Value:** `Bearer a3cb2b8d433f0509b7ce5d64707e71fedde6e030146f546048c6284147c76263` *(This is your secure API key from your `.env` file)*
+  - **Value:** `Bearer <YOUR_WEBHOOK_API_KEY>` *(Use the value of WEBHOOK_API_KEY from your Netlify env vars or `.env`)*
 
 ---
 
@@ -51,7 +51,7 @@ Once your fields have the correct IDs:
 5. Toggle **Advanced Data** to `ON`.
 6. Add a custom header by clicking `+ Add Item`:
    - Name: `Authorization`
-   - Value: `Bearer a3cb2b8d433f0509b7ce5d64707e71fedde6e030146f546048c6284147c76263`
+   - Value: `Bearer <YOUR_WEBHOOK_API_KEY>`
 
 ---
 
