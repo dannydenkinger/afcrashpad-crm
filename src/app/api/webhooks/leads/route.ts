@@ -13,6 +13,8 @@ const webhookSchema = z.object({
     endDate: z.string().optional(),   // Expected format: YYYY-MM-DD
     base: z.string().optional(),
     notes: z.string().optional(),
+    special_accommodations: z.string().optional(),
+    reason_for_stay: z.string().optional(),
 });
 
 export async function POST(req: Request) {
@@ -126,10 +128,14 @@ export async function POST(req: Request) {
             updatedAt: new Date()
         });
 
-        // 6. Create Note if notes exist
-        if (data.notes && data.notes.trim().length > 0) {
+        // 6. Create Note if notes or extra fields exist
+        const noteParts: string[] = [];
+        if (data.notes && data.notes.trim().length > 0) noteParts.push(`Notes: ${data.notes}`);
+        if (data.special_accommodations && data.special_accommodations.trim()) noteParts.push(`Special Accommodations: ${data.special_accommodations}`);
+        if (data.reason_for_stay && data.reason_for_stay.trim()) noteParts.push(`Reason for Stay: ${data.reason_for_stay}`);
+        if (noteParts.length > 0) {
             await adminDb.collection('contacts').doc(contactId).collection('notes').add({
-                content: `Website Inquiry Notes:\n${data.notes}`,
+                content: `Website Inquiry:\n${noteParts.join('\n')}`,
                 contactId: contactId,
                 createdAt: new Date(),
                 updatedAt: new Date()

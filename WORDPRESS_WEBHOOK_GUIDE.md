@@ -29,14 +29,19 @@ To ensure the CRM receives the data correctly, you must map the **Field ID** in 
 4. Set the **ID** to match the exact keys listed below (it is case-sensitive!):
 
 ### Supported Field IDs:
-- `first_name` and `last_name` *(Recommended - The CRM will automatically combine these)*
-- `name` *(Use this instead if you only have one combined Name box on the form)*
-- `email` *(Required)*
-- `phone`
-- `base`
-- `startDate` *(Expected format: YYYY-MM-DD. Use Elementor's native "Date" field type).*
-- `endDate` *(Expected format: YYYY-MM-DD).*
-- `notes` *(Use this ID for your "Comment / Your Message" box).*
+| Elementor Field ID | Maps To |
+|--------------------|---------|
+| `first_name` | First name |
+| `last_name` | Last name |
+| `name` | Combined name (if single field) |
+| `email` | **Required** |
+| `phone` | Phone number |
+| `base` | Military base |
+| `startDate` | Arrival date (YYYY-MM-DD) |
+| `endDate` | Departure date (YYYY-MM-DD) |
+| `notes` | Message / comments |
+| `special_accommodations` | Special accommodations (e.g. Kids) |
+| `reason_for_stay` | Reason for stay (e.g. RPA) |
 
 ---
 
