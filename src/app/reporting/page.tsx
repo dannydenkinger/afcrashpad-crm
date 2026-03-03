@@ -3,6 +3,8 @@ import { Badge } from "@/components/ui/badge"
 import { BarChart3, TrendingUp, Search, MapPin, MousePointer2 } from "lucide-react"
 import { getReportingData } from "./actions"
 
+export const dynamic = "force-dynamic"
+
 export default async function ReportingPage() {
     const res = await getReportingData();
     const stats = (res.success && res.data) ? res.data : {
@@ -15,11 +17,11 @@ export default async function ReportingPage() {
     };
 
     return (
-        <div className="flex-1 space-y-4 p-8 pt-6">
-            <div className="flex items-center justify-between space-y-2 mb-6">
+        <div className="flex-1 space-y-4 p-4 sm:p-8 pt-4 sm:pt-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Reporting & Analytics</h2>
-                    <p className="text-muted-foreground">
+                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Reporting & Analytics</h2>
+                    <p className="text-muted-foreground text-sm sm:text-base">
                         Track your performance across profit margins, conversion rates, and lead sources.
                     </p>
                 </div>
