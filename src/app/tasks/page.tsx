@@ -99,17 +99,17 @@ export default function TasksPage() {
     }
 
     return (
-        <div className="flex-1 flex flex-col h-full bg-background overflow-hidden p-8 pt-6">
-            <div className="flex items-center justify-between mb-8">
+        <div className="flex-1 flex flex-col h-full bg-background overflow-hidden p-4 sm:p-8 pt-4 sm:pt-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
                         Task Manager
                     </h2>
                     <p className="text-muted-foreground font-medium text-sm">
                         Keep track of everything you need to do.
                     </p>
                 </div>
-                <Button className="h-9 gap-2 shadow-lg shadow-primary/20" onClick={() => {
+                <Button className="h-9 gap-2 shadow-lg shadow-primary/20 touch-manipulation w-full sm:w-auto" onClick={() => {
                     setEditingTask(null);
                     setIsCreateDialogOpen(true);
                 }}>
@@ -128,13 +128,13 @@ export default function TasksPage() {
                 initialData={editingTask}
             />
 
-            <div className="flex items-center gap-4 mb-6">
-                <div className="relative flex-1 group">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 mb-6">
+                <div className="relative flex-1 min-w-0 group">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                     <input
                         type="text"
                         placeholder="Search tasks..."
-                        className="w-full bg-muted/20 border-white/5 rounded-xl py-2 pl-10 pr-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                        className="w-full bg-muted/20 border-white/5 rounded-xl py-2.5 sm:py-2 pl-10 pr-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all min-h-[44px] sm:min-h-0"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
@@ -143,7 +143,7 @@ export default function TasksPage() {
                     <Button
                         variant={filter === "active" ? "secondary" : "ghost"}
                         size="sm"
-                        className="h-8 rounded-lg text-[11px] font-black uppercase tracking-widest px-4"
+                        className="h-8 rounded-lg text-[11px] font-black uppercase tracking-widest px-3 sm:px-4 touch-manipulation flex-1 sm:flex-initial"
                         onClick={() => setFilter("active")}
                     >
                         Active
@@ -151,7 +151,7 @@ export default function TasksPage() {
                     <Button
                         variant={filter === "completed" ? "secondary" : "ghost"}
                         size="sm"
-                        className="h-8 rounded-lg text-[11px] font-black uppercase tracking-widest px-4"
+                        className="h-8 rounded-lg text-[11px] font-black uppercase tracking-widest px-3 sm:px-4 touch-manipulation flex-1 sm:flex-initial"
                         onClick={() => setFilter("completed")}
                     >
                         Completed
@@ -159,7 +159,7 @@ export default function TasksPage() {
                     <Button
                         variant={filter === "all" ? "secondary" : "ghost"}
                         size="sm"
-                        className="h-8 rounded-lg text-[11px] font-black uppercase tracking-widest px-4"
+                        className="h-8 rounded-lg text-[11px] font-black uppercase tracking-widest px-3 sm:px-4 touch-manipulation flex-1 sm:flex-initial"
                         onClick={() => setFilter("all")}
                     >
                         All
@@ -175,11 +175,11 @@ export default function TasksPage() {
                 ) : filteredTasks.length > 0 ? (
                     filteredTasks.map((task) => (
                         <Card key={task.id} className={cn(
-                            "border-white/5 bg-card/40 backdrop-blur-md hover:bg-card/60 transition-all group overflow-hidden",
+                            "border-white/5 bg-card/40 backdrop-blur-md hover:bg-card/60 active:bg-card/70 transition-all group overflow-hidden touch-manipulation",
                             task.completed && "opacity-60"
                         )}>
                             <CardContent className="p-0">
-                                <div className="flex items-center p-4">
+                                <div className="flex items-center p-4 min-h-[56px]">
                                     <div className="flex items-center gap-4 flex-1 min-w-0">
                                         <Checkbox
                                             checked={task.completed}

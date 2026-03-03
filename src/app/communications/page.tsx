@@ -126,16 +126,16 @@ export default function CommunicationsPage() {
     }
 
     return (
-        <div className="flex-1 flex flex-col h-[calc(100vh-64px)]">
+        <div className="flex-1 flex flex-col h-[calc(100vh-56px)] sm:h-[calc(100vh-64px)] min-h-0">
             {/* Header */}
-            <div className="px-8 pt-6 pb-4">
-                <h2 className="text-3xl font-bold tracking-tight">Communications</h2>
-                <p className="text-muted-foreground mt-1">Track all conversations with clients and leads.</p>
+            <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-2 sm:pb-4 shrink-0">
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Communications</h2>
+                <p className="text-muted-foreground mt-1 text-sm sm:text-base">Track all conversations with clients and leads.</p>
             </div>
 
-            <div className="flex-1 flex mx-8 mb-6 border rounded-xl overflow-hidden bg-card shadow-sm">
+            <div className="flex-1 flex flex-col sm:flex-row mx-0 sm:mx-8 mb-0 sm:mb-6 border-y sm:border rounded-none sm:rounded-xl overflow-hidden bg-card shadow-sm min-h-0">
                 {/* Left Panel: Conversation List */}
-                <div className="w-[380px] border-r flex flex-col bg-muted/10">
+                <div className={`w-full sm:w-[380px] border-r flex-col bg-muted/10 shrink-0 ${selectedContactId ? 'hidden sm:flex' : 'flex'} min-h-0`}>
                     {/* Search + Actions */}
                     <div className="p-3 space-y-2 border-b">
                         <div className="flex items-center gap-2">
@@ -153,7 +153,7 @@ export default function CommunicationsPage() {
                             </Button>
                         </div>
                         {/* Type Filter Chips */}
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                             {[
                                 { value: "all", label: "All" },
                                 { value: "email", label: "Email" },
@@ -224,9 +224,9 @@ export default function CommunicationsPage() {
                             <div
                                 key={convo.contactId}
                                 onClick={() => openThread(convo.contactId)}
-                                className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-border/30 ${selectedContactId === convo.contactId
+                                className={`flex items-start gap-3 px-4 py-3 min-h-[56px] cursor-pointer transition-colors border-b border-border/30 touch-manipulation ${selectedContactId === convo.contactId
                                         ? "bg-primary/5 border-l-2 border-l-primary"
-                                        : "hover:bg-muted/30"
+                                        : "hover:bg-muted/30 active:bg-muted/40"
                                     }`}
                             >
                                 <Avatar className="h-10 w-10 shrink-0 mt-0.5">
@@ -261,7 +261,7 @@ export default function CommunicationsPage() {
                 </div>
 
                 {/* Right Panel: Message Thread */}
-                <div className="flex-1 flex flex-col">
+                <div className={`flex-1 flex-col min-w-0 ${!selectedContactId ? 'hidden sm:flex' : 'flex'}`}>
                     {!selectedContactId ? (
                         <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3">
                             <div className="h-16 w-16 rounded-full bg-muted/50 flex items-center justify-center">
@@ -275,22 +275,25 @@ export default function CommunicationsPage() {
                     ) : (
                         <>
                             {/* Thread Header */}
-                            <div className="px-6 py-4 border-b flex items-center justify-between bg-muted/20">
-                                <div className="flex items-center gap-3">
-                                    <Avatar className="h-10 w-10">
-                                        <AvatarFallback className="bg-gradient-to-br from-slate-700 to-slate-900 text-white text-sm font-medium">
+                            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b flex items-center justify-between bg-muted/20 shrink-0">
+                                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                    <Button variant="ghost" size="icon" className="sm:hidden h-8 w-8 shrink-0 -ml-2" onClick={() => setSelectedContactId(null)}>
+                                        <ArrowLeft className="h-4 w-4" />
+                                    </Button>
+                                    <Avatar className="h-8 w-8 sm:h-10 sm:w-10 shrink-0">
+                                        <AvatarFallback className="bg-gradient-to-br from-slate-700 to-slate-900 text-white text-xs sm:text-sm font-medium">
                                             {contact?.name?.charAt(0)}
                                         </AvatarFallback>
                                     </Avatar>
-                                    <div>
-                                        <h3 className="text-sm font-semibold">{contact?.name}</h3>
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                            {contact?.email && <span>{contact.email}</span>}
-                                            {contact?.phone && <><span>·</span><span>{contact.phone}</span></>}
+                                    <div className="min-w-0">
+                                        <h3 className="text-sm font-semibold truncate">{contact?.name}</h3>
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground truncate">
+                                            {contact?.email && <span className="truncate">{contact.email}</span>}
+                                            {contact?.phone && <><span className="hidden sm:inline">·</span><span className="truncate">{contact.phone}</span></>}
                                         </div>
                                     </div>
                                 </div>
-                                <Badge variant="outline" className="font-normal">{contact?.status || "Lead"}</Badge>
+                                <Badge variant="outline" className="font-normal shrink-0 hidden sm:inline-flex">{contact?.status || "Lead"}</Badge>
                             </div>
 
                             {/* Messages */}
@@ -328,14 +331,14 @@ export default function CommunicationsPage() {
                             </div>
 
                             {/* Compose */}
-                            <div className="p-4 border-t bg-muted/10">
-                                <div className="flex items-center gap-2 mb-2">
+                            <div className="p-3 sm:p-4 border-t bg-muted/10 shrink-0">
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
                                     <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Send as:</span>
                                     {["email", "text", "phone"].map(t => (
                                         <button
                                             key={t}
                                             onClick={() => setMessageType(t)}
-                                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider transition-colors border ${messageType === t
+                                            className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider transition-colors border touch-manipulation ${messageType === t
                                                     ? `${typeColor(t)} border-current`
                                                     : "text-muted-foreground border-transparent hover:bg-muted"
                                                 }`}
@@ -356,12 +359,12 @@ export default function CommunicationsPage() {
                                         }}
                                         placeholder="Type your message..."
                                         rows={2}
-                                        className="flex-1 resize-none rounded-xl border border-input bg-background px-4 py-2.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                        className="flex-1 min-w-0 resize-none rounded-xl border border-input bg-background px-3 sm:px-4 py-2.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[44px]"
                                     />
                                     <Button
                                         onClick={handleSend}
                                         disabled={isSending || !newMessage.trim()}
-                                        className="h-10 px-4 rounded-xl"
+                                        className="h-10 min-h-[44px] px-4 rounded-xl touch-manipulation shrink-0"
                                     >
                                         <Send className="h-4 w-4 mr-1" />
                                         {isSending ? "..." : "Send"}

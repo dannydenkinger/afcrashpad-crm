@@ -528,10 +528,10 @@ function PipelineContent() {
     }
 
     return (
-        <div className="flex flex-col h-full overflow-hidden p-8 pt-6">
-            <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
-                    <h2 className="text-3xl font-bold tracking-tight">Opportunities</h2>
+        <div className="flex flex-col h-full overflow-hidden p-4 sm:p-8 pt-4 sm:pt-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
+                <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">Opportunities</h2>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="outline" size="sm" className="gap-2 h-8 mt-1 border border-border/60 bg-muted/20 font-medium text-muted-foreground hover:text-foreground" disabled={isLoading}>
@@ -566,10 +566,10 @@ function PipelineContent() {
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" className="touch-manipulation">
                                 <ListFilter className="mr-2 h-4 w-4" />
                                 View Options
                             </Button>
@@ -715,19 +715,19 @@ function PipelineContent() {
                 </DialogContent>
             </Dialog>
 
-            <div className="flex items-center mb-6">
-                <div className="relative w-72">
+            <div className="flex items-center mb-4 sm:mb-6">
+                <div className="relative w-full sm:w-72 flex-1 sm:flex-initial">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search deals..." className="h-9 pl-8" />
+                    <Input placeholder="Search deals..." className="h-9 pl-8 min-h-[44px] sm:min-h-0" />
                 </div>
             </div>
 
-            <div className={`flex-1 overflow-x-auto ${viewMode === "kanban" ? "overflow-y-hidden" : ""}`}>
+            <div className={`flex-1 min-h-0 overflow-x-auto overflow-y-auto ${viewMode === "kanban" ? "sm:overflow-y-hidden" : ""}`}>
                 {isLoading ? (
                     viewMode === "kanban" ? (
-                        <div className="flex h-[calc(100vh-220px)] gap-4 pb-4 w-max">
+                        <div className="flex min-h-[400px] sm:min-h-[calc(100vh-220px)] h-[400px] sm:h-[calc(100vh-220px)] gap-3 sm:gap-4 pb-4 w-max">
                             {[1, 2, 3, 4, 5].map((i) => (
-                                <div key={i} className="flex flex-col w-[340px] shrink-0 bg-muted/40 rounded-xl border h-full overflow-hidden">
+                                <div key={i} className="flex flex-col w-[280px] sm:w-[340px] shrink-0 bg-muted/40 rounded-xl border h-full overflow-hidden">
                                     <div className="p-4 border-b bg-muted/60 flex items-center justify-between">
                                         <Skeleton className="h-4 w-24" />
                                         <Skeleton className="h-5 w-8 rounded-full" />
@@ -784,7 +784,7 @@ function PipelineContent() {
                         </div>
                     )
                 ) : viewMode === "kanban" ? (
-                    <div className="flex h-[calc(100vh-220px)] gap-4 pb-4 w-max">
+                    <div className="flex min-h-[400px] sm:min-h-[calc(100vh-220px)] h-[400px] sm:h-[calc(100vh-220px)] gap-3 sm:gap-4 pb-4 w-max">
                         {currentPipeline.stages.map((stage: any, index: number) => {
                             const isString = typeof stage === 'string';
                             const stageName = isString ? stage : stage.name;
@@ -794,7 +794,7 @@ function PipelineContent() {
                             return (
                                 <div
                                     key={stageId}
-                                    className={`flex flex-col w-[340px] shrink-0 bg-muted/40 rounded-xl pb-2 border h-full overflow-hidden transition-colors ${dragOverStageId === stageId ? "border-primary/60 bg-primary/5 ring-2 ring-primary/20" : ""
+                                    className={`flex flex-col w-[280px] sm:w-[340px] shrink-0 bg-muted/40 rounded-xl pb-2 border h-full overflow-hidden transition-colors ${dragOverStageId === stageId ? "border-primary/60 bg-primary/5 ring-2 ring-primary/20" : ""
                                         }`}
                                     onDragOver={(e) => handleDragOver(e, stageId)}
                                     onDragLeave={handleDragLeave}
@@ -830,7 +830,7 @@ function PipelineContent() {
                                                 onDragStart={(e) => handleDragStart(e, deal.id)}
                                                 onDragEnd={handleDragEnd}
                                                 onClick={() => openDeal(deal)}
-                                                className={`bg-card cursor-grab border hover:border-primary/40 transition-all rounded-xl p-4 shadow-sm group relative overflow-hidden flex flex-col gap-3 ${draggedDealId === deal.id ? "opacity-40 scale-95" : ""} ${isNewInquiry ? "border-primary/80 ring-2 ring-primary bg-primary/10 shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse" : "border-border/60 hover:shadow-lg"}`}
+                                                className={`bg-card cursor-grab border hover:border-primary/40 active:scale-[0.98] transition-all rounded-xl p-4 shadow-sm group relative overflow-hidden flex flex-col gap-3 touch-manipulation min-h-[44px] ${draggedDealId === deal.id ? "opacity-40 scale-95" : ""} ${isNewInquiry ? "border-primary/80 ring-2 ring-primary bg-primary/10 shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse" : "border-border/60 hover:shadow-lg"}`}
                                             >
                                                 {/* Colored accent bar on the left based on priority */}
                                                 <div className={`absolute left-0 top-0 bottom-0 w-1 ${deal.startDate && deal.startDate !== "-" ? priorityColorClass : (deal.priority === "HIGH" ? "bg-red-500" : deal.priority === "MEDIUM" ? "bg-amber-500" : "bg-blue-500")}`}></div>

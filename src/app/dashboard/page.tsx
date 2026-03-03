@@ -203,10 +203,10 @@ export default function DashboardPage() {
     }, [taskSearch, taskSort, taskFilter]);
 
     return (
-        <div className="space-y-4 p-8 pt-6">
-            <div className="flex items-center justify-between">
+        <div className="space-y-4 p-4 sm:p-8 pt-4 sm:pt-6 overflow-y-auto overflow-x-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
                         Dashboard
                     </h2>
                     <p className="text-muted-foreground font-medium text-sm">Operations overview & real-time analytics.</p>
@@ -548,24 +548,24 @@ export default function DashboardPage() {
 
             {/* Comprehensive Task Manager Section (Full Width) */}
             <Card className="border-none shadow-lg bg-card/30 backdrop-blur-xl">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 space-y-0">
                     <div>
-                        <CardTitle className="text-2xl">Task Manager</CardTitle>
+                        <CardTitle className="text-xl sm:text-2xl">Task Manager</CardTitle>
                         <p className="text-sm text-muted-foreground">Manage daily lead follow-ups and operations</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className="relative">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="relative w-full sm:w-auto">
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                             <Input
                                 placeholder="Search tasks..."
-                                className="h-9 pl-9 w-64 bg-background/50 border-none shadow-inner"
+                                className="h-9 pl-9 w-full sm:w-64 bg-background/50 border-none shadow-inner min-h-[44px] sm:min-h-[36px]"
                                 value={taskSearch}
                                 onChange={(e) => setTaskSearch(e.target.value)}
                             />
                         </div>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="outline" size="sm" className="h-9 gap-2">
+                                <Button variant="outline" size="sm" className="h-9 gap-2 touch-manipulation">
                                     <Clock className="h-4 w-4" />
                                     Sort: {taskSort === "dueDate" ? "Due Date" : "Assignee"}
                                 </Button>
@@ -575,12 +575,12 @@ export default function DashboardPage() {
                                 <DropdownMenuItem onClick={() => setTaskSort("assignee")}>Assignee</DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
-                        <div className="flex bg-muted/20 p-1 rounded-lg">
+                        <div className="flex bg-muted/20 p-1 rounded-lg overflow-x-auto w-full sm:w-auto">
                             {(["All", "Pending", "Completed"] as const).map((f) => (
                                 <button
                                     key={f}
                                     onClick={() => setTaskFilter(f)}
-                                    className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${taskFilter === f ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                                    className={`flex-1 sm:flex-none px-3 py-1.5 sm:py-1 text-xs font-medium rounded-md transition-all touch-manipulation ${taskFilter === f ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                                 >
                                     {f}
                                 </button>
@@ -588,9 +588,9 @@ export default function DashboardPage() {
                         </div>
                     </div>
                 </CardHeader>
-                <CardContent className="px-0">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                <CardContent className="px-0 sm:px-6">
+                    <div className="overflow-x-auto -mx-4 sm:mx-0">
+                        <table className="w-full text-sm min-w-[600px]">
                             <thead>
                                 <tr className="border-b bg-muted/30">
                                     <th className="text-left py-3 px-6 font-semibold text-muted-foreground">Task</th>

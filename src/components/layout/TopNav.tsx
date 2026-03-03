@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Bell, Check } from "lucide-react"
+import { Bell, Check, Menu } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,7 +16,7 @@ import { ModeToggle } from "@/components/theme-toggle"
 import { getNotifications, markAsRead, markAllAsRead } from "@/app/notifications/actions"
 import { CommandPalette } from "@/components/CommandPalette"
 
-export function TopNav() {
+export function TopNav({ onMenuClick }: { onMenuClick?: () => void }) {
     const router = useRouter()
     const [notifications, setNotifications] = useState<any[]>([])
     const [unreadCount, setUnreadCount] = useState(0)
@@ -84,9 +84,14 @@ export function TopNav() {
     }
 
     return (
-        <header className="flex h-16 items-center gap-4 border-b bg-background px-6">
-            <div className="flex flex-1 items-center gap-4">
-                <div className="flex-1 sm:flex-initial">
+        <header className="flex h-14 sm:h-16 items-center gap-2 sm:gap-4 border-b bg-background px-3 sm:px-6">
+            <div className="flex flex-1 items-center gap-2 sm:gap-4 min-w-0">
+                {onMenuClick && (
+                    <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 md:hidden touch-manipulation" onClick={onMenuClick} aria-label="Open menu">
+                        <Menu className="h-5 w-5" />
+                    </Button>
+                )}
+                <div className="flex-1 min-w-0 sm:flex-initial sm:min-w-0">
                     <CommandPalette />
                 </div>
             </div>

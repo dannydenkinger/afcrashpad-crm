@@ -495,24 +495,24 @@ function ContactsContent() {
         });
 
     return (
-        <div className="flex-1 space-y-4 p-8 pt-6">
-            <div className="flex items-center justify-between space-y-2">
+        <div className="flex-1 space-y-4 p-4 sm:p-8 pt-4 sm:pt-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Contacts</h2>
-                    <p className="text-muted-foreground">
+                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Contacts</h2>
+                    <p className="text-muted-foreground text-sm sm:text-base">
                         Manage your leads, active tenants, and past guests.
                     </p>
                 </div>
-                <div className="flex items-center space-x-2">
-                    <Button variant="outline" size="sm">
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="outline" size="sm" className="touch-manipulation">
                         <Calculator className="mr-2 h-4 w-4" />
                         Export
                     </Button>
-                    <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+                    <Button variant="outline" size="sm" onClick={() => setIsImportDialogOpen(true)} className="touch-manipulation">
                         <Upload className="mr-2 h-4 w-4" />
                         Import CSV
                     </Button>
-                    <Button size="sm" onClick={handleAddContactClick}>
+                    <Button size="sm" onClick={handleAddContactClick} className="touch-manipulation">
                         <Plus className="mr-2 h-4 w-4" />
                         Add Contact
                     </Button>
@@ -538,14 +538,14 @@ function ContactsContent() {
             )}
 
             <Card>
-                <CardHeader className="py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex flex-1 items-center space-x-2">
-                            <div className="relative w-72">
+                <CardHeader className="py-4 px-4 sm:px-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
+                            <div className="relative w-full sm:w-72 flex-1 min-w-0">
                                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                                 <Input
                                     placeholder="Search all contacts..."
-                                    className="h-9 pl-8"
+                                    className="h-9 min-h-[44px] sm:min-h-0 pl-8"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
@@ -671,7 +671,48 @@ function ContactsContent() {
                         </div>
                     </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="px-4 sm:px-6">
+                    {/* Mobile: card list */}
+                    <div className="md:hidden space-y-2">
+                        {filteredAndSortedContacts.map((contact) => {
+                            const isNewContact = (() => {
+                                if (!contact.createdAt) return false;
+                                const createdDate = new Date(contact.createdAt);
+                                const now = new Date();
+                                const diffDays = Math.ceil((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+                                return diffDays <= 3;
+                            })();
+                            return (
+                                <div
+                                    key={contact.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => contact.id !== "new" && handleSelectContact(contact)}
+                                    onKeyDown={(e) => e.key === "Enter" && contact.id !== "new" && handleSelectContact(contact)}
+                                    className={`flex items-center gap-3 p-4 rounded-xl border bg-card min-h-[56px] touch-manipulation active:bg-muted/50 ${isNewContact ? "border-primary/40 bg-primary/[0.04]" : "border-border/60"}`}
+                                >
+                                    <Avatar className="h-10 w-10 shrink-0">
+                                        <AvatarFallback className="text-sm bg-primary/10 text-primary">{contact.name?.charAt(0) ?? "?"}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-medium truncate">{contact.name}</span>
+                                            {isNewContact && (
+                                                <Badge className="shrink-0 text-[10px] bg-primary text-primary-foreground border-0">New</Badge>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground truncate">{contact.email || contact.phone || "—"}</p>
+                                    </div>
+                                    <Badge variant={contact.status === "Active Stay" ? "default" : "outline"} className="shrink-0 text-xs">
+                                        {contact.status}
+                                    </Badge>
+                                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {/* Desktop: table */}
+                    <div className="hidden md:block overflow-x-auto">
                     <Table className="table-fixed min-w-max">
                         <TableHeader>
                             <TableRow>
@@ -802,6 +843,7 @@ function ContactsContent() {
                             })}
                         </TableBody>
                     </Table>
+                    </div>
                 </CardContent>
             </Card>
 

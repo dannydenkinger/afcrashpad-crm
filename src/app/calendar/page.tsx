@@ -122,22 +122,22 @@ export default function CalendarPage() {
 
     return (
         <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
-            <div className="p-8 pt-6 border-b bg-card/50 backdrop-blur-md">
-                <div className="flex items-center justify-between">
+            <div className="p-4 sm:p-8 pt-4 sm:pt-6 border-b bg-card/50 backdrop-blur-md shrink-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
-                        <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
                             Calendar & Tasks
                         </h2>
                         <p className="text-muted-foreground font-medium text-sm">
                             Manage check-ins, tasks, and external schedules.
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                         <div className="flex items-center rounded-xl bg-muted/30 p-1 border border-white/5">
                             <Button
                                 variant={viewMode === "month" ? "secondary" : "ghost"}
                                 size="sm"
-                                className="h-8 rounded-lg text-xs font-semibold px-4"
+                                className="h-8 rounded-lg text-xs font-semibold px-3 sm:px-4 touch-manipulation"
                                 onClick={() => setViewMode("month")}
                             >
                                 Month
@@ -145,7 +145,7 @@ export default function CalendarPage() {
                             <Button
                                 variant={viewMode === "week" ? "secondary" : "ghost"}
                                 size="sm"
-                                className="h-8 rounded-lg text-xs font-semibold px-4"
+                                className="h-8 rounded-lg text-xs font-semibold px-3 sm:px-4 touch-manipulation"
                                 onClick={() => setViewMode("week")}
                             >
                                 Week
@@ -153,13 +153,13 @@ export default function CalendarPage() {
                             <Button
                                 variant={viewMode === "day" ? "secondary" : "ghost"}
                                 size="sm"
-                                className="h-8 rounded-lg text-xs font-semibold px-4"
+                                className="h-8 rounded-lg text-xs font-semibold px-3 sm:px-4 touch-manipulation"
                                 onClick={() => setViewMode("day")}
                             >
                                 Day
                             </Button>
                         </div>
-                        <Button size="sm" className="h-9 gap-2 shadow-lg shadow-primary/20">
+                        <Button size="sm" className="h-9 gap-2 shadow-lg shadow-primary/20 touch-manipulation">
                             <Plus className="h-4 w-4" />
                             Add Item
                         </Button>
@@ -167,9 +167,9 @@ export default function CalendarPage() {
                 </div>
             </div>
 
-            <div className="flex-1 flex overflow-hidden">
-                {/* Unified Sidebar */}
-                <div className="w-72 border-r bg-card/30 backdrop-blur-xl p-6 flex flex-col gap-8">
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+                {/* Unified Sidebar - hidden on small screens */}
+                <aside className="hidden md:flex w-72 border-r bg-card/30 backdrop-blur-xl p-4 lg:p-6 flex-col gap-6 shrink-0 overflow-y-auto">
                     <div>
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Event Sources</h3>
@@ -301,28 +301,28 @@ export default function CalendarPage() {
                             </Button>
                         </div>
                     </div>
-                </div>
+                </aside>
 
                 {/* Calendar Body */}
-                <div className="flex-1 flex flex-col overflow-hidden bg-muted/5">
-                    <div className="p-6 border-b bg-card/20 flex items-center justify-between">
-                        <div className="flex items-center gap-6">
-                            <h2 className="text-xl font-black tracking-tight capitalize">
+                <div className="flex-1 flex flex-col overflow-hidden bg-muted/5 min-w-0">
+                    <div className="p-4 sm:p-6 border-b bg-card/20 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                        <div className="flex flex-wrap items-center gap-3 sm:gap-6 min-w-0">
+                            <h2 className="text-lg sm:text-xl font-black tracking-tight capitalize truncate">
                                 {format(currentDate, viewMode === "month" ? "MMMM yyyy" : "MMMM d, yyyy")}
                             </h2>
                             <div className="flex items-center gap-1 rounded-xl bg-muted/30 p-1 border border-white/5">
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={prevTime}>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg touch-manipulation" onClick={prevTime}>
                                     <ChevronLeft className="h-4 w-4 text-muted-foreground" />
                                 </Button>
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-8 px-4 rounded-lg text-[11px] font-black uppercase text-muted-foreground tracking-widest hover:text-foreground"
+                                    className="h-8 px-3 sm:px-4 rounded-lg text-[11px] font-black uppercase text-muted-foreground tracking-widest hover:text-foreground touch-manipulation"
                                     onClick={() => setCurrentDate(new Date())}
                                 >
                                     Today
                                 </Button>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={nextTime}>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg touch-manipulation" onClick={nextTime}>
                                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                 </Button>
                             </div>
