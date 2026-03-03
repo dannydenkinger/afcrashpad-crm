@@ -528,10 +528,11 @@ function PipelineContent() {
     }
 
     return (
-        <div className="flex flex-col h-full overflow-hidden p-4 sm:p-8 pt-4 sm:pt-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
-                <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">Opportunities</h2>
+        <div className="flex flex-col h-full overflow-hidden">
+            <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-4 sm:pb-6 flex flex-col min-h-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shrink-0">
+                    <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">Opportunities</h2>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="outline" size="sm" className="gap-2 h-8 mt-1 border border-border/60 bg-muted/20 font-medium text-muted-foreground hover:text-foreground" disabled={isLoading}>
@@ -715,14 +716,14 @@ function PipelineContent() {
                 </DialogContent>
             </Dialog>
 
-            <div className="flex items-center mb-4 sm:mb-6">
-                <div className="relative w-full sm:w-72 flex-1 sm:flex-initial">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search deals..." className="h-9 pl-8 min-h-[44px] sm:min-h-0" />
+                <div className="flex items-center">
+                    <div className="relative w-full sm:w-72 flex-1 sm:flex-initial">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Search deals..." className="h-9 pl-8 min-h-[44px] sm:min-h-0" />
+                    </div>
                 </div>
-            </div>
 
-            <div className={`flex-1 min-h-0 overflow-x-auto overflow-y-auto ${viewMode === "kanban" ? "sm:overflow-y-hidden" : ""}`}>
+                <div className={`flex-1 min-h-0 overflow-x-auto overflow-y-auto ${viewMode === "kanban" ? "sm:overflow-y-hidden" : ""}`}>
                 {isLoading ? (
                     viewMode === "kanban" ? (
                         <div className="flex min-h-[400px] sm:min-h-[calc(100vh-220px)] h-[400px] sm:h-[calc(100vh-220px)] gap-3 sm:gap-4 pb-4 w-max">
@@ -1641,6 +1642,7 @@ function PipelineContent() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            </div>
         </div>
     )
 }

@@ -96,10 +96,11 @@ export default function ToolsPage() {
 
     if (activeTool !== "HUB") {
         return (
-            <div className="flex-1 space-y-4 p-8 pt-6 overflow-y-auto max-w-4xl mx-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="space-y-6 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8 max-w-4xl mx-auto">
                 <Button
                     variant="ghost"
-                    className="mb-4"
+                    className="mb-2 sm:mb-4 touch-manipulation"
                     onClick={() => setActiveTool("HUB")}
                 >
                     <ArrowLeft className="mr-2 h-4 w-4" />
@@ -128,21 +129,23 @@ export default function ToolsPage() {
                         {activeTool === "AFFORDABILITY" && <HomeAffordabilityCalculator />}
                     </CardContent>
                 </Card>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="flex-1 space-y-8 p-8 pt-6 overflow-y-auto">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Tools Hub</h2>
-                    <p className="text-muted-foreground">Select a specialized tool to get started</p>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Tools Hub</h2>
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Select a specialized tool to get started.</p>
+                    </div>
+                    <Wrench className="h-8 w-8 text-primary/30 shrink-0 hidden sm:block" />
                 </div>
-                <Wrench className="h-8 w-8 text-primary/30" />
-            </div>
 
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {tools.map((tool) => (
                     <Card
                         key={tool.id}
@@ -178,7 +181,7 @@ export default function ToolsPage() {
                 </Card>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-7">
+                <div className="grid gap-4 sm:gap-6 lg:grid-cols-7">
                 <Card className="lg:col-span-4 border border-border/50 shadow-lg bg-card/30 backdrop-blur-sm">
                     <CardHeader>
                         <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -221,6 +224,7 @@ export default function ToolsPage() {
                         </div>
                     </CardContent>
                 </Card>
+            </div>
             </div>
         </div>
     );

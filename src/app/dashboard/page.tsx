@@ -203,18 +203,19 @@ export default function DashboardPage() {
     }, [taskSearch, taskSort, taskFilter]);
 
     return (
-        <div className="space-y-4 p-4 sm:p-8 pt-4 sm:pt-6 overflow-y-auto overflow-x-hidden">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-                        Dashboard
-                    </h2>
-                    <p className="text-muted-foreground font-medium text-sm">Operations overview & real-time analytics.</p>
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+            <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                            Dashboard
+                        </h2>
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Operations overview & real-time analytics.</p>
+                    </div>
                 </div>
-            </div>
 
-            {/* KPI Row (Row 1) */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {/* KPI Row (Row 1) */}
+                <div className="grid gap-4 sm:gap-5 md:grid-cols-2 lg:grid-cols-4">
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md overflow-hidden">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Tenants</CardTitle>
@@ -264,12 +265,12 @@ export default function DashboardPage() {
                         <p className="text-[10px] text-muted-foreground mt-1 font-medium">Requires follow-up</p>
                     </CardContent>
                 </Card>
-            </div>
+                </div>
 
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
+                <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-7">
                 {/* Pipeline Value Line Chart - Full Width Row 1 */}
                 <Card className="col-span-7 border-none shadow-md bg-card/40 backdrop-blur-md">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                    <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 space-y-0 p-4 sm:p-6 pb-4">
                         <div className="space-y-1">
                             <CardTitle className="text-base font-semibold">Pipeline Value</CardTitle>
                             <CardDescription className="text-xs">Estimated revenue trends</CardDescription>
@@ -301,8 +302,8 @@ export default function DashboardPage() {
                             </div>
                         </div>
                     </CardHeader>
-                    <CardContent className="pt-0">
-                        <div className="h-[280px] w-full">
+                    <CardContent className="pt-0 px-4 sm:px-6">
+                        <div className="h-[240px] sm:h-[280px] w-full min-h-0">
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={opportunityValueData[valuePipeline][timeframe]}>
                                     <defs>
@@ -350,7 +351,7 @@ export default function DashboardPage() {
 
                 {/* Opportunity Status Card (col-3) */}
                 <Card className="col-span-3 border-none shadow-md bg-card/40 backdrop-blur-md">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                    <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 space-y-0 p-4 sm:p-6 pb-4">
                         <div className="space-y-1">
                             <CardTitle className="text-base font-semibold">Opportunity Status</CardTitle>
                             <CardDescription className="text-xs">Deal status distribution</CardDescription>
@@ -368,8 +369,8 @@ export default function DashboardPage() {
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </CardHeader>
-                    <CardContent className="pt-0">
-                        <div className="h-[280px] w-full">
+                    <CardContent className="pt-0 px-4 sm:px-6">
+                        <div className="h-[240px] sm:h-[280px] w-full min-h-0">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie
@@ -404,7 +405,7 @@ export default function DashboardPage() {
 
                 {/* Stage Distribution Card (col-4) - Detailed Funnel View */}
                 <Card className="col-span-4 border-none shadow-md bg-card/40 backdrop-blur-md">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                    <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 space-y-0 p-4 sm:p-6 pb-4">
                         <div className="space-y-1">
                             <CardTitle className="text-base font-semibold">Stage Distribution</CardTitle>
                             <CardDescription className="text-xs">Deal volume & value by stage</CardDescription>
@@ -422,7 +423,7 @@ export default function DashboardPage() {
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </CardHeader>
-                    <CardContent className="pt-2">
+                    <CardContent className="pt-2 px-4 sm:px-6">
                         <div className="space-y-4 h-[180px] overflow-y-auto pr-2 scrollbar-hide">
                             {(() => {
                                 const data = stageDistributionData[stagePipeline];
@@ -664,6 +665,7 @@ export default function DashboardPage() {
                     )}
                 </CardContent>
             </Card>
+            </div>
         </div>
     )
 }

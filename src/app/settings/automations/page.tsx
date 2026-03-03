@@ -37,23 +37,20 @@ export default function AutomationsPage() {
     ]
 
     return (
-        <div className="flex-1 space-y-4 p-8 pt-6">
-            <div className="flex items-center justify-between space-y-2 mb-6">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Automations</h2>
-                    <p className="text-muted-foreground">
-                        Configure triggers and actions to run the CRM on autopilot.
-                    </p>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <Button size="sm">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Automations</h2>
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Configure triggers and actions to run the CRM on autopilot.</p>
+                    </div>
+                    <Button size="sm" className="touch-manipulation w-full sm:w-auto">
                         <Plus className="mr-2 h-4 w-4" />
                         New Workflow
                     </Button>
                 </div>
-            </div>
 
-            <div className="grid gap-4">
+                <div className="grid gap-4 sm:gap-6">
                 {automations.map((automation) => (
                     <Card key={automation.id} className="relative overflow-hidden transition-all hover:bg-muted/10">
                         <CardContent className="p-6">
@@ -103,6 +100,7 @@ export default function AutomationsPage() {
                         </CardContent>
                     </Card>
                 ))}
+            </div>
             </div>
         </div>
     )

@@ -99,16 +99,15 @@ export default function TasksPage() {
     }
 
     return (
-        <div className="flex-1 flex flex-col h-full bg-background overflow-hidden p-4 sm:p-8 pt-4 sm:pt-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
-                <div>
-                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-                        Task Manager
-                    </h2>
-                    <p className="text-muted-foreground font-medium text-sm">
-                        Keep track of everything you need to do.
-                    </p>
-                </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                            Task Manager
+                        </h2>
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Keep track of everything you need to do.</p>
+                    </div>
                 <Button className="h-9 gap-2 shadow-lg shadow-primary/20 touch-manipulation w-full sm:w-auto" onClick={() => {
                     setEditingTask(null);
                     setIsCreateDialogOpen(true);
@@ -250,6 +249,7 @@ export default function TasksPage() {
                         <Button variant="outline" size="sm" onClick={() => loadTasks()} className="h-8 text-[10px] font-black uppercase border-white/10 hover:bg-primary/10 hover:text-primary transition-all">Reload</Button>
                     </div>
                 )}
+            </div>
             </div>
         </div>
     )

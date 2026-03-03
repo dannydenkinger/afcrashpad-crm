@@ -59,16 +59,17 @@ export default async function SettingsPage() {
     }
 
     return (
-        <div className="flex-1 space-y-4 p-8 pt-6">
-            <div className="flex items-center justify-between space-y-2 mb-6">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
-                    <p className="text-muted-foreground mt-1">Manage your account preferences and application settings.</p>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Settings</h2>
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Manage your account preferences and application settings.</p>
+                    </div>
                 </div>
-            </div>
 
-            <Tabs defaultValue="profile" className="w-full space-y-6">
-                <TabsList className="bg-muted/50 p-1">
+                <Tabs defaultValue="profile" className="w-full space-y-6">
+                    <TabsList className="bg-muted/50 p-1 flex flex-wrap h-auto gap-1">
                     <TabsTrigger value="profile" className="flex items-center gap-2 px-6">
                         <User className="w-4 h-4" />
                         My Profile
@@ -220,6 +221,7 @@ export default async function SettingsPage() {
                     </>
                 )}
             </Tabs>
+            </div>
         </div>
     )
 }

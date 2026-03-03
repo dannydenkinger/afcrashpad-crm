@@ -495,14 +495,13 @@ function ContactsContent() {
         });
 
     return (
-        <div className="flex-1 space-y-4 p-4 sm:p-8 pt-4 sm:pt-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Contacts</h2>
-                    <p className="text-muted-foreground text-sm sm:text-base">
-                        Manage your leads, active tenants, and past guests.
-                    </p>
-                </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Contacts</h2>
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Manage your leads, active tenants, and past guests.</p>
+                    </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" size="sm" className="touch-manipulation">
                         <Calculator className="mr-2 h-4 w-4" />
@@ -538,7 +537,7 @@ function ContactsContent() {
             )}
 
             <Card>
-                <CardHeader className="py-4 px-4 sm:px-6">
+                <CardHeader className="py-4 px-4 sm:px-6 space-y-0">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
                             <div className="relative w-full sm:w-72 flex-1 min-w-0">
@@ -1379,6 +1378,7 @@ function ContactsContent() {
                     initialContactId={selectedContact.id}
                 />
             )}
-        </div >
+            </div>
+        </div>
     )
 }

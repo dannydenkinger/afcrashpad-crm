@@ -17,17 +17,16 @@ export default async function ReportingPage() {
     };
 
     return (
-        <div className="flex-1 space-y-4 p-4 sm:p-8 pt-4 sm:pt-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                <div>
-                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Reporting & Analytics</h2>
-                    <p className="text-muted-foreground text-sm sm:text-base">
-                        Track your performance across profit margins, conversion rates, and lead sources.
-                    </p>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Reporting & Analytics</h2>
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Track your performance across profit margins, conversion rates, and lead sources.</p>
+                    </div>
                 </div>
-            </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
                 <Card className="bg-emerald-50/10 border-emerald-500/20">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Closed Profit</CardTitle>
@@ -126,6 +125,7 @@ export default async function ReportingPage() {
                         </div>
                     </CardContent>
                 </Card>
+            </div>
             </div>
         </div>
     )

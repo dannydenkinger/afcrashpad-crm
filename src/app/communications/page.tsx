@@ -128,12 +128,12 @@ export default function CommunicationsPage() {
     return (
         <div className="flex-1 flex flex-col h-[calc(100vh-56px)] sm:h-[calc(100vh-64px)] min-h-0">
             {/* Header */}
-            <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-2 sm:pb-4 shrink-0">
+            <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-3 sm:pb-4 shrink-0">
                 <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Communications</h2>
-                <p className="text-muted-foreground mt-1 text-sm sm:text-base">Track all conversations with clients and leads.</p>
+                <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Track all conversations with clients and leads.</p>
             </div>
 
-            <div className="flex-1 flex flex-col sm:flex-row mx-0 sm:mx-8 mb-0 sm:mb-6 border-y sm:border rounded-none sm:rounded-xl overflow-hidden bg-card shadow-sm min-h-0">
+            <div className="flex-1 flex flex-col sm:flex-row mx-0 sm:mx-4 lg:mx-8 mb-0 sm:mb-6 border-y sm:border rounded-none sm:rounded-xl overflow-hidden bg-card shadow-sm min-h-0">
                 {/* Left Panel: Conversation List */}
                 <div className={`w-full sm:w-[380px] border-r flex-col bg-muted/10 shrink-0 ${selectedContactId ? 'hidden sm:flex' : 'flex'} min-h-0`}>
                     {/* Search + Actions */}

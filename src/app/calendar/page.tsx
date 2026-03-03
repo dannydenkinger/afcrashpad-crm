@@ -122,13 +122,13 @@ export default function CalendarPage() {
 
     return (
         <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
-            <div className="p-4 sm:p-8 pt-4 sm:pt-6 border-b bg-card/50 backdrop-blur-md shrink-0">
+            <div className="p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-4 border-b bg-card/50 backdrop-blur-md shrink-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
                         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
                             Calendar & Tasks
                         </h2>
-                        <p className="text-muted-foreground font-medium text-sm">
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">
                             Manage check-ins, tasks, and external schedules.
                         </p>
                     </div>
@@ -305,7 +305,7 @@ export default function CalendarPage() {
 
                 {/* Calendar Body */}
                 <div className="flex-1 flex flex-col overflow-hidden bg-muted/5 min-w-0">
-                    <div className="p-4 sm:p-6 border-b bg-card/20 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                    <div className="p-4 sm:p-6 border-b bg-card/20 flex flex-wrap items-center justify-between gap-3 sm:gap-4 shrink-0">
                         <div className="flex flex-wrap items-center gap-3 sm:gap-6 min-w-0">
                             <h2 className="text-lg sm:text-xl font-black tracking-tight capitalize truncate">
                                 {format(currentDate, viewMode === "month" ? "MMMM yyyy" : "MMMM d, yyyy")}

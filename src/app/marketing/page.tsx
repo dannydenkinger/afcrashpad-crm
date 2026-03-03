@@ -132,23 +132,24 @@ export default function MarketingPage() {
     }, [timeframe])
 
     return (
-        <div className="space-y-8 p-8 pt-6 relative">
+        <div className="flex-1 min-h-0 overflow-y-auto relative">
+            <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
             {isLoading && (
-                <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
+                <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] z-50 flex items-center justify-center rounded-lg">
                     <div className="flex flex-col items-center gap-2">
                         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
                         <p className="text-xs font-semibold text-muted-foreground">Updating analytics...</p>
                     </div>
                 </div>
             )}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-                        Marketing & Analytics
-                    </h2>
-                    <p className="text-muted-foreground font-medium text-sm">Monitor traffic, SEO performance, and lead sources.</p>
-                </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                            Marketing & Analytics
+                        </h2>
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Monitor traffic, SEO performance, and lead sources.</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="outline" size="sm" className="h-9 gap-2">
@@ -524,6 +525,7 @@ export default function MarketingPage() {
                         </div>
                     </CardContent>
                 </Card>
+            </div>
             </div>
         </div>
     )
