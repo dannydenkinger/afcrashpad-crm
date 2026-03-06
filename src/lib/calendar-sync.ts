@@ -1,8 +1,9 @@
 import { google } from "googleapis";
 import nodeIcal from "node-ical";
 
-const clientEmail = process.env.GA_CLIENT_EMAIL;
-const privateKey = process.env.GA_PRIVATE_KEY?.replace(/\\n/g, "\n");
+const clientEmail = process.env.GA_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL;
+const rawKey = process.env.GA_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY;
+const privateKey = rawKey?.replace(/\\n/g, "\n");
 const googleCalendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
 const appleCalendarUrl = process.env.APPLE_CALENDAR_URL;
 

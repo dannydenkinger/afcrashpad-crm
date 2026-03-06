@@ -1,8 +1,11 @@
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
 
 const propertyId = process.env.GA_PROPERTY_ID;
-const clientEmail = process.env.GA_CLIENT_EMAIL;
-const privateKey = process.env.GA_PRIVATE_KEY?.replace(/\\n/g, "\n");
+// Fall back to Firebase service account if GA-specific credentials aren't set
+// (avoids needing two large private keys, which exceeds Netlify's 4KB env var limit)
+const clientEmail = process.env.GA_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL;
+const rawKey = process.env.GA_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY;
+const privateKey = rawKey?.replace(/\\n/g, "\n");
 
 // Lazy init to avoid errors when GA vars are missing (e.g. Netlify 4KB limit)
 let _gaClient: BetaAnalyticsDataClient | null = null;

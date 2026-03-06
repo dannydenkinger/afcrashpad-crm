@@ -1,8 +1,9 @@
 import { google } from "googleapis"
 import { JWT } from "google-auth-library"
 
-const clientEmail = process.env.GA_CLIENT_EMAIL
-const privateKey = process.env.GA_PRIVATE_KEY?.replace(/\\n/g, "\n")
+const clientEmail = process.env.GA_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL
+const rawKey = process.env.GA_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY
+const privateKey = rawKey?.replace(/\\n/g, "\n")
 const siteUrl = process.env.GSC_SITE_URL // e.g. "https://afcrashpad.com" or "sc-domain:afcrashpad.com"
 
 let _auth: JWT | null = null
