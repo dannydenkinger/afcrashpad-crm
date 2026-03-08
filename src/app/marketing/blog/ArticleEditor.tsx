@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import Image from "next/image"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -32,7 +33,13 @@ import {
     X,
 } from "lucide-react"
 import { toast } from "sonner"
-import ReactMarkdown from "react-markdown"
+import dynamic from "next/dynamic"
+import { Skeleton } from "@/components/ui/skeleton"
+
+const ReactMarkdown = dynamic(() => import("react-markdown"), {
+    loading: () => <Skeleton className="h-[200px] w-full rounded-xl" />,
+    ssr: false,
+})
 import remarkGfm from "remark-gfm"
 import FAQEditor from "./FAQEditor"
 import KeyTakeawaysEditor from "./KeyTakeawaysEditor"
@@ -356,10 +363,13 @@ export default function ArticleEditor({
                             {/* Featured image */}
                             {featuredImageData && (
                                 <div className="relative w-full aspect-video overflow-hidden">
-                                    <img
+                                    <Image
                                         src={`data:${featuredImageMime};base64,${featuredImageData}`}
                                         alt={featuredImageAlt || title || "Featured image"}
-                                        className="w-full h-full object-cover"
+                                        fill
+                                        className="object-cover"
+                                        sizes="(max-width: 768px) 100vw, 700px"
+                                        unoptimized
                                     />
                                     {featuredImageCaption && (
                                         <p className="absolute bottom-0 left-0 right-0 bg-black/60 text-white/80 text-[10px] px-4 py-1.5 italic">
@@ -749,10 +759,14 @@ export default function ArticleEditor({
                                 <>
                                     {/* Image preview — full bleed */}
                                     <div className="relative overflow-hidden">
-                                        <img
+                                        <Image
                                             src={`data:${featuredImageMime};base64,${featuredImageData}`}
                                             alt={featuredImageAlt || "Featured image preview"}
+                                            width={600}
+                                            height={338}
                                             className="w-full h-auto object-cover"
+                                            sizes="300px"
+                                            unoptimized
                                         />
                                     </div>
 

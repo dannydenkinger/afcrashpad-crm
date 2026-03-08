@@ -10,9 +10,8 @@ import { toast } from "sonner"
 import {
     getCommissionsData,
     markCommissionPaid,
-    type CommissionsData,
-    type CommissionEntry,
 } from "./actions"
+import type { CommissionsData, CommissionEntry } from "./types"
 
 function formatCurrency(value: number) {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
@@ -228,10 +227,10 @@ export function CommissionTracker() {
                 </CardHeader>
                 <CardContent className="pt-0 px-0">
                     {filteredEntries.length === 0 ? (
-                        <div className="text-center py-12 text-muted-foreground text-sm">
-                            <Wallet className="h-10 w-10 mx-auto mb-3 opacity-20" />
-                            <p>No commissions recorded yet.</p>
-                            <p className="text-xs mt-1">Commissions are automatically created when deals are marked as booked.</p>
+                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                            <DollarSign className="h-12 w-12 text-muted-foreground/20 mb-4" />
+                            <p className="text-lg font-medium text-foreground mb-1">No commissions yet</p>
+                            <p className="text-sm text-muted-foreground mb-4 max-w-sm">Commissions are automatically created when deals are marked as booked.</p>
                         </div>
                     ) : (
                         <>

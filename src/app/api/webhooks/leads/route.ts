@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { sendEmail } from '@/lib/email';
+import { sendTrackedEmail } from '@/lib/email';
 import { createNotification } from '@/app/notifications/actions';
 import { triggerSequence } from '@/lib/email-sequences';
+import { determineAssignee } from '@/lib/auto-assign';
 import * as z from 'zod';
 import { calculateOnBaseLodging, lodgingData } from '@/lib/calculators/on-base';
+import { rateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { validateApiKey } from '@/lib/api-auth';
 
 function normalizeDateToYmd(input: unknown): string | null {
     if (!input) return null;
@@ -81,11 +84,30 @@ const webhookSchema = z.object({
 
 export async function POST(req: Request) {
     try {
-        // 1. Authenticate Request
+        // Rate limit: 30 webhook submissions per minute per IP
+        const { allowed } = rateLimit(getRateLimitKey(req, "webhook"), 30)
+        if (!allowed) {
+            return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 })
+        }
+
+        // 1. Authenticate Request (support both env-based key and managed API keys)
         const authHeader = req.headers.get('authorization');
         const expectedApiKey = process.env.WEBHOOK_API_KEY;
 
-        if (!expectedApiKey || authHeader !== `Bearer ${expectedApiKey}`) {
+        let authenticated = false;
+        if (expectedApiKey && authHeader === `Bearer ${expectedApiKey}`) {
+            authenticated = true;
+        }
+
+        // Fall back to managed API key authentication
+        if (!authenticated) {
+            const apiKeyResult = await validateApiKey(req);
+            if (apiKeyResult) {
+                authenticated = true;
+            }
+        }
+
+        if (!authenticated) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -298,6 +320,25 @@ export async function POST(req: Request) {
             updatedAt: new Date()
         });
 
+        // 6b. Auto-assign based on configured rules
+        let autoAssignedTo: string | null = null;
+        try {
+            const assignee = await determineAssignee({
+                leadSource: utmSource || 'webhook',
+                base: baseName || null,
+                source: utmSource || 'webhook',
+            });
+            if (assignee) {
+                await oppRef.update({
+                    assignedTo: assignee.userId,
+                    assignedToName: assignee.userName,
+                });
+                autoAssignedTo = assignee.userName;
+            }
+        } catch (assignErr) {
+            console.error("Auto-assignment failed (non-blocking):", assignErr);
+        }
+
         // 7. Create Contact Note (so it also shows on the Contact)
         if (sharedNotes) {
             await adminDb.collection('contacts').doc(contactId).collection('notes').add({
@@ -390,11 +431,12 @@ export async function POST(req: Request) {
                         </div>
                     `;
 
-                    // Send the actual email via Resend
-                    await sendEmail({
+                    // Send the actual email via Resend (with tracking)
+                    await sendTrackedEmail({
                         to: data.email,
                         subject: replySubject,
                         html: emailHtml,
+                        contactId,
                     });
 
                     // Log the auto-reply as an outbound message in the contact's communications
@@ -419,6 +461,7 @@ export async function POST(req: Request) {
             contactId: contactId,
             opportunityId: oppRef.id,
             autoReplySent,
+            autoAssignedTo,
         }, { status: 200 });
 
     } catch (error: any) {

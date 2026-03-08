@@ -2,7 +2,7 @@
 
 import { adminDb } from "@/lib/firebase-admin";
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
+import { requireAdmin } from "@/lib/auth-guard";
 
 function toISO(val: unknown): string | null {
     if (!val) return null;
@@ -34,11 +34,12 @@ export async function getContactStatuses() {
 
 export async function createContactStatus(name: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         const existing = await adminDb.collection('contact_statuses').where('name', '==', name).limit(1).get();
         if (!existing.empty) {
             return { success: false, error: "A status with this name already exists." };
@@ -64,11 +65,12 @@ export async function createContactStatus(name: string) {
 
 export async function updateContactStatus(id: string, name: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('contact_statuses').doc(id).update({
             name,
             updatedAt: new Date()
@@ -84,11 +86,12 @@ export async function updateContactStatus(id: string, name: string) {
 
 export async function deleteContactStatus(id: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('contact_statuses').doc(id).delete();
 
         revalidatePath("/settings");
@@ -121,11 +124,12 @@ export async function getSpecialAccommodations() {
 
 export async function createSpecialAccommodation(name: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         const existing = await adminDb.collection('special_accommodations').where('name', '==', name).limit(1).get();
         if (!existing.empty) {
             return { success: false, error: "An accommodation with this name already exists." };
@@ -151,11 +155,12 @@ export async function createSpecialAccommodation(name: string) {
 
 export async function updateSpecialAccommodation(id: string, name: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('special_accommodations').doc(id).update({
             name,
             updatedAt: new Date()
@@ -171,11 +176,12 @@ export async function updateSpecialAccommodation(id: string, name: string) {
 
 export async function deleteSpecialAccommodation(id: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('special_accommodations').doc(id).delete();
 
         revalidatePath("/settings");

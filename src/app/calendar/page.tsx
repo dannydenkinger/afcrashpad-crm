@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
@@ -32,7 +32,7 @@ import {
     subWeeks,
     isToday
 } from "date-fns"
-import { getUnifiedEvents } from "./actions"
+import { getUnifiedEvents, updateTask } from "./actions"
 import { CalendarEvent } from "@/lib/calendar-sync"
 import { CreateTaskDialog } from "@/components/ui/CreateTaskDialog"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +40,10 @@ import { cn } from "@/lib/utils"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { BookingCalendar } from "@/app/dashboard/bookings/BookingCalendar"
+import { toast } from "sonner"
+import dynamic from "next/dynamic"
+
+const TasksPage = dynamic(() => import("@/app/tasks/page"), { ssr: false })
 
 type ViewMode = "month" | "week" | "day"
 
@@ -55,6 +59,7 @@ export default function CalendarPage() {
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
     const [filterSheetOpen, setFilterSheetOpen] = useState(false)
+    const [clickedDate, setClickedDate] = useState<Date | null>(null)
     const router = useRouter()
 
     const loadEvents = async () => {
@@ -108,6 +113,38 @@ export default function CalendarPage() {
         else setActiveGoogleCalendars(googleCalendars.map(c => c.id))
     }
 
+    // Click-to-add handler
+    const handleCellClick = useCallback((date: Date) => {
+        setClickedDate(date)
+        setIsCreateDialogOpen(true)
+    }, [])
+
+    // Drag-and-drop handler for rescheduling events
+    const handleEventDrop = useCallback(async (eventId: string, newDate: Date) => {
+        // Only allow dragging TASK events (CRM tasks we own)
+        const event = events.find(e => e.id === eventId)
+        if (!event || event.source !== "TASK") {
+            toast.error("Only CRM tasks can be rescheduled by dragging")
+            return
+        }
+
+        // Extract the real task ID from event ID (format: "task-{taskId}")
+        const taskId = eventId.replace("task-", "")
+
+        // Optimistic update
+        setEvents(prev => prev.map(e =>
+            e.id === eventId ? { ...e, start: newDate, end: newDate } : e
+        ))
+
+        try {
+            await updateTask(taskId, { dueDate: newDate })
+            toast.success("Task rescheduled")
+        } catch {
+            toast.error("Failed to reschedule task")
+            loadEvents() // Rollback by reloading
+        }
+    }, [events])
+
     return (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full bg-background overflow-hidden">
             {/* Header */}
@@ -132,7 +169,7 @@ export default function CalendarPage() {
                                 <Button variant={viewMode === "week" ? "secondary" : "ghost"} size="sm" className="h-8 rounded-lg text-xs font-semibold px-3 sm:px-4 touch-manipulation" onClick={() => setViewMode("week")}>Week</Button>
                                 <Button variant={viewMode === "day" ? "secondary" : "ghost"} size="sm" className="h-8 rounded-lg text-xs font-semibold px-3 sm:px-4 touch-manipulation" onClick={() => setViewMode("day")}>Day</Button>
                             </div>
-                            <Button size="sm" className="h-9 gap-2 shadow-lg shadow-primary/20 touch-manipulation" onClick={() => setIsCreateDialogOpen(true)}>
+                            <Button size="sm" className="h-9 gap-2 shadow-lg shadow-primary/20 touch-manipulation" onClick={() => { setClickedDate(null); setIsCreateDialogOpen(true); }}>
                                 <Plus className="h-4 w-4" />
                                 Add Item
                             </Button>
@@ -142,12 +179,18 @@ export default function CalendarPage() {
                 <TabsList className="bg-muted/30 border border-white/5 flex-wrap h-auto gap-0.5 p-1 mt-4">
                     <TabsTrigger value="calendar" className="text-xs font-semibold">Calendar</TabsTrigger>
                     <TabsTrigger value="bookings" className="text-xs font-semibold">Stays</TabsTrigger>
+                    <TabsTrigger value="tasks" className="text-xs font-semibold">Tasks</TabsTrigger>
                 </TabsList>
             </div>
 
             {/* Stays Tab */}
             <TabsContent value="bookings" className="flex-1 overflow-y-auto m-0 p-4 sm:p-6 lg:p-8">
                 <BookingCalendar />
+            </TabsContent>
+
+            {/* Tasks Tab */}
+            <TabsContent value="tasks" className="flex-1 overflow-hidden m-0">
+                <TasksPage />
             </TabsContent>
 
             {/* Calendar Tab */}
@@ -264,9 +307,9 @@ export default function CalendarPage() {
                     </div>
 
                     <div className="flex-1 overflow-auto p-2 sm:p-4 md:p-6">
-                        {viewMode === "month" && <MonthView date={currentDate} getEvents={getEventsForDay} onEventClick={setSelectedEvent} />}
-                        {viewMode === "week" && <WeekView date={currentDate} getEvents={getEventsForDay} onEventClick={setSelectedEvent} />}
-                        {viewMode === "day" && <DayView date={currentDate} getEvents={getEventsForDay} onEventClick={setSelectedEvent} />}
+                        {viewMode === "month" && <MonthView date={currentDate} getEvents={getEventsForDay} onEventClick={setSelectedEvent} onCellClick={handleCellClick} onEventDrop={handleEventDrop} />}
+                        {viewMode === "week" && <WeekView date={currentDate} getEvents={getEventsForDay} onEventClick={setSelectedEvent} onCellClick={handleCellClick} onEventDrop={handleEventDrop} />}
+                        {viewMode === "day" && <DayView date={currentDate} getEvents={getEventsForDay} onEventClick={setSelectedEvent} onCellClick={handleCellClick} onEventDrop={handleEventDrop} />}
                     </div>
                 </div>
             </TabsContent>
@@ -331,7 +374,12 @@ export default function CalendarPage() {
                 </SheetContent>
             </Sheet>
 
-            <CreateTaskDialog isOpen={isCreateDialogOpen} onClose={() => setIsCreateDialogOpen(false)} onSaved={loadEvents} />
+            <CreateTaskDialog
+                isOpen={isCreateDialogOpen}
+                onClose={() => { setIsCreateDialogOpen(false); setClickedDate(null); }}
+                onSaved={() => { toast.success("Event created"); loadEvents(); }}
+                initialDate={clickedDate}
+            />
             {selectedEvent && (
                 <EventDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} onNavigate={(url) => { setSelectedEvent(null); router.push(url); }} />
             )}
@@ -339,7 +387,37 @@ export default function CalendarPage() {
     )
 }
 
-function MonthView({ date, getEvents, onEventClick }: { date: Date, getEvents: (d: Date) => CalendarEvent[], onEventClick: (e: CalendarEvent) => void }) {
+// ── Drag & Drop Helpers ─────────────────────────────────────────────────────
+
+function handleDragStart(e: React.DragEvent, event: CalendarEvent) {
+    if (event.source !== "TASK") {
+        e.preventDefault()
+        return
+    }
+    e.dataTransfer.setData("text/plain", event.id)
+    e.dataTransfer.effectAllowed = "move"
+    // Add a class to the dragged element for visual feedback
+    const target = e.currentTarget as HTMLElement
+    setTimeout(() => target.classList.add("opacity-40"), 0)
+}
+
+function handleDragEnd(e: React.DragEvent) {
+    const target = e.currentTarget as HTMLElement
+    target.classList.remove("opacity-40")
+}
+
+// ── Month View ──────────────────────────────────────────────────────────────
+
+function MonthView({
+    date, getEvents, onEventClick, onCellClick, onEventDrop
+}: {
+    date: Date
+    getEvents: (d: Date) => CalendarEvent[]
+    onEventClick: (e: CalendarEvent) => void
+    onCellClick: (d: Date) => void
+    onEventDrop: (eventId: string, newDate: Date) => void
+}) {
+    const [dragOverDate, setDragOverDate] = useState<string | null>(null)
     const monthStart = startOfMonth(date)
     const monthEnd = endOfMonth(monthStart)
     const startDate = startOfWeek(monthStart)
@@ -351,13 +429,40 @@ function MonthView({ date, getEvents, onEventClick }: { date: Date, getEvents: (
 
     while (day <= endDate) {
         for (let i = 0; i < 7; i++) {
+            const currentDay = new Date(day)
             const formattedDate = format(day, "d")
             const dayEvents = getEvents(day)
             const visibleEvents = dayEvents.slice(0, 2)
             const overflowCount = dayEvents.length - 2
+            const dayKey = currentDay.toISOString()
+            const isDragOver = dragOverDate === dayKey
 
             days.push(
-                <div key={day.toString()} className={cn("bg-card min-h-[60px] sm:min-h-[100px] md:min-h-[140px] p-1.5 sm:p-3 border-r border-b border-white/5 transition-all flex flex-col gap-1 sm:gap-2 group", !isSameMonth(day, monthStart) ? "bg-muted/10 opacity-30" : "hover:bg-muted/10")}>
+                <div
+                    key={day.toString()}
+                    className={cn(
+                        "bg-card min-h-[60px] sm:min-h-[100px] md:min-h-[140px] p-1.5 sm:p-3 border-r border-b border-white/5 transition-all flex flex-col gap-1 sm:gap-2 group cursor-pointer",
+                        !isSameMonth(day, monthStart) ? "bg-muted/10 opacity-30" : "hover:bg-muted/10",
+                        isDragOver && "bg-primary/10 ring-2 ring-primary/30 ring-inset"
+                    )}
+                    onClick={(e) => {
+                        // Only trigger if clicking on the cell background, not an event
+                        if ((e.target as HTMLElement).closest('[data-event]')) return
+                        onCellClick(currentDay)
+                    }}
+                    onDragOver={(e) => {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = "move"
+                        setDragOverDate(dayKey)
+                    }}
+                    onDragLeave={() => setDragOverDate(null)}
+                    onDrop={(e) => {
+                        e.preventDefault()
+                        setDragOverDate(null)
+                        const eventId = e.dataTransfer.getData("text/plain")
+                        if (eventId) onEventDrop(eventId, currentDay)
+                    }}
+                >
                     <div className="flex items-center justify-between">
                         <span className={cn("text-[11px] sm:text-xs font-black w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-lg transition-colors leading-none", isToday(day) ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30" : "text-muted-foreground group-hover:text-foreground")}>
                             {formattedDate}
@@ -365,17 +470,36 @@ function MonthView({ date, getEvents, onEventClick }: { date: Date, getEvents: (
                         {isToday(day) && <div className="h-1.5 w-1.5 rounded-full bg-primary hidden sm:block" />}
                     </div>
                     <div className="flex flex-col gap-0.5 sm:gap-1 overflow-hidden">
-                        {/* Show limited events on mobile, all on desktop */}
+                        {/* Desktop events */}
                         <div className="hidden sm:flex flex-col gap-1">
                             {dayEvents.map(event => (
-                                <div key={event.id} onClick={() => onEventClick(event)} className="text-[9px] px-2 py-1.5 rounded-lg border truncate font-bold shadow-sm transition-all active:scale-95 cursor-pointer hover:brightness-110 hover:shadow-md" style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}>
+                                <div
+                                    key={event.id}
+                                    data-event
+                                    draggable={event.source === "TASK"}
+                                    onDragStart={(e) => handleDragStart(e, event)}
+                                    onDragEnd={handleDragEnd}
+                                    onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
+                                    className={cn(
+                                        "text-[9px] px-2 py-1.5 rounded-lg border truncate font-bold shadow-sm transition-all active:scale-95 cursor-pointer hover:brightness-110 hover:shadow-md",
+                                        event.source === "TASK" && "cursor-grab active:cursor-grabbing"
+                                    )}
+                                    style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
+                                >
                                     {event.title}
                                 </div>
                             ))}
                         </div>
+                        {/* Mobile events */}
                         <div className="flex sm:hidden flex-col gap-0.5">
                             {visibleEvents.map(event => (
-                                <div key={event.id} onClick={() => onEventClick(event)} className="text-[11px] px-1.5 py-1 rounded-md border truncate font-bold shadow-sm transition-all active:scale-95 cursor-pointer min-h-[24px] touch-manipulation" style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}>
+                                <div
+                                    key={event.id}
+                                    data-event
+                                    onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
+                                    className="text-[11px] px-1.5 py-1 rounded-md border truncate font-bold shadow-sm transition-all active:scale-95 cursor-pointer min-h-[24px] touch-manipulation"
+                                    style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
+                                >
                                     {event.title}
                                 </div>
                             ))}
@@ -412,37 +536,119 @@ function MonthView({ date, getEvents, onEventClick }: { date: Date, getEvents: (
     )
 }
 
-function WeekView({ date, getEvents, onEventClick }: { date: Date, getEvents: (d: Date) => CalendarEvent[], onEventClick: (e: CalendarEvent) => void }) {
+// ── Week View ───────────────────────────────────────────────────────────────
+
+function WeekView({
+    date, getEvents, onEventClick, onCellClick, onEventDrop
+}: {
+    date: Date
+    getEvents: (d: Date) => CalendarEvent[]
+    onEventClick: (e: CalendarEvent) => void
+    onCellClick: (d: Date) => void
+    onEventDrop: (eventId: string, newDate: Date) => void
+}) {
+    const [dragOverSlot, setDragOverSlot] = useState<string | null>(null)
     const startDate = startOfWeek(date)
     const days = []
+    const hours = Array.from({ length: 13 }, (_, i) => i + 8) // 8am to 8pm
 
     for (let i = 0; i < 7; i++) {
         const day = addDays(startDate, i)
         const dayEvents = getEvents(day)
         days.push(
-            <div key={i} className="flex-1 min-w-[100px] sm:min-w-[150px] bg-card/40 border-r border-white/5 last:border-0 p-2 sm:p-4 group hover:bg-muted/10 transition-colors">
-                <div className="text-center mb-3 sm:mb-6">
+            <div key={i} className="flex-1 min-w-[100px] sm:min-w-[150px] bg-card/40 border-r border-white/5 last:border-0 group">
+                <div className="text-center p-2 sm:p-4 border-b border-white/5 sticky top-0 bg-card/60 backdrop-blur-sm z-10">
                     <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">{format(day, "EEE")}</p>
                     <p className={cn("text-lg font-black w-10 h-10 flex items-center justify-center rounded-xl mx-auto transition-all", isToday(day) ? "bg-primary text-primary-foreground shadow-xl shadow-primary/20" : "text-foreground")}>
                         {format(day, "d")}
                     </p>
                 </div>
-                <div className="space-y-2">
-                    {dayEvents.map(event => (
-                        <div key={event.id} onClick={() => onEventClick(event)} className="text-[10px] p-3 rounded-xl border font-bold shadow-md transition-all hover:scale-[1.02] hover:brightness-110 cursor-pointer" style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}>
-                            <div className="flex items-center gap-2 mb-1 opacity-60">
-                                <Clock className="h-3 w-3" />
-                                {format(new Date(event.start), 'h:mm a')}
-                            </div>
+                {/* All-day events at top */}
+                <div className="px-1 sm:px-2 py-1 border-b border-white/5 min-h-[28px]">
+                    {dayEvents.filter(e => {
+                        const s = new Date(e.start)
+                        return s.getHours() === 0 && s.getMinutes() === 0
+                    }).map(event => (
+                        <div
+                            key={event.id}
+                            data-event
+                            draggable={event.source === "TASK"}
+                            onDragStart={(e) => handleDragStart(e, event)}
+                            onDragEnd={handleDragEnd}
+                            onClick={() => onEventClick(event)}
+                            className={cn(
+                                "text-[9px] p-1.5 rounded-lg border font-bold truncate mb-0.5 cursor-pointer hover:brightness-110",
+                                event.source === "TASK" && "cursor-grab active:cursor-grabbing"
+                            )}
+                            style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
+                        >
                             {event.title}
                         </div>
                     ))}
-                    {dayEvents.length === 0 && (
-                        <div className="py-12 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2">
-                            <Plus className="h-6 w-6 text-muted-foreground/10" />
-                            <p className="text-[9px] font-black text-muted-foreground/20 uppercase tracking-widest">Available</p>
-                        </div>
-                    )}
+                </div>
+                {/* Time slots */}
+                <div className="divide-y divide-white/5">
+                    {hours.map(hour => {
+                        const slotDate = new Date(day)
+                        slotDate.setHours(hour, 0, 0, 0)
+                        const slotKey = slotDate.toISOString()
+                        const slotEvents = dayEvents.filter(e => {
+                            const s = new Date(e.start)
+                            return s.getHours() === hour && !(s.getHours() === 0 && s.getMinutes() === 0)
+                        })
+                        const isDragOver = dragOverSlot === slotKey
+
+                        return (
+                            <div
+                                key={hour}
+                                className={cn(
+                                    "min-h-[48px] p-1 sm:p-2 transition-all cursor-pointer hover:bg-muted/10",
+                                    isDragOver && "bg-primary/10 ring-1 ring-primary/30 ring-inset"
+                                )}
+                                onClick={(e) => {
+                                    if ((e.target as HTMLElement).closest('[data-event]')) return
+                                    onCellClick(slotDate)
+                                }}
+                                onDragOver={(e) => {
+                                    e.preventDefault()
+                                    e.dataTransfer.dropEffect = "move"
+                                    setDragOverSlot(slotKey)
+                                }}
+                                onDragLeave={() => setDragOverSlot(null)}
+                                onDrop={(e) => {
+                                    e.preventDefault()
+                                    setDragOverSlot(null)
+                                    const eventId = e.dataTransfer.getData("text/plain")
+                                    if (eventId) onEventDrop(eventId, slotDate)
+                                }}
+                            >
+                                <span className="text-[8px] font-bold text-muted-foreground/40 block mb-0.5">
+                                    {hour > 12 ? hour - 12 : hour}:00 {hour >= 12 ? 'PM' : 'AM'}
+                                </span>
+                                {slotEvents.map(event => (
+                                    <div
+                                        key={event.id}
+                                        data-event
+                                        draggable={event.source === "TASK"}
+                                        onDragStart={(e) => handleDragStart(e, event)}
+                                        onDragEnd={handleDragEnd}
+                                        onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
+                                        className={cn(
+                                            "text-[9px] p-2 rounded-lg border font-bold shadow-md transition-all hover:brightness-110 cursor-pointer mb-1",
+                                            event.source === "TASK" && "cursor-grab active:cursor-grabbing"
+                                        )}
+                                        style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
+                                    >
+                                        <div className="flex items-center gap-1 opacity-60 mb-0.5">
+                                            <Clock className="h-2.5 w-2.5" />
+                                            {format(new Date(event.start), 'h:mm a')}
+                                        </div>
+                                        <span className="truncate block">{event.title}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )
+                    })}
                 </div>
             </div>
         )
@@ -455,7 +661,18 @@ function WeekView({ date, getEvents, onEventClick }: { date: Date, getEvents: (d
     )
 }
 
-function DayView({ date, getEvents, onEventClick }: { date: Date, getEvents: (d: Date) => CalendarEvent[], onEventClick: (e: CalendarEvent) => void }) {
+// ── Day View ────────────────────────────────────────────────────────────────
+
+function DayView({
+    date, getEvents, onEventClick, onCellClick, onEventDrop
+}: {
+    date: Date
+    getEvents: (d: Date) => CalendarEvent[]
+    onEventClick: (e: CalendarEvent) => void
+    onCellClick: (d: Date) => void
+    onEventDrop: (eventId: string, newDate: Date) => void
+}) {
+    const [dragOverHour, setDragOverHour] = useState<number | null>(null)
     const dayEvents = getEvents(date)
     const hours = Array.from({ length: 24 }, (_, i) => i)
 
@@ -474,7 +691,19 @@ function DayView({ date, getEvents, onEventClick }: { date: Date, getEvents: (d:
                     <h3 className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-6 border-l-2 border-primary pl-4">Schedule</h3>
                     <div className="space-y-4">
                         {dayEvents.map(event => (
-                            <div key={event.id} onClick={() => onEventClick(event)} className="flex items-center gap-3 sm:gap-6 p-3 sm:p-5 rounded-xl sm:rounded-2xl border transition-all hover:translate-x-1 cursor-pointer group min-h-[44px] touch-manipulation" style={{ backgroundColor: `${event.color}10`, borderColor: `${event.color}20` }}>
+                            <div
+                                key={event.id}
+                                data-event
+                                draggable={event.source === "TASK"}
+                                onDragStart={(e) => handleDragStart(e, event)}
+                                onDragEnd={handleDragEnd}
+                                onClick={() => onEventClick(event)}
+                                className={cn(
+                                    "flex items-center gap-3 sm:gap-6 p-3 sm:p-5 rounded-xl sm:rounded-2xl border transition-all hover:translate-x-1 cursor-pointer group min-h-[44px] touch-manipulation",
+                                    event.source === "TASK" && "cursor-grab active:cursor-grabbing"
+                                )}
+                                style={{ backgroundColor: `${event.color}10`, borderColor: `${event.color}20` }}
+                            >
                                 <div className="text-right min-w-[60px] sm:min-w-[80px]">
                                     <p className="text-xs font-black flex items-center gap-2 justify-end">
                                         <Clock className="h-3 w-3 opacity-40" />
@@ -491,10 +720,10 @@ function DayView({ date, getEvents, onEventClick }: { date: Date, getEvents: (d:
                             </div>
                         ))}
                         {dayEvents.length === 0 && (
-                            <div className="py-20 flex flex-col items-center justify-center text-muted-foreground/30 gap-4 border-2 border-dashed border-white/5 rounded-3xl">
-                                <LayoutGrid className="h-12 w-12 opacity-10" />
-                                <p className="text-xs font-black uppercase tracking-[0.3em]">No events scheduled</p>
-                                <Button variant="outline" size="sm" className="h-8 text-[10px] font-black uppercase border-white/10 hover:bg-primary/10 hover:text-primary transition-all">Quick Add</Button>
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <CalendarIcon className="h-12 w-12 text-muted-foreground/20 mb-4" />
+                                <p className="text-lg font-medium text-foreground mb-1">No events</p>
+                                <p className="text-sm text-muted-foreground mb-4 max-w-sm">No events scheduled for this day. Click a time slot below to add one.</p>
                             </div>
                         )}
                     </div>
@@ -502,11 +731,36 @@ function DayView({ date, getEvents, onEventClick }: { date: Date, getEvents: (d:
                 <div className="p-4 sm:p-8 bg-muted/5 flex-1">
                     <h3 className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-4 sm:mb-6 border-l-2 border-white/10 pl-4">Availability</h3>
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
-                        {hours.slice(8, 20).map(hour => (
-                            <div key={hour} className="p-4 rounded-xl border border-white/5 bg-background/20 flex flex-col gap-1 items-center justify-center opacity-40 hover:opacity-100 hover:bg-primary/5 hover:border-primary/20 transition-all cursor-pointer">
-                                <span className="text-[10px] font-black">{hour > 12 ? hour - 12 : hour}:00 {hour >= 12 ? 'PM' : 'AM'}</span>
-                            </div>
-                        ))}
+                        {hours.slice(8, 20).map(hour => {
+                            const slotDate = new Date(date)
+                            slotDate.setHours(hour, 0, 0, 0)
+                            const isDragOver = dragOverHour === hour
+
+                            return (
+                                <div
+                                    key={hour}
+                                    className={cn(
+                                        "p-4 rounded-xl border border-white/5 bg-background/20 flex flex-col gap-1 items-center justify-center opacity-40 hover:opacity-100 hover:bg-primary/5 hover:border-primary/20 transition-all cursor-pointer",
+                                        isDragOver && "opacity-100 bg-primary/10 border-primary/30 ring-2 ring-primary/20"
+                                    )}
+                                    onClick={() => onCellClick(slotDate)}
+                                    onDragOver={(e) => {
+                                        e.preventDefault()
+                                        e.dataTransfer.dropEffect = "move"
+                                        setDragOverHour(hour)
+                                    }}
+                                    onDragLeave={() => setDragOverHour(null)}
+                                    onDrop={(e) => {
+                                        e.preventDefault()
+                                        setDragOverHour(null)
+                                        const eventId = e.dataTransfer.getData("text/plain")
+                                        if (eventId) onEventDrop(eventId, slotDate)
+                                    }}
+                                >
+                                    <span className="text-[10px] font-black">{hour > 12 ? hour - 12 : hour}:00 {hour >= 12 ? 'PM' : 'AM'}</span>
+                                </div>
+                            )
+                        })}
                     </div>
                 </div>
             </div>
@@ -514,8 +768,10 @@ function DayView({ date, getEvents, onEventClick }: { date: Date, getEvents: (d:
     )
 }
 
+// ── Event Detail Modal ──────────────────────────────────────────────────────
+
 function EventDetailModal({ event, onClose, onNavigate }: { event: CalendarEvent, onClose: () => void, onNavigate: (url: string) => void }) {
-    const sourceLabels: Record<string, string> = { GOOGLE: "Google Calendar", APPLE: "Apple Calendar", SYSTEM: "CRM — Stay Event", TASK: "CRM Task" }
+    const sourceLabels: Record<string, string> = { GOOGLE: "Google Calendar", APPLE: "Apple Calendar", SYSTEM: "CRM -- Stay Event", TASK: "CRM Task" }
     const isAllDay = event.start instanceof Date && event.start.getHours() === 0 && event.start.getMinutes() === 0
 
     return (
@@ -551,7 +807,7 @@ function EventDetailModal({ event, onClose, onNavigate }: { event: CalendarEvent
                                 <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0"><Clock className="h-4 w-4 text-primary" /></div>
                                 <div>
                                     <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Time</p>
-                                    <p className="text-sm font-bold mt-0.5">{format(new Date(event.start), "h:mm a")} → {format(new Date(event.end), "h:mm a")}</p>
+                                    <p className="text-sm font-bold mt-0.5">{format(new Date(event.start), "h:mm a")} {String.fromCharCode(8594)} {format(new Date(event.end), "h:mm a")}</p>
                                 </div>
                             </div>
                         )}

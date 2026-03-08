@@ -6,18 +6,30 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, MapPin, CalendarDays, Users, DollarSign, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react"
-import { getBookingsData, type BookingEntry, type OverlapGroup, type BookingsData } from "./actions"
+import { getBookingsData } from "./actions"
+import type { BookingEntry, OverlapGroup, BookingsData } from "./types"
 
-const STAGE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-    "Current Tenant": { bg: "bg-emerald-500/25", border: "border-emerald-500/50", text: "text-emerald-400" },
-    "Booked": { bg: "bg-blue-500/25", border: "border-blue-500/50", text: "text-blue-400" },
-    "Lease Signed": { bg: "bg-blue-500/25", border: "border-blue-500/50", text: "text-blue-400" },
-    "Closed Won": { bg: "bg-blue-500/25", border: "border-blue-500/50", text: "text-blue-400" },
-}
-const DEFAULT_STAGE_COLOR = { bg: "bg-violet-500/20", border: "border-violet-500/40", text: "text-violet-400" }
+const BASE_COLORS = [
+    { bg: "bg-blue-500/25", border: "border-blue-500/50", text: "text-blue-400" },
+    { bg: "bg-emerald-500/25", border: "border-emerald-500/50", text: "text-emerald-400" },
+    { bg: "bg-violet-500/25", border: "border-violet-500/50", text: "text-violet-400" },
+    { bg: "bg-rose-500/25", border: "border-rose-500/50", text: "text-rose-400" },
+    { bg: "bg-cyan-500/25", border: "border-cyan-500/50", text: "text-cyan-400" },
+    { bg: "bg-indigo-500/25", border: "border-indigo-500/50", text: "text-indigo-400" },
+    { bg: "bg-pink-500/25", border: "border-pink-500/50", text: "text-pink-400" },
+    { bg: "bg-teal-500/25", border: "border-teal-500/50", text: "text-teal-400" },
+    { bg: "bg-orange-500/25", border: "border-orange-500/50", text: "text-orange-400" },
+    { bg: "bg-fuchsia-500/25", border: "border-fuchsia-500/50", text: "text-fuchsia-400" },
+]
 
-function getStageColor(stage: string) {
-    return STAGE_COLORS[stage] || DEFAULT_STAGE_COLOR
+const BASE_COLOR_DOTS = [
+    "bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-rose-500", "bg-cyan-500",
+    "bg-indigo-500", "bg-pink-500", "bg-teal-500", "bg-orange-500", "bg-fuchsia-500",
+]
+
+function getBaseColor(base: string, baseList: string[]) {
+    const idx = baseList.indexOf(base)
+    return BASE_COLORS[(idx >= 0 ? idx : 0) % BASE_COLORS.length]
 }
 
 function formatCurrency(value: number) {
@@ -236,20 +248,19 @@ export function BookingCalendar() {
                 </Card>
             )}
 
-            {/* Stage Legend */}
+            {/* Base Legend */}
             <div className="flex flex-wrap items-center gap-4 px-1">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Stage:</span>
-                {[
-                    { label: "Current Tenant", color: "bg-emerald-500" },
-                    { label: "Booked / Signed", color: "bg-blue-500" },
-                    { label: "Inquiry / Other", color: "bg-violet-500" },
-                    { label: "Overlap", color: "bg-amber-500" },
-                ].map(item => (
-                    <div key={item.label} className="flex items-center gap-1.5">
-                        <div className={`h-2.5 w-2.5 rounded-sm ${item.color}`} />
-                        <span className="text-[10px] text-muted-foreground font-medium">{item.label}</span>
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Base:</span>
+                {baseList.map((base, i) => (
+                    <div key={base} className="flex items-center gap-1.5">
+                        <div className={`h-2.5 w-2.5 rounded-sm ${BASE_COLOR_DOTS[i % BASE_COLOR_DOTS.length]}`} />
+                        <span className="text-[10px] text-muted-foreground font-medium">{base}</span>
                     </div>
                 ))}
+                <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-sm bg-amber-500" />
+                    <span className="text-[10px] text-muted-foreground font-medium">Overlap</span>
+                </div>
             </div>
 
             {/* Gantt Timeline */}
@@ -297,7 +308,7 @@ export function BookingCalendar() {
                     </div>
                 </CardHeader>
                 <CardContent className="pt-0 px-2 sm:px-6">
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto pt-5">
                         <div className={`relative ${viewWeeks <= 12 ? "min-w-[900px]" : viewWeeks <= 26 ? "min-w-[1200px]" : "min-w-[1800px]"}`}>
                             {/* Month headers */}
                             <div className="flex">
@@ -367,7 +378,7 @@ export function BookingCalendar() {
                                         )
                                         const stageColor = isOverlap
                                             ? { bg: "bg-amber-500/25", border: "border-amber-500/50", text: "text-amber-400" }
-                                            : getStageColor(traveler.stage)
+                                            : getBaseColor(traveler.base, baseList)
                                         const duration = daysBetween(traveler.startDate, traveler.endDate)
 
                                         return (
@@ -412,11 +423,11 @@ export function BookingCalendar() {
                             {/* Today marker */}
                             {todayPercent !== null && (
                                 <div
-                                    className="absolute top-0 bottom-0 pointer-events-none z-10"
+                                    className="absolute -top-5 bottom-0 pointer-events-none z-10"
                                     style={{ left: `calc(9rem + (100% - 9rem) * ${todayPercent / 100})` }}
                                 >
                                     <div className="w-px h-full bg-rose-500/60" />
-                                    <div className="absolute -top-0.5 -left-[11px] bg-rose-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-b-md uppercase tracking-wider">
+                                    <div className="absolute top-0 -left-[11px] bg-rose-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider">
                                         Today
                                     </div>
                                 </div>

@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { getAdminStorageBucket } from "@/lib/firebase-admin";
 import { adminDb } from "@/lib/firebase-admin";
 import { revalidatePath } from "next/cache";
+import { rateLimit } from "@/lib/rate-limit";
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
 const ALLOWED_TYPES = [
@@ -31,6 +32,12 @@ export async function POST(
         const session = await auth();
         if (!session?.user) {
             return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        }
+
+        // Rate limit: 20 uploads per minute per user
+        const { allowed } = rateLimit(`upload:${session.user.id}`, 20);
+        if (!allowed) {
+            return NextResponse.json({ success: false, error: "Upload rate limit exceeded" }, { status: 429 });
         }
 
         const { contactId } = await params;
@@ -83,6 +90,7 @@ export async function POST(
         });
 
         const displayName = nameOverride || file.name || "Uploaded document";
+        const folder = (formData.get("folder") as string)?.trim() || "General";
 
         await adminDb
             .collection("contacts")
@@ -92,6 +100,7 @@ export async function POST(
                 name: displayName,
                 url: signedUrl,
                 status: "LINK",
+                folder,
                 createdAt: new Date(),
                 updatedAt: new Date(),
                 storagePath,

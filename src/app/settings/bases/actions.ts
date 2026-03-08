@@ -3,6 +3,7 @@
 import { adminDb } from "@/lib/firebase-admin";
 import { auth } from "@/auth";
 import { revalidatePath } from "next/cache";
+import { requireAdmin } from "@/lib/auth-guard";
 
 export async function getBases() {
     try {
@@ -34,11 +35,12 @@ export async function getBases() {
 
 export async function createBase(data: { name: string; zipCode: string; periods: { startDate: string; endDate: string; rate: number }[] }) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         const baseRef = adminDb.collection('military_bases').doc();
         const batch = adminDb.batch();
 
@@ -68,11 +70,12 @@ export async function createBase(data: { name: string; zipCode: string; periods:
 
 export async function updateBase(id: string, data: { name: string; zipCode: string; periods: { startDate: string; endDate: string; rate: number }[] }) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         const baseRef = adminDb.collection('military_bases').doc(id);
         const batch = adminDb.batch();
 
@@ -108,11 +111,12 @@ export async function updateBase(id: string, data: { name: string; zipCode: stri
 
 export async function deleteBase(id: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         const baseRef = adminDb.collection('military_bases').doc(id);
         
         // Delete subcollections

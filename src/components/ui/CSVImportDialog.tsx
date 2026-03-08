@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
     Dialog,
@@ -10,6 +10,7 @@ import {
     DialogFooter,
     DialogDescription
 } from "@/components/ui/dialog"
+import { FileDropZone } from "@/components/ui/FileDropZone"
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2 } from "lucide-react"
 import Papa from "papaparse"
 
@@ -34,10 +35,9 @@ export function CSVImportDialog({
     const [isUploading, setIsUploading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [successCount, setSuccessCount] = useState<number | null>(null)
-    const fileInputRef = useRef<HTMLInputElement>(null)
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFile = e.target.files?.[0]
+    const handleFilesSelected = (files: File[]) => {
+        const selectedFile = files[0]
         if (selectedFile) {
             if (selectedFile.type !== "text/csv" && !selectedFile.name.endsWith(".csv")) {
                 setError("Please upload a valid CSV file.")
@@ -114,20 +114,13 @@ export function CSVImportDialog({
 
                 <div className="grid gap-4 py-4">
                     {!file && !successCount && (
-                        <div
-                            onClick={() => fileInputRef.current?.click()}
-                            className="border-2 border-dashed border-muted-foreground/25 rounded-xl p-10 flex flex-col items-center justify-center gap-3 hover:bg-muted/30 transition-colors cursor-pointer"
+                        <FileDropZone
+                            onFilesSelected={handleFilesSelected}
+                            accept=".csv"
                         >
                             <FileText className="h-10 w-10 text-muted-foreground" />
-                            <p className="text-sm font-medium">Click to select CSV file</p>
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                onChange={handleFileChange}
-                                className="hidden"
-                                accept=".csv"
-                            />
-                        </div>
+                            <p className="text-sm font-medium">Drag & drop CSV file here or click to browse</p>
+                        </FileDropZone>
                     )}
 
                     {file && !successCount && (

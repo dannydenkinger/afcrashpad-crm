@@ -1,14 +1,37 @@
 "use client"
 
 import { useState } from "react"
+import { usePathname } from "next/navigation"
 import { Sidebar } from "./Sidebar"
 import { TopNav } from "./TopNav"
 import { cn } from "@/lib/utils"
+import { NotificationPanel } from "@/components/NotificationPanel"
 import { Toaster } from "@/components/ui/sonner"
 import { PushNotificationListener } from "@/components/PushNotificationListener"
+import { ErrorBoundary } from "@/components/ErrorBoundary"
+import { OfflineIndicator } from "@/components/OfflineIndicator"
+import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog"
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
+import { SessionTimeoutWarning } from "@/components/SessionTimeoutWarning"
+import { QuickAddFAB } from "@/components/QuickAddFAB"
+import { OnboardingWizard } from "@/components/OnboardingWizard"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
+
+// Routes that render without the app shell (sidebar, topnav, etc.)
+const STANDALONE_ROUTE_PREFIXES = ["/sign/"]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+    const pathname = usePathname()
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+    const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+
+    useKeyboardShortcuts()
+
+    // Standalone pages render without the shell
+    const isStandalone = STANDALONE_ROUTE_PREFIXES.some(prefix => pathname.startsWith(prefix))
+    if (isStandalone) {
+        return <>{children}</>
+    }
 
     return (
         <>
@@ -23,24 +46,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             />
             {/* Sidebar: drawer on mobile, normal on desktop */}
             <aside
+                aria-label="Main navigation"
                 className={cn(
                     "fixed inset-y-0 left-0 z-50 w-[280px] flex flex-col border-r bg-background transition-transform duration-300 ease-out md:relative md:translate-x-0 md:w-auto",
                     mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
                 )}
             >
-                <Sidebar
-                    onNavigate={() => setMobileMenuOpen(false)}
-                    className="h-full w-full"
-                />
+                <ErrorBoundary section="Navigation">
+                    <Sidebar
+                        onNavigate={() => setMobileMenuOpen(false)}
+                        className="h-full w-full"
+                    />
+                </ErrorBoundary>
             </aside>
             <div className="flex flex-1 flex-col h-full min-h-0 overflow-hidden w-full min-w-0">
-                <TopNav onMenuClick={() => setMobileMenuOpen(true)} />
-                <main className="flex-1 min-h-0 overflow-y-auto bg-muted/20 safe-bottom">
-                    {children}
+                <TopNav onMenuClick={() => setMobileMenuOpen(true)} onNotificationsClick={() => setNotificationPanelOpen(true)} />
+                <main id="main-content" className="flex-1 min-h-0 overflow-y-auto bg-muted/20 safe-bottom" role="main">
+                    <ErrorBoundary section="Page content">
+                        <div className="px-4 sm:px-6 lg:px-8 pt-2">
+                            <Breadcrumbs />
+                        </div>
+                        {children}
+                    </ErrorBoundary>
                 </main>
             </div>
+            <NotificationPanel open={notificationPanelOpen} onClose={() => setNotificationPanelOpen(false)} />
             <Toaster />
             <PushNotificationListener />
+            <OfflineIndicator />
+            <KeyboardShortcutsDialog />
+            <SessionTimeoutWarning />
+            <QuickAddFAB />
+            <OnboardingWizard />
         </>
     )
 }

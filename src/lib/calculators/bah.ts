@@ -61,7 +61,7 @@ export async function calculateBAH(zip: string, payGrade: string, hasDependents:
                 locationDisplay = `${city}, ${state}`;
             }
         } catch (e) {
-            console.warn("Geo lookup failed, using MHA location.");
+            // Geo lookup failed - fall back to MHA location
         }
 
         return {

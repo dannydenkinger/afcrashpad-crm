@@ -7,7 +7,6 @@ import {
     CheckCircle2,
     AlertCircle,
     ChevronDown,
-    MoreHorizontal,
     TrendingUp,
     TrendingDown,
     DollarSign,
@@ -19,6 +18,9 @@ import {
     BarChart3,
     Download,
     Banknote,
+    Plus,
+    Pencil,
+    Trash2,
 } from "lucide-react"
 import {
     XAxis,
@@ -41,12 +43,25 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { getDashboardData, type DashboardData } from "./actions"
-import { toggleTaskComplete } from "@/app/calendar/actions"
-import { RevenueForecast } from "./forecasting/RevenueForecast"
-import { LeaderboardTab } from "./LeaderboardTab"
+import dynamic from "next/dynamic"
+import { getDashboardData } from "./actions"
+import type { DashboardData } from "./types"
+import { toggleTaskComplete, deleteTask } from "@/app/calendar/actions"
+import { CreateTaskDialog } from "@/components/ui/CreateTaskDialog"
 import { exportToPDF } from "@/lib/export"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh"
+import { Skeleton } from "@/components/ui/skeleton"
+import { DateRangePicker, type DateRange } from "./DateRangePicker"
+
+const RevenueForecast = dynamic(
+    () => import("./forecasting/RevenueForecast").then(mod => mod.RevenueForecast),
+    { loading: () => <Skeleton className="h-[350px] w-full rounded-xl" />, ssr: false }
+)
+const LeaderboardTab = dynamic(
+    () => import("./LeaderboardTab").then(mod => mod.LeaderboardTab),
+    { loading: () => <Skeleton className="h-[400px] w-full rounded-xl" />, ssr: false }
+)
 
 function formatCurrency(value: number) {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
@@ -66,10 +81,15 @@ export default function DashboardPage() {
 
     const [forecastPipelineId, setForecastPipelineId] = useState("")
     const [timeframe, setTimeframe] = useState<"1m" | "6m" | "1y">("6m")
+    const [chartView, setChartView] = useState<"forecast" | "pipeline">("forecast")
     const [tasks, setTasks] = useState<DashboardData['tasks']>([])
+    const [dateRange, setDateRange] = useState<DateRange | null>(null)
+    const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false)
+    const [editingTask, setEditingTask] = useState<any>(null)
 
-    useEffect(() => {
-        getDashboardData().then(result => {
+    const fetchDashboard = useCallback(() => {
+        setLoading(true)
+        getDashboardData(dateRange?.startDate, dateRange?.endDate).then(result => {
             if (result.success && result.data) {
                 setData(result.data)
                 setTasks(result.data.tasks)
@@ -82,7 +102,12 @@ export default function DashboardPage() {
             }
             setLoading(false)
         })
-    }, [])
+    }, [dateRange])
+
+    useEffect(() => { fetchDashboard() }, [fetchDashboard])
+
+    // Auto-refresh when push notification arrives or tab regains focus
+    useRealtimeRefresh(fetchDashboard)
 
     const handleToggleTask = useCallback(async (taskId: string, currentStatus: string) => {
         const newCompleted = currentStatus !== "Completed"
@@ -90,6 +115,23 @@ export default function DashboardPage() {
             t.id === taskId ? { ...t, status: newCompleted ? "Completed" : "Pending" } : t
         ))
         await toggleTaskComplete(taskId, newCompleted)
+    }, [])
+
+    const handleDeleteTask = useCallback(async (taskId: string, e: React.MouseEvent) => {
+        e.stopPropagation()
+        setTasks(prev => prev.filter(t => t.id !== taskId))
+        await deleteTask(taskId)
+    }, [])
+
+    const handleEditTask = useCallback((task: any, e: React.MouseEvent) => {
+        e.stopPropagation()
+        setEditingTask({
+            id: task.id,
+            title: task.title,
+            dueDate: task.dueDate,
+            priority: task.priority === "High" ? "HIGH" : task.priority === "Medium" ? "MEDIUM" : "LOW",
+        })
+        setIsTaskDialogOpen(true)
     }, [])
 
     const pendingTasks = useMemo(() => {
@@ -188,15 +230,18 @@ export default function DashboardPage() {
                         </h2>
                         <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Operations overview & real-time analytics.</p>
                     </div>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => exportToPDF("Dashboard Report")}
-                        className="hidden sm:flex"
-                    >
-                        <Download className="mr-2 h-4 w-4" />
-                        Export PDF
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <DateRangePicker value={dateRange} onChange={setDateRange} />
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => exportToPDF("Dashboard Report")}
+                            className="hidden sm:flex"
+                        >
+                            <Download className="mr-2 h-4 w-4" />
+                            Export PDF
+                        </Button>
+                    </div>
                 </div>
 
                 <Tabs defaultValue="overview" className="space-y-6">
@@ -333,87 +378,101 @@ export default function DashboardPage() {
                     </Card>
                 </div>
 
-                {/* Revenue Forecast */}
+                {/* Revenue & Pipeline Chart (combined with view switcher) */}
                 <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
                     <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 space-y-0 p-4 sm:p-6 pb-4">
-                        <div className="space-y-1">
-                            <CardTitle className="text-base font-semibold flex items-center gap-2">
-                                <BarChart3 className="h-4 w-4 text-primary" />
-                                Revenue Forecast
-                            </CardTitle>
-                            <CardDescription className="text-xs">Probability-weighted revenue projections</CardDescription>
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <BarChart3 className="h-4 w-4 text-primary" />
+                            <div className="flex bg-muted/30 p-0.5 rounded-md">
+                                {([
+                                    { key: "forecast", label: "Revenue Forecast" },
+                                    { key: "pipeline", label: "Pipeline Value" },
+                                ] as const).map((tab) => (
+                                    <button
+                                        key={tab.key}
+                                        onClick={() => setChartView(tab.key)}
+                                        className={`px-3 py-2 sm:px-2.5 sm:py-1 text-xs sm:text-[10px] font-bold rounded-sm transition-all min-h-[36px] sm:min-h-0 touch-manipulation ${chartView === tab.key ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                        <PipelineDropdown value={forecastPipelineId} onChange={setForecastPipelineId} />
+                        <div className="flex items-center gap-2">
+                            {chartView === "forecast" && (
+                                <PipelineDropdown value={forecastPipelineId} onChange={setForecastPipelineId} />
+                            )}
+                            {chartView === "pipeline" && (
+                                <>
+                                    <PipelineDropdown value={valuePipelineId} onChange={setValuePipelineId} />
+                                    <div className="h-4 w-[1px] bg-muted/50 mx-1" />
+                                    <div className="flex bg-muted/30 p-0.5 rounded-md">
+                                        {(["1m", "6m", "1y"] as const).map((t) => (
+                                            <button
+                                                key={t}
+                                                onClick={() => setTimeframe(t)}
+                                                className={`px-3 py-2 sm:px-2 sm:py-1 text-xs sm:text-[10px] font-bold rounded-sm transition-all min-h-[36px] sm:min-h-0 touch-manipulation ${timeframe === t ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                                            >
+                                                {t.toUpperCase()}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </CardHeader>
                     <CardContent className="pt-0 px-4 sm:px-6">
-                        {forecastPipelineId && <RevenueForecast pipelineId={forecastPipelineId} />}
+                        {chartView === "forecast" && (
+                            <div>
+                                <p className="text-xs text-muted-foreground mb-3">Probability-weighted revenue projections</p>
+                                {forecastPipelineId && <RevenueForecast pipelineId={forecastPipelineId} />}
+                            </div>
+                        )}
+                        {chartView === "pipeline" && (
+                            <div>
+                                <p className="text-xs text-muted-foreground mb-3">
+                                    {timeframe === "1m" ? "Daily value — last 30 days" : timeframe === "6m" ? "Weekly value — last 6 months" : "Monthly value — last 12 months"}
+                                </p>
+                                <div className="h-[240px] sm:h-[280px] w-full min-h-0">
+                                    {valueData.some(d => d.value > 0) ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={valueData}>
+                                                <defs>
+                                                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                                <XAxis
+                                                    dataKey="name"
+                                                    axisLine={false}
+                                                    tickLine={false}
+                                                    tick={{ fontSize: 10, fill: '#666' }}
+                                                    dy={10}
+                                                    interval={timeframe === "1m" ? 4 : timeframe === "6m" ? 3 : 1}
+                                                />
+                                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#666' }} tickFormatter={(value) => `$${value / 1000}k`} />
+                                                <Tooltip
+                                                    contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
+                                                    itemStyle={{ color: '#10b981', padding: '0' }}
+                                                    formatter={(value: number | undefined) => [`$${(value ?? 0).toLocaleString()}`, 'Value']}
+                                                />
+                                                <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" animationDuration={1500} />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                                            No opportunity data for this period
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
                 <div className="grid gap-4 sm:gap-6 lg:grid-cols-7">
-                    {/* Pipeline Value Chart */}
-                    <Card className="lg:col-span-7 border-none shadow-md bg-card/40 backdrop-blur-md">
-                        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 space-y-0 p-4 sm:p-6 pb-4">
-                            <div className="space-y-1">
-                                <CardTitle className="text-base font-semibold">Pipeline Value</CardTitle>
-                                <CardDescription className="text-xs">
-                                    {timeframe === "1m" ? "Daily value — last 30 days" : timeframe === "6m" ? "Weekly value — last 6 months" : "Monthly value — last 12 months"}
-                                </CardDescription>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <PipelineDropdown value={valuePipelineId} onChange={setValuePipelineId} />
-                                <div className="h-4 w-[1px] bg-muted/50 mx-1" />
-                                <div className="flex bg-muted/30 p-0.5 rounded-md">
-                                    {(["1m", "6m", "1y"] as const).map((t) => (
-                                        <button
-                                            key={t}
-                                            onClick={() => setTimeframe(t)}
-                                            className={`px-3 py-2 sm:px-2 sm:py-1 text-xs sm:text-[10px] font-bold rounded-sm transition-all min-h-[36px] sm:min-h-0 touch-manipulation ${timeframe === t ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                                        >
-                                            {t.toUpperCase()}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="pt-0 px-4 sm:px-6">
-                            <div className="h-[240px] sm:h-[280px] w-full min-h-0">
-                                {valueData.some(d => d.value > 0) ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={valueData}>
-                                            <defs>
-                                                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                                </linearGradient>
-                                            </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                                            <XAxis
-                                                dataKey="name"
-                                                axisLine={false}
-                                                tickLine={false}
-                                                tick={{ fontSize: 10, fill: '#666' }}
-                                                dy={10}
-                                                interval={timeframe === "1m" ? 4 : timeframe === "6m" ? 3 : 1}
-                                            />
-                                            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#666' }} tickFormatter={(value) => `$${value / 1000}k`} />
-                                            <Tooltip
-                                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-                                                itemStyle={{ color: '#10b981', padding: '0' }}
-                                                formatter={(value: number | undefined) => [`$${(value ?? 0).toLocaleString()}`, 'Value']}
-                                            />
-                                            <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" animationDuration={1500} />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                                        No opportunity data for this period
-                                    </div>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
-
                     {/* Opportunity Status Donut (col-3) */}
                     <Card className="lg:col-span-3 border-none shadow-md bg-card/40 backdrop-blur-md">
                         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 space-y-0 p-4 sm:p-6 pb-4">
@@ -569,8 +628,8 @@ export default function DashboardPage() {
                                 <CardTitle className="text-base font-semibold">Priority Tasks</CardTitle>
                                 <CardDescription className="text-xs">Immediate focus items</CardDescription>
                             </div>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreHorizontal className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingTask(null); setIsTaskDialogOpen(true); }}>
+                                <Plus className="h-4 w-4" />
                             </Button>
                         </CardHeader>
                         <CardContent className="px-3 pt-0">
@@ -582,20 +641,38 @@ export default function DashboardPage() {
                                         onClick={() => handleToggleTask(task.id, task.status)}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <div className={`h-2 w-2 rounded-full ${task.priority === "High" ? "bg-rose-500" : task.priority === "Medium" ? "bg-amber-500" : "bg-emerald-500"}`} />
-                                            <span className="text-sm sm:text-xs font-medium truncate max-w-[180px] sm:max-w-[120px]">{task.title}</span>
+                                            <div className={`h-2 w-2 rounded-full shrink-0 ${task.priority === "High" ? "bg-rose-500" : task.priority === "Medium" ? "bg-amber-500" : "bg-emerald-500"}`} />
+                                            <span className="text-sm sm:text-xs font-medium truncate max-w-[140px] sm:max-w-[100px]">{task.title}</span>
                                         </div>
-                                        {task.dueDate && <Badge variant="outline" className="text-xs sm:text-[9px] h-7 sm:h-5">{task.dueDate.split('-').slice(1).join('/')}</Badge>}
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            {task.dueDate && <Badge variant="outline" className="text-xs sm:text-[9px] h-7 sm:h-5">{task.dueDate.split('-').slice(1).join('/')}</Badge>}
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => handleEditTask(task, e)}>
+                                                <Pencil className="h-3 w-3" />
+                                            </Button>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-destructive" onClick={(e) => handleDeleteTask(task.id, e)}>
+                                                <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 )) : (
-                                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                                        No pending tasks
+                                    <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm gap-2">
+                                        <p>No pending tasks</p>
+                                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setEditingTask(null); setIsTaskDialogOpen(true); }}>
+                                            <Plus className="h-3 w-3 mr-1" /> Add Task
+                                        </Button>
                                     </div>
                                 )}
                             </div>
                         </CardContent>
                     </Card>
                 </div>
+
+                <CreateTaskDialog
+                    isOpen={isTaskDialogOpen}
+                    onClose={() => { setIsTaskDialogOpen(false); setEditingTask(null); }}
+                    onSaved={() => fetchDashboard()}
+                    initialData={editingTask}
+                />
 
                     </TabsContent>
                 </Tabs>

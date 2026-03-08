@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Plus, Search, Edit2, Trash2, Home, X, Check } from "lucide-react"
 import { getSpecialAccommodations, createSpecialAccommodation, updateSpecialAccommodation, deleteSpecialAccommodation } from "./actions"
 
@@ -21,6 +22,7 @@ export function SpecialAccommodationsManager() {
     const [editName, setEditName] = useState("")
     const [newName, setNewName] = useState("")
     const [isAdding, setIsAdding] = useState(false)
+    const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
     const fetchItems = async () => {
         setIsLoading(true)
@@ -60,8 +62,8 @@ export function SpecialAccommodationsManager() {
     }
 
     const handleDelete = async (id: string) => {
-        if (!confirm("This will remove this accommodation option. Opportunities using it will keep the value but it won't appear in the selector. Continue?")) return
         const res = await deleteSpecialAccommodation(id)
+        setDeleteTarget(null)
         if (res.success) fetchItems()
     }
 
@@ -141,7 +143,7 @@ export function SpecialAccommodationsManager() {
                                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setEditingId(item.id); setEditName(item.name); }}>
                                             <Edit2 className="h-3 w-3" />
                                         </Button>
-                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-500/10" onClick={() => handleDelete(item.id)}>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-500/10" onClick={() => setDeleteTarget(item.id)}>
                                             <Trash2 className="h-3 w-3" />
                                         </Button>
                                     </div>
@@ -151,6 +153,23 @@ export function SpecialAccommodationsManager() {
                     ))}
                 </div>
             </CardContent>
+
+            <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Remove Accommodation</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will remove this accommodation option. Opportunities using it will keep the value but it won&apos;t appear in the selector. Continue?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteTarget && handleDelete(deleteTarget)}>
+                            Remove
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </Card>
     )
 }

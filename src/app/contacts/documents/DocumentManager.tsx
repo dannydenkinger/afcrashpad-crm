@@ -1,28 +1,47 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { FileDropZone } from "@/components/ui/FileDropZone"
 import {
     FileText,
     Plus,
     Trash2,
     Link as LinkIcon,
     ExternalLink,
+    Eye,
     Loader2,
     Calendar,
     CheckCircle2,
     Clock,
-    Upload
+    Upload,
+    FolderPlus,
+    FolderOpen,
+    MoveRight,
+    LayoutTemplate,
 } from "lucide-react"
-import { getContactDocuments, addDocument, deleteDocument, updateDocumentStatus } from "./actions"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { getContactDocuments, addDocument, deleteDocument, updateDocumentStatus, moveToFolder, createFolder } from "./actions"
+import { DocumentPreview } from "./DocumentPreview"
+import { DocumentTemplateDialog } from "./DocumentTemplateDialog"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 
 interface Document {
-    id: string;
-    name: string;
-    url: string;
-    status: string;
-    createdAt: string;
+    id: string
+    name: string
+    url: string
+    status: string
+    createdAt: string
+    folder?: string
+    generatedContent?: string
+    signatureUrl?: string
 }
 
 export function DocumentManager({ contactId }: { contactId: string }) {
@@ -34,25 +53,44 @@ export function DocumentManager({ contactId }: { contactId: string }) {
     const [isSaving, setIsSaving] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
     const [uploadError, setUploadError] = useState<string | null>(null)
-    const fileInputRef = useRef<HTMLInputElement>(null)
+    const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
+    const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
-    const fetchDocs = async () => {
+    // Folder state
+    const [folders, setFolders] = useState<string[]>(["General"])
+    const [activeFolder, setActiveFolder] = useState<string>("All")
+    const [isCreatingFolder, setIsCreatingFolder] = useState(false)
+    const [newFolderName, setNewFolderName] = useState("")
+
+    // Template dialog state
+    const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+
+    const fetchDocs = useCallback(async () => {
         setIsLoading(true)
         const res = await getContactDocuments(contactId)
-        if (res.success) setDocuments(res.documents as unknown as Document[])
+        if (res.success) {
+            const docs = res.documents as unknown as Document[]
+            setDocuments(docs)
+
+            // Derive folders from documents
+            const folderSet = new Set<string>(["General"])
+            docs.forEach(d => { if (d.folder) folderSet.add(d.folder) })
+            setFolders(Array.from(folderSet).sort())
+        }
         setIsLoading(false)
-    }
+    }, [contactId])
 
     useEffect(() => {
         if (contactId) fetchDocs()
-    }, [contactId])
+    }, [contactId, fetchDocs])
 
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!newName.trim() || !newUrl.trim()) return
 
         setIsSaving(true)
-        const res = await addDocument(contactId, newName.trim(), newUrl.trim())
+        const folder = activeFolder !== "All" ? activeFolder : "General"
+        const res = await addDocument(contactId, newName.trim(), newUrl.trim(), "LINK", folder)
         if (res.success) {
             setNewName("")
             setNewUrl("")
@@ -65,42 +103,59 @@ export function DocumentManager({ contactId }: { contactId: string }) {
     }
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Remove this document?")) return
         const res = await deleteDocument(contactId, id)
+        setDeleteTarget(null)
         if (res.success) fetchDocs()
     }
 
-    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (!file) return
-        e.target.value = ""
+    const handleFilesSelected = async (files: File[]) => {
         setIsUploading(true)
         setUploadError(null)
-        const formData = new FormData()
-        formData.append("file", file)
-        formData.append("name", file.name)
-        try {
-            const res = await fetch(`/api/contacts/${contactId}/documents/upload`, {
-                method: "POST",
-                body: formData,
-            })
-            const data = await res.json()
-            if (!res.ok) {
-                setUploadError(data.error || "Upload failed")
-                return
+        for (const file of files) {
+            const formData = new FormData()
+            formData.append("file", file)
+            formData.append("name", file.name)
+            try {
+                const res = await fetch(`/api/contacts/${contactId}/documents/upload`, {
+                    method: "POST",
+                    body: formData,
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    setUploadError(data.error || `Upload failed for ${file.name}`)
+                    break
+                }
+            } catch {
+                setUploadError(`Upload failed for ${file.name}`)
+                break
             }
-            fetchDocs()
-        } catch {
-            setUploadError("Upload failed")
-        } finally {
-            setIsUploading(false)
         }
+        fetchDocs()
+        setIsUploading(false)
     }
 
     const toggleStatus = async (doc: Document) => {
         const nextStatus = doc.status === "LINK" ? "PENDING" : doc.status === "PENDING" ? "SIGNED" : "LINK"
         const res = await updateDocumentStatus(contactId, doc.id, nextStatus)
         if (res.success) fetchDocs()
+    }
+
+    const handleMoveToFolder = async (docId: string, folderName: string) => {
+        const res = await moveToFolder(contactId, docId, folderName)
+        if (res.success) fetchDocs()
+    }
+
+    const handleCreateFolder = async () => {
+        if (!newFolderName.trim()) return
+        const trimmed = newFolderName.trim()
+        await createFolder(contactId, trimmed)
+        setFolders(prev => {
+            const newSet = new Set(prev)
+            newSet.add(trimmed)
+            return Array.from(newSet).sort()
+        })
+        setNewFolderName("")
+        setIsCreatingFolder(false)
     }
 
     const getStatusIcon = (status: string) => {
@@ -119,38 +174,120 @@ export function DocumentManager({ contactId }: { contactId: string }) {
         }
     }
 
+    // Filter documents by active folder
+    const filteredDocuments = activeFolder === "All"
+        ? documents
+        : documents.filter(d => (d.folder || "General") === activeFolder)
+
+    // Folder counts
+    const folderCounts: Record<string, number> = { All: documents.length }
+    documents.forEach(d => {
+        const f = d.folder || "General"
+        folderCounts[f] = (folderCounts[f] || 0) + 1
+    })
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
-                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Upload & Links</h3>
-                <div className="flex items-center gap-2">
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        className="hidden"
-                        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
-                        onChange={handleFileSelect}
-                    />
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Documents</h3>
+                <div className="flex items-center gap-1">
                     <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        className="h-8 text-xs gap-1.5"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isUploading}
+                        className="h-8 text-xs text-purple-600 hover:text-purple-700 hover:bg-purple-50/50"
+                        onClick={() => setTemplateDialogOpen(true)}
                     >
-                        {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                        {isUploading ? "Uploading..." : "Upload file"}
+                        <LayoutTemplate className="h-3.5 w-3.5 mr-1" />
+                        Templates
                     </Button>
                     <Button
                         variant="ghost"
                         size="sm"
                         className="h-8 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50/50"
-                        onClick={() => { setIsAdding(!isAdding); setUploadError(null); }}
+                        onClick={() => { setIsAdding(!isAdding); setUploadError(null) }}
                     >
                         {isAdding ? "Cancel" : <><Plus className="h-3.5 w-3.5 mr-1" /> Add link</>}
                     </Button>
                 </div>
             </div>
+
+            {/* Folder tabs */}
+            <div className="flex items-center gap-1 flex-wrap">
+                <button
+                    onClick={() => setActiveFolder("All")}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                        activeFolder === "All"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted/40 text-muted-foreground hover:bg-muted/70"
+                    }`}
+                >
+                    All ({folderCounts.All || 0})
+                </button>
+                {folders.map(folder => (
+                    <button
+                        key={folder}
+                        onClick={() => setActiveFolder(folder)}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1 ${
+                            activeFolder === folder
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted/40 text-muted-foreground hover:bg-muted/70"
+                        }`}
+                    >
+                        <FolderOpen className="h-3 w-3" />
+                        {folder} ({folderCounts[folder] || 0})
+                    </button>
+                ))}
+                {isCreatingFolder ? (
+                    <div className="flex items-center gap-1">
+                        <Input
+                            value={newFolderName}
+                            onChange={e => setNewFolderName(e.target.value)}
+                            placeholder="Folder name"
+                            className="h-7 text-xs w-28"
+                            autoFocus
+                            onKeyDown={e => {
+                                if (e.key === "Enter") handleCreateFolder()
+                                if (e.key === "Escape") { setIsCreatingFolder(false); setNewFolderName("") }
+                            }}
+                        />
+                        <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={handleCreateFolder}>
+                            Add
+                        </Button>
+                    </div>
+                ) : (
+                    <button
+                        onClick={() => setIsCreatingFolder(true)}
+                        className="px-2 py-1 rounded-md text-[11px] text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/40 transition-colors"
+                    >
+                        <FolderPlus className="h-3 w-3" />
+                    </button>
+                )}
+            </div>
+
+            <FileDropZone
+                onFilesSelected={handleFilesSelected}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
+                multiple
+                maxSizeMB={25}
+                disabled={isUploading}
+                compact
+            >
+                <div className="flex items-center gap-3">
+                    {isUploading ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                        <Upload className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <div className="text-left">
+                        <p className="text-xs font-medium">
+                            {isUploading ? "Uploading..." : "Drag & drop files here or click to browse"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                            PDF, DOC, XLS, TXT, CSV, images &middot; Max 25MB
+                        </p>
+                    </div>
+                </div>
+            </FileDropZone>
 
             {uploadError && (
                 <p className="text-sm text-destructive">{uploadError}</p>
@@ -189,15 +326,18 @@ export function DocumentManager({ contactId }: { contactId: string }) {
                     <div className="flex items-center justify-center py-8">
                         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/40" />
                     </div>
-                ) : documents.length === 0 ? (
-                    <div className="text-center py-10 px-4 border border-dashed rounded-xl bg-muted/5">
-                        <FileText className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">No documents yet.</p>
-                        <p className="text-xs text-muted-foreground/60 mt-1">Upload a file or add a link (e.g. Google Drive, Dropbox).</p>
+                ) : filteredDocuments.length === 0 ? (
+                    <div className="text-center py-6 px-4">
+                        <p className="text-sm text-muted-foreground">
+                            {activeFolder === "All"
+                                ? "No documents yet."
+                                : `No documents in "${activeFolder}".`}
+                        </p>
+                        <p className="text-xs text-muted-foreground/60 mt-1">Use the drop zone above to upload, or add a link.</p>
                     </div>
                 ) : (
-                    documents.map((doc) => (
-                        <div key={doc.id} className="group relative flex items-center justify-between p-3 rounded-xl border bg-background hover:bg-muted/10 transition-all">
+                    filteredDocuments.map((doc) => (
+                        <div key={doc.id} className="group relative flex items-center justify-between p-3 rounded-xl border bg-background hover:bg-muted/10 transition-all cursor-pointer" onClick={() => setPreviewDoc(doc)}>
                             <div className="flex items-center gap-3 overflow-hidden">
                                 <div className="p-2 rounded-lg bg-muted shrink-0">
                                     <FileText className="h-4 w-4 text-muted-foreground" />
@@ -206,7 +346,7 @@ export function DocumentManager({ contactId }: { contactId: string }) {
                                     <span className="text-sm font-medium truncate pr-4">{doc.name}</span>
                                     <div className="flex items-center gap-2 mt-0.5">
                                         <button
-                                            onClick={() => toggleStatus(doc)}
+                                            onClick={(e) => { e.stopPropagation(); toggleStatus(doc) }}
                                             className="flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-tight hover:opacity-80 transition-opacity"
                                         >
                                             {getStatusIcon(doc.status)}
@@ -217,22 +357,61 @@ export function DocumentManager({ contactId }: { contactId: string }) {
                                                 {getStatusLabel(doc.status)}
                                             </span>
                                         </button>
-                                        <span className="text-[10px] text-muted-foreground/40">•</span>
+                                        <span className="text-[10px] text-muted-foreground/40">&bull;</span>
                                         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                                             <Calendar className="h-2.5 w-2.5" />
                                             {new Date(doc.createdAt).toLocaleDateString()}
                                         </span>
+                                        {doc.folder && doc.folder !== "General" && (
+                                            <>
+                                                <span className="text-[10px] text-muted-foreground/40">&bull;</span>
+                                                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                                    <FolderOpen className="h-2.5 w-2.5" />
+                                                    {doc.folder}
+                                                </span>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                                    <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                                        <ExternalLink className="h-3.5 w-3.5" />
-                                    </a>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setPreviewDoc(doc)}>
+                                    <Eye className="h-3.5 w-3.5" />
                                 </Button>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-500/10" onClick={() => handleDelete(doc.id)}>
+
+                                {/* Move to folder dropdown */}
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                                            <MoveRight className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="min-w-[140px]">
+                                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Move to folder</div>
+                                        <DropdownMenuSeparator />
+                                        {folders.map(folder => (
+                                            <DropdownMenuItem
+                                                key={folder}
+                                                onClick={() => handleMoveToFolder(doc.id, folder)}
+                                                disabled={(doc.folder || "General") === folder}
+                                                className="text-xs"
+                                            >
+                                                <FolderOpen className="h-3 w-3 mr-2" />
+                                                {folder}
+                                            </DropdownMenuItem>
+                                        ))}
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+
+                                {doc.url && (
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                                        <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                                            <ExternalLink className="h-3.5 w-3.5" />
+                                        </a>
+                                    </Button>
+                                )}
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-500/10" onClick={() => setDeleteTarget(doc.id)}>
                                     <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                             </div>
@@ -240,6 +419,38 @@ export function DocumentManager({ contactId }: { contactId: string }) {
                     ))
                 )}
             </div>
+
+            <DocumentPreview
+                document={previewDoc}
+                open={!!previewDoc}
+                onOpenChange={(open) => { if (!open) setPreviewDoc(null) }}
+                contactId={contactId}
+                onRefresh={fetchDocs}
+            />
+
+            <DocumentTemplateDialog
+                open={templateDialogOpen}
+                onOpenChange={setTemplateDialogOpen}
+                contactId={contactId}
+                onDocumentGenerated={fetchDocs}
+            />
+
+            <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Remove Document</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Remove this document? This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteTarget && handleDelete(deleteTarget)}>
+                            Remove
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     )
 }

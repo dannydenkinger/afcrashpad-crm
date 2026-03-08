@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import dynamic from "next/dynamic"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,11 +22,24 @@ import {
     Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
+import { Skeleton } from "@/components/ui/skeleton"
 
-import SiteOverview from "./SiteOverview"
-import KeywordTracker from "./KeywordTracker"
-import CompetitorTracker from "./CompetitorTracker"
-import BacklinkTracker from "./BacklinkTracker"
+const SiteOverview = dynamic(() => import("./SiteOverview"), {
+    loading: () => <Skeleton className="h-[400px] w-full rounded-xl" />,
+    ssr: false,
+})
+const KeywordTracker = dynamic(() => import("./KeywordTracker"), {
+    loading: () => <Skeleton className="h-[400px] w-full rounded-xl" />,
+    ssr: false,
+})
+const CompetitorTracker = dynamic(() => import("./CompetitorTracker"), {
+    loading: () => <Skeleton className="h-[400px] w-full rounded-xl" />,
+    ssr: false,
+})
+const BacklinkTracker = dynamic(() => import("./BacklinkTracker"), {
+    loading: () => <Skeleton className="h-[400px] w-full rounded-xl" />,
+    ssr: false,
+})
 
 import {
     fetchGSCData,

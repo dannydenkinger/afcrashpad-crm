@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { rateLimit, getRateLimitKey } from "@/lib/rate-limit"
 
 export const dynamic = "force-dynamic"
 
@@ -6,6 +7,12 @@ const PAGESPEED_API_KEY = process.env.PAGESPEED_API_KEY
 
 export async function POST(req: NextRequest) {
     try {
+        // Rate limit: 10 requests per minute per IP
+        const { allowed } = rateLimit(getRateLimitKey(req, "pagespeed"), 10)
+        if (!allowed) {
+            return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 })
+        }
+
         const { url, strategy = "mobile" } = await req.json()
 
         if (!url) {

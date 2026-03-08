@@ -1,7 +1,7 @@
 "use server"
 
 import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { requireAdmin } from "@/lib/auth-guard"
 
 export async function getAuditLog(filters?: {
     entity?: string
@@ -9,14 +9,11 @@ export async function getAuditLog(filters?: {
     limit?: number
     startAfter?: string
 }) {
-    const session = await auth()
-    if (!session?.user?.email) return { success: false, error: "Unauthorized" }
-
-    // Check role
-    const usersSnap = await adminDb.collection("users").where("email", "==", session.user.email).limit(1).get()
-    if (usersSnap.empty) return { success: false, error: "Unauthorized" }
-    const role = usersSnap.docs[0].data()?.role
-    if (role !== "OWNER" && role !== "ADMIN") return { success: false, error: "Insufficient permissions" }
+    try {
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
     try {
         let query = adminDb.collection("audit_log").orderBy("createdAt", "desc") as FirebaseFirestore.Query

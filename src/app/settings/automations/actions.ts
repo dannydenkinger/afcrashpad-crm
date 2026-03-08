@@ -4,6 +4,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import { auth } from "@/auth";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
+import { requireAdmin } from "@/lib/auth-guard";
 
 // --- Automation Settings ---
 
@@ -53,16 +54,17 @@ export async function updateAutomationSettings(updates: {
     guestCheckOutTemplateId?: string | null;
 }) {
     try {
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
+
+    try {
         const session = await auth();
         if (!session?.user?.email) return { success: false, error: "Unauthorized" };
 
         const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get();
         if (usersSnap.empty) return { success: false, error: "Unauthorized" };
-
-        const role = usersSnap.docs[0].data()?.role;
-        if (role !== "OWNER" && role !== "ADMIN") {
-            return { success: false, error: "Only Owners and Admins can update automation settings." };
-        }
 
         await adminDb.collection('settings').doc('automations').set(
             { ...updates, updatedAt: new Date() },
@@ -114,9 +116,12 @@ export async function getEmailTemplates() {
 
 export async function createEmailTemplate(data: { name: string; subject: string; body: string }) {
     try {
-        const session = await auth();
-        if (!session?.user?.email) return { success: false, error: "Unauthorized" };
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         const ref = await adminDb.collection('email_templates').add({
             name: data.name,
             subject: data.subject,
@@ -135,9 +140,12 @@ export async function createEmailTemplate(data: { name: string; subject: string;
 
 export async function updateEmailTemplate(id: string, data: { name?: string; subject?: string; body?: string }) {
     try {
-        const session = await auth();
-        if (!session?.user?.email) return { success: false, error: "Unauthorized" };
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('email_templates').doc(id).update({
             ...data,
             updatedAt: new Date(),
@@ -178,9 +186,12 @@ export async function getStalenessSettings() {
 
 export async function updateStageSettings(pipelineId: string, stageId: string, updates: { stalenessThresholdDays?: number | null; probability?: number }) {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { success: false, error: "Unauthorized" }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection("pipelines").doc(pipelineId).collection("stages").doc(stageId).update(updates)
         revalidatePath("/settings")
         return { success: true }
@@ -192,9 +203,12 @@ export async function updateStageSettings(pipelineId: string, stageId: string, u
 
 export async function deleteEmailTemplate(id: string) {
     try {
-        const session = await auth();
-        if (!session?.user?.email) return { success: false, error: "Unauthorized" };
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('email_templates').doc(id).delete();
 
         // If this was the active auto-reply template, clear it

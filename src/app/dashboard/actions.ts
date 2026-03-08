@@ -2,76 +2,22 @@
 
 import { adminDb } from "@/lib/firebase-admin"
 import { auth } from "@/auth"
+import type { LeaderboardAgent, LeaderboardData, DashboardData, ActivityItem } from "./types"
 
 const STAGE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4']
 const BASE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4']
-
-export interface LeaderboardAgent {
-    userId: string
-    name: string
-    email: string
-    role: string
-    totalDeals: number
-    bookedDeals: number
-    totalRevenue: number
-    totalProfit: number
-    avgDealValue: number
-    conversionRate: number
-    claimedDeals: number
-    rank: number
-}
-
-export interface LeaderboardData {
-    agents: LeaderboardAgent[]
-    totalAgents: number
-}
-
-export interface DashboardData {
-    pipelines: { id: string; name: string }[]
-    kpi: {
-        activeStayCount: number
-        totalContacts: number
-        conversionRate: number
-        totalPipelineValue: number
-        openInquiries: number
-        monthlyRevenue: number
-        revenueTrend: number | null
-        leadVelocity: number
-        leadVelocityTrend: number | null
-        avgDealValue: number
-        weightedForecast: number
-        totalClosedProfit: number
-        avgProfitPerDeal: number
-    }
-    pipelineData: Record<string, {
-        stageDistribution: { name: string; count: number; value: number; color: string }[]
-        valueOverTime: {
-            "1m": { name: string; value: number }[]
-            "6m": { name: string; value: number }[]
-            "1y": { name: string; value: number }[]
-        }
-        dealsByBase: { name: string; deals: number; color: string }[]
-        totalValue: number
-        totalDeals: number
-    }>
-    sourceAttribution: { source: string; count: number; value: number }[]
-    tasks: {
-        id: string
-        title: string
-        assignee: string
-        dueDate: string
-        priority: string
-        status: string
-    }[]
-}
 
 function formatShortDate(d: Date): string {
     return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-export async function getDashboardData(): Promise<{ success: boolean; data?: DashboardData; error?: string }> {
+export async function getDashboardData(startDate?: string, endDate?: string): Promise<{ success: boolean; data?: DashboardData; error?: string }> {
     const session = await auth()
     if (!session?.user) return { success: false, error: "Not authenticated" }
+
+    // Parse date range filter
+    const rangeStart = startDate ? new Date(startDate + 'T00:00:00') : null
+    const rangeEnd = endDate ? new Date(endDate + 'T23:59:59.999') : null
 
     try {
         const [pipelinesSnap, oppsSnap, contactsSnap, tasksSnap, usersSnap] = await Promise.all([
@@ -132,7 +78,7 @@ export async function getDashboardData(): Promise<{ success: boolean; data?: Das
         }
 
         // Process opportunities
-        const opps = oppsSnap.docs.map(doc => {
+        const allOpps = oppsSnap.docs.map(doc => {
             const d = doc.data()
             const stageInfo = d.pipelineStageId ? stageMap[d.pipelineStageId] : undefined
             return {
@@ -143,8 +89,18 @@ export async function getDashboardData(): Promise<{ success: boolean; data?: Das
                 militaryBase: d.militaryBase || (d.contactId ? contactBaseMap[d.contactId] : null) || null,
                 utmSource: (d.utmSource as string) || null,
                 createdAt: toDate(d.createdAt),
+                estimatedProfit: Number(doc.data().estimatedProfit) || 0,
             }
         })
+
+        // Apply date range filter
+        const opps = (rangeStart || rangeEnd)
+            ? allOpps.filter(o => {
+                if (rangeStart && o.createdAt < rangeStart) return false
+                if (rangeEnd && o.createdAt > rangeEnd) return false
+                return true
+            })
+            : allOpps
 
         // Source attribution from UTM data
         const sourceCounts: Record<string, { count: number; value: number }> = {}
@@ -159,9 +115,19 @@ export async function getDashboardData(): Promise<{ success: boolean; data?: Das
             .sort((a, b) => b.count - a.count)
             .slice(0, 10)
 
+        // Filter contacts by date range if specified
+        const filteredContactDocs = (rangeStart || rangeEnd)
+            ? contactsSnap.docs.filter(doc => {
+                const ca = toDate(doc.data().createdAt)
+                if (rangeStart && ca < rangeStart) return false
+                if (rangeEnd && ca > rangeEnd) return false
+                return true
+            })
+            : contactsSnap.docs
+
         // KPIs
-        const activeStayCount = contactsSnap.docs.filter(doc => doc.data().status === 'Active Stay').length
-        const totalContacts = contactsSnap.size
+        const activeStayCount = filteredContactDocs.filter(doc => doc.data().status === 'Active Stay').length
+        const totalContacts = filteredContactDocs.length
         const totalPipelineValue = opps.reduce((sum, o) => sum + o.value, 0)
         // Open inquiries = opportunities NOT in a closed/booked/lost stage
         const openInquiries = opps.filter(o => !closedStageIds.has(o.stageId)).length
@@ -184,14 +150,15 @@ export async function getDashboardData(): Promise<{ success: boolean; data?: Das
             ? Math.round(((monthlyRevenue - previousMonthRevenue) / previousMonthRevenue) * 1000) / 10
             : null
 
-        // Lead velocity (new contacts last 30 days vs prior 30 days)
+        // Lead velocity (new contacts last 30 days vs prior 30 days, within date range)
         const thirtyDaysAgo = new Date(now2.getTime() - 30 * 86400000)
         const sixtyDaysAgo = new Date(now2.getTime() - 60 * 86400000)
-        const leadVelocity = contactsSnap.docs.filter(doc => {
+        const contactsForVelocity = (rangeStart || rangeEnd) ? filteredContactDocs : contactsSnap.docs
+        const leadVelocity = contactsForVelocity.filter(doc => {
             const ca = toDate(doc.data().createdAt)
             return ca >= thirtyDaysAgo
         }).length
-        const previousLeadVelocity = contactsSnap.docs.filter(doc => {
+        const previousLeadVelocity = contactsForVelocity.filter(doc => {
             const ca = toDate(doc.data().createdAt)
             return ca >= sixtyDaysAgo && ca < thirtyDaysAgo
         }).length
@@ -203,10 +170,10 @@ export async function getDashboardData(): Promise<{ success: boolean; data?: Das
         const bookedOpps = opps.filter(o => bookedStageIds.has(o.stageId))
         const avgDealValue = bookedOpps.length > 0 ? Math.round(bookedOpps.reduce((s, o) => s + o.value, 0) / bookedOpps.length) : 0
 
-        // Closed profit metrics (from reporting)
-        const totalClosedProfit = oppsSnap.docs
-            .filter(doc => bookedStageIds.has(doc.data().pipelineStageId))
-            .reduce((sum, doc) => sum + (Number(doc.data().estimatedProfit) || 0), 0)
+        // Closed profit metrics (from filtered opps)
+        const totalClosedProfit = opps
+            .filter(o => bookedStageIds.has(o.stageId))
+            .reduce((sum, o) => sum + o.estimatedProfit, 0)
         const avgProfitPerDeal = bookedCount > 0 ? Math.round(totalClosedProfit / bookedCount) : 0
 
         // Weighted forecast (open opps * stage probability)
@@ -310,8 +277,18 @@ export async function getDashboardData(): Promise<{ success: boolean; data?: Das
                 dueDate: due && !isNaN(due.getTime()) ? due.toISOString().split('T')[0] : '',
                 priority: d.priority === 'HIGH' ? 'High' : d.priority === 'LOW' ? 'Low' : 'Medium',
                 status: d.completed ? 'Completed' : 'Pending',
+                _createdAt: toDate(d.createdAt || d.dueDate),
             }
-        }).slice(0, 50)
+        })
+        .filter(t => {
+            if (!rangeStart && !rangeEnd) return true
+            const taskDate = t._createdAt
+            if (rangeStart && taskDate < rangeStart) return false
+            if (rangeEnd && taskDate > rangeEnd) return false
+            return true
+        })
+        .map(({ _createdAt, ...rest }) => rest)
+        .slice(0, 50)
 
         return {
             success: true,
@@ -333,6 +310,139 @@ export async function getDashboardData(): Promise<{ success: boolean; data?: Das
     } catch (error) {
         console.error("Dashboard data error:", error)
         return { success: false, error: "Failed to fetch dashboard data" }
+    }
+}
+
+// ── Activity Feed ─────────────────────────────────────────────────────────────
+
+export async function getRecentActivity(): Promise<{ success: boolean; data?: ActivityItem[]; error?: string }> {
+    const session = await auth()
+    if (!session?.user) return { success: false, error: "Not authenticated" }
+
+    try {
+        const activities: ActivityItem[] = []
+
+        // Helper to convert Firestore timestamps to Date
+        const toDate = (v: unknown): Date => {
+            if (v && typeof v === 'object' && 'toDate' in v && typeof (v as any).toDate === 'function') return (v as any).toDate()
+            if (v instanceof Date) return v
+            if (typeof v === 'string') return new Date(v)
+            if (v && typeof v === 'object' && '_seconds' in v && typeof (v as any)._seconds === 'number') return new Date((v as any)._seconds * 1000)
+            return new Date()
+        }
+
+        // Build stage name lookup
+        const pipelinesSnap = await adminDb.collection('pipelines').get()
+        const stageNameMap: Record<string, string> = {}
+        for (const pDoc of pipelinesSnap.docs) {
+            const stagesSnap = await pDoc.ref.collection('stages').get()
+            for (const sDoc of stagesSnap.docs) {
+                stageNameMap[sDoc.id] = sDoc.data().name || 'Unknown Stage'
+            }
+        }
+
+        // 1. Recent deal stage changes (opportunities with stageHistory, sorted by latest entry)
+        const oppsSnap = await adminDb.collection('opportunities')
+            .orderBy('updatedAt', 'desc')
+            .limit(30)
+            .get()
+
+        for (const doc of oppsSnap.docs) {
+            const d = doc.data()
+            const history = Array.isArray(d.stageHistory) ? d.stageHistory : []
+            if (history.length > 0) {
+                const lastEntry = history[history.length - 1]
+                const stageName = stageNameMap[lastEntry.stageId] || 'Unknown Stage'
+                const enteredAt = toDate(lastEntry.enteredAt)
+                const dealName = d.dealName || d.name || d.email || 'Unnamed Deal'
+                activities.push({
+                    id: `deal-${doc.id}-${history.length}`,
+                    type: 'deal_stage_change',
+                    description: `${dealName} moved to ${stageName}`,
+                    timestamp: enteredAt.toISOString(),
+                    linkHref: '/pipeline',
+                    meta: stageName,
+                })
+            }
+        }
+
+        // 2. Recent contacts added
+        const contactsSnap = await adminDb.collection('contacts')
+            .orderBy('createdAt', 'desc')
+            .limit(20)
+            .get()
+
+        for (const doc of contactsSnap.docs) {
+            const d = doc.data()
+            const name = d.name || d.email || 'Unknown Contact'
+            const createdAt = toDate(d.createdAt)
+            activities.push({
+                id: `contact-${doc.id}`,
+                type: 'contact_added',
+                description: `${name} was added as a contact`,
+                timestamp: createdAt.toISOString(),
+                linkHref: '/contacts',
+                meta: name,
+            })
+        }
+
+        // 3. Recent tasks completed
+        const tasksSnap = await adminDb.collection('tasks')
+            .where('completed', '==', true)
+            .orderBy('updatedAt', 'desc')
+            .limit(20)
+            .get()
+
+        for (const doc of tasksSnap.docs) {
+            const d = doc.data()
+            const title = d.title || 'Untitled Task'
+            const completedAt = toDate(d.updatedAt || d.createdAt)
+            activities.push({
+                id: `task-${doc.id}`,
+                type: 'task_completed',
+                description: `Task "${title}" was completed`,
+                timestamp: completedAt.toISOString(),
+                linkHref: '/tasks',
+                meta: title,
+            })
+        }
+
+        // 4. Recent communications sent — messages are subcollections on contacts
+        //    We pull the most recent messages from the contacts we already fetched
+        for (const contactDoc of contactsSnap.docs) {
+            const contactName = contactDoc.data().name || contactDoc.data().email || 'Unknown'
+            try {
+                const messagesSnap = await contactDoc.ref.collection('messages')
+                    .orderBy('createdAt', 'desc')
+                    .limit(3)
+                    .get()
+                for (const msgDoc of messagesSnap.docs) {
+                    const m = msgDoc.data()
+                    const sentAt = toDate(m.createdAt)
+                    const direction = m.direction === 'inbound' ? 'received from' : 'sent to'
+                    const channel = m.channel === 'sms' ? 'SMS' : 'Email'
+                    activities.push({
+                        id: `msg-${msgDoc.id}`,
+                        type: 'communication_sent',
+                        description: `${channel} ${direction} ${contactName}`,
+                        timestamp: sentAt.toISOString(),
+                        linkHref: '/communications',
+                        meta: contactName,
+                    })
+                }
+            } catch {
+                // Some contacts may not have messages subcollection
+            }
+        }
+
+        // Sort all activities by timestamp descending and take top 20
+        activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        const top20 = activities.slice(0, 20)
+
+        return { success: true, data: top20 }
+    } catch (error) {
+        console.error("Activity feed error:", error)
+        return { success: false, error: "Failed to fetch activity feed" }
     }
 }
 

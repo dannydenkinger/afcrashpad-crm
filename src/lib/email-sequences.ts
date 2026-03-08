@@ -1,5 +1,5 @@
 import { adminDb } from "@/lib/firebase-admin";
-import { sendEmail } from "@/lib/email";
+import { sendTrackedEmail } from "@/lib/email";
 
 type SequenceTrigger = "new_contact" | "pre_checkin" | "post_checkout";
 
@@ -125,11 +125,17 @@ export async function processScheduledEmails(): Promise<{ sent: number; failed: 
                 const subject = substituteTemplate(template.subject || "", vars);
                 const html = substituteTemplate(template.body || "", vars).replace(/\n/g, "<br>");
 
-                await sendEmail({ to: log.contactEmail, subject, html });
+                const { trackingId } = await sendTrackedEmail({
+                    to: log.contactEmail,
+                    subject,
+                    html,
+                    contactId: log.contactId,
+                });
 
                 await logDoc.ref.update({
                     status: "sent",
                     sentAt: new Date(),
+                    trackingId: trackingId || null,
                 });
                 results.sent++;
             } catch (err: any) {

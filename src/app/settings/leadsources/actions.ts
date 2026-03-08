@@ -2,7 +2,7 @@
 
 import { adminDb } from "@/lib/firebase-admin";
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
+import { requireAdmin } from "@/lib/auth-guard";
 
 export async function getLeadSources() {
     try {
@@ -20,11 +20,12 @@ export async function getLeadSources() {
 
 export async function createLeadSource(name: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         // Check for duplicates
         const existing = await adminDb.collection('lead_sources').where('name', '==', name).limit(1).get();
         if (!existing.empty) {
@@ -46,11 +47,12 @@ export async function createLeadSource(name: string) {
 
 export async function updateLeadSource(id: string, name: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('lead_sources').doc(id).update({
             name,
             updatedAt: new Date()
@@ -65,11 +67,12 @@ export async function updateLeadSource(id: string, name: string) {
 
 export async function deleteLeadSource(id: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('lead_sources').doc(id).delete();
 
         revalidatePath("/settings");

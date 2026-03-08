@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
+import { rateLimit, getRateLimitKey } from "@/lib/rate-limit"
 
 export const dynamic = "force-dynamic"
 
 const SERPER_API_KEY = process.env.SERPER_API_KEY
 
 export async function POST(req: NextRequest) {
+    // Rate limit: 20 requests per minute per IP
+    const { allowed } = rateLimit(getRateLimitKey(req, "serp"), 20)
+    if (!allowed) {
+        return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 })
+    }
+
     if (!SERPER_API_KEY) {
         return NextResponse.json(
             { error: "SERPER_API_KEY not configured" },

@@ -1,7 +1,28 @@
 "use server"
 
+import { z } from "zod";
 import { adminDb } from "@/lib/firebase-admin";
 import { sendEmailToEligibleUsers, sendPushToEligibleUsers } from "@/lib/notification-dispatch";
+
+// ── Zod Schemas ──────────────────────────────────────────────────────────────
+
+const firestoreIdSchema = z.string().min(1).max(128);
+
+const getNotificationsSchema = z.object({
+    limit: z.number().int().min(1).max(200).optional(),
+});
+
+const markAsReadSchema = z.object({ id: firestoreIdSchema });
+
+const createNotificationSchema = z.object({
+    title: z.string().min(1).max(500),
+    message: z.string().max(2000),
+    type: z.string().min(1).max(50),
+    linkUrl: z.string().max(500).optional(),
+    taskId: z.string().optional(),
+    dedupeKey: z.string().max(200).optional(),
+    skipEmail: z.boolean().optional(),
+});
 
 function toISO(val: unknown): string | null {
     if (!val) return null;
@@ -12,6 +33,10 @@ function toISO(val: unknown): string | null {
 }
 
 export async function getNotifications(limit: number = 20) {
+    const parsed = getNotificationsSchema.safeParse({ limit });
+    if (!parsed.success) return { success: false, notifications: [], unreadCount: 0 };
+    limit = parsed.data.limit ?? 20;
+
     try {
         // Single orderBy avoids requiring a Firestore composite index
         const snapshot = await adminDb.collection('notifications')
@@ -53,6 +78,10 @@ export async function getNotifications(limit: number = 20) {
 }
 
 export async function markAsRead(id: string) {
+    const parsed = markAsReadSchema.safeParse({ id });
+    if (!parsed.success) return { success: false };
+    id = parsed.data.id;
+
     try {
         await adminDb.collection('notifications').doc(id).update({
             isRead: true
@@ -90,6 +119,10 @@ export async function createNotification(data: {
     dedupeKey?: string;
     skipEmail?: boolean;
 }) {
+    const parsed = createNotificationSchema.safeParse(data);
+    if (!parsed.success) return { success: false };
+    data = parsed.data;
+
     try {
         // Dedupe check — if a dedupeKey is provided and a notification with the same key
         // already exists, skip creation to prevent duplicate reminders

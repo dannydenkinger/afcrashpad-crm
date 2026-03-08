@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Plus, Search, Edit2, Trash2, Megaphone, X, Check } from "lucide-react"
 import { getLeadSources, createLeadSource, updateLeadSource, deleteLeadSource } from "./actions"
 
@@ -20,6 +21,7 @@ export function LeadSourceManager() {
     const [editName, setEditName] = useState("")
     const [newName, setNewName] = useState("")
     const [isAdding, setIsAdding] = useState(false)
+    const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
     const fetchSources = async () => {
         setIsLoading(true)
@@ -59,8 +61,8 @@ export function LeadSourceManager() {
     }
 
     const handleDelete = async (id: string) => {
-        if (!confirm("This will remove this lead source. Opportunities using it will remain but without a linked source. Continue?")) return
         await deleteLeadSource(id)
+        setDeleteTarget(null)
         fetchSources()
     }
 
@@ -140,7 +142,7 @@ export function LeadSourceManager() {
                                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setEditingId(source.id); setEditName(source.name); }}>
                                             <Edit2 className="h-3 w-3" />
                                         </Button>
-                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-500/10" onClick={() => handleDelete(source.id)}>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-500/10" onClick={() => setDeleteTarget(source.id)}>
                                             <Trash2 className="h-3 w-3" />
                                         </Button>
                                     </div>
@@ -150,6 +152,23 @@ export function LeadSourceManager() {
                     ))}
                 </div>
             </CardContent>
+
+            <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Remove Lead Source</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will remove this lead source. Opportunities using it will remain but without a linked source. Continue?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteTarget && handleDelete(deleteTarget)}>
+                            Remove
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </Card>
     )
 }

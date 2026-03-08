@@ -1,0 +1,3 @@
+{
+  "/api/auth/google-calendar/callback/route": "app/api/auth/google-calendar/callback/route.js"
+}

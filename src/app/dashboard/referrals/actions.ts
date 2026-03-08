@@ -7,67 +7,7 @@ import { logAudit } from "@/lib/audit"
 import { createNotification } from "@/app/notifications/actions"
 import { sendEmail } from "@/lib/email"
 import crypto from "crypto"
-
-/**
- * Referral Workflow:
- *
- * 1. Traveler checks out → post-stay email mentions referral program
- * 2. Traveler says "I'll refer my friend" → agent creates referral (referrer name/email + friend name/email)
- * 3. Friend submits inquiry → system auto-matches by email, or agent manually links
- * 4. Status progression:
- *    - pending:        Referral recorded, friend not yet in system
- *    - contacted:      Friend has been reached out to / submitted inquiry
- *    - booked:         Friend signed lease / in pipeline (auto or manual)
- *    - active_tenant:  Friend moved in → PAYOUT UNLOCKED (auto-detected from pipeline stage)
- *    - paid:           Referrer has been paid out
- *    - lost:           Friend didn't convert
- *
- * Payout only unlocks at "active_tenant" — auto-triggered when the referred
- * friend's opportunity hits "Current Tenant" stage in the pipeline.
- * When unlocked, a payout form email is sent to the referrer to collect payment details.
- */
-
-export type ReferralStatus = "pending" | "contacted" | "booked" | "active_tenant" | "paid" | "lost"
-
-export type PayoutMethod = "zelle" | "venmo" | "paypal" | "check" | null
-
-export interface Referral {
-    id: string
-    referrerName: string
-    referrerEmail: string | null
-    referrerPhone: string | null
-    referrerContactId: string | null
-    referredName: string
-    referredEmail: string | null
-    referredContactId: string | null
-    referredOpportunityId: string | null
-    status: ReferralStatus
-    dealValue: number
-    payoutAmount: number
-    payoutPaidAt: string | null
-    payoutToken: string | null
-    payoutMethod: PayoutMethod
-    payoutDetails: string | null
-    payoutFormSentAt: string | null
-    payoutFormSubmittedAt: string | null
-    notes: string | null
-    createdAt: string
-    convertedAt: string | null
-}
-
-export interface ReferralsData {
-    referrals: Referral[]
-    totalReferrals: number
-    activeTenantsCount: number
-    paidCount: number
-    conversionRate: number
-    totalReferredRevenue: number
-    totalPayoutsEarned: number
-    totalPayoutsPaid: number
-    totalPayoutsPending: number
-    defaultPayoutAmount: number
-    topReferrers: { name: string; email: string | null; count: number; activeCount: number; revenue: number; payoutsEarned: number }[]
-}
+import type { Referral, ReferralStatus, ReferralsData, PayoutMethod } from "./types"
 
 export async function getReferralsData(): Promise<{ success: boolean; data?: ReferralsData; error?: string }> {
     const session = await auth()

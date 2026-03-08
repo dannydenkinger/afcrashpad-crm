@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Trophy, Medal, TrendingUp, DollarSign, Target, Users, ArrowUpDown, Loader2 } from "lucide-react"
-import { getLeaderboardData, type LeaderboardAgent } from "./actions"
+import { getLeaderboardData } from "./actions"
+import type { LeaderboardAgent } from "./types"
 
 type SortKey = "totalRevenue" | "totalProfit" | "bookedDeals" | "conversionRate" | "avgDealValue" | "claimedDeals"
 

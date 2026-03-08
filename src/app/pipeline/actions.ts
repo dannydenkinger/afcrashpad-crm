@@ -1,5 +1,6 @@
 "use server"
 
+import { z } from "zod";
 import { adminDb } from "@/lib/firebase-admin";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
@@ -8,6 +9,143 @@ import { checkStayReminders } from "@/lib/reminders";
 import { logAudit, diffChanges } from "@/lib/audit";
 import { recordCommission } from "@/app/dashboard/commissions/actions";
 import { advanceReferralForStage, checkReferralConversion } from "@/app/dashboard/referrals/actions";
+import { executeStageAutomations } from "@/lib/stage-automations";
+import { softDelete, restoreItem, permanentlyDelete } from "@/lib/soft-delete";
+import { captureError } from "@/lib/error-tracking";
+import { getCurrentUserRole } from "@/app/settings/users/actions";
+
+// ── Zod Schemas ──────────────────────────────────────────────────────────────
+
+const firestoreIdSchema = z.string().min(1).max(128);
+
+const markOpportunitySeenSchema = z.object({
+    id: firestoreIdSchema,
+});
+
+const bulkCreateOpportunitiesSchema = z.object({
+    opportunities: z.array(z.object({
+        name: z.string().max(200).optional(),
+        email: z.string().email().optional().or(z.literal("")),
+        phone: z.string().max(50).optional().or(z.literal("")),
+        base: z.string().max(200).optional().or(z.literal("")),
+        stage: z.string().max(100).optional(),
+        dealName: z.string().max(200).optional(),
+        value: z.union([z.string(), z.number()]).optional(),
+        margin: z.union([z.string(), z.number()]).optional(),
+        priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+    })).min(1).max(500),
+    pipelineId: firestoreIdSchema,
+});
+
+const createPipelineSchema = z.object({
+    name: z.string().min(1).max(200),
+});
+
+const createPipelineStageSchema = z.object({
+    pipelineId: firestoreIdSchema,
+    name: z.string().min(1).max(200),
+    order: z.number().int().min(0),
+});
+
+const updatePipelineStageSchema = z.object({
+    id: firestoreIdSchema,
+    name: z.string().min(1).max(200),
+    order: z.number().int().min(0),
+});
+
+const deletePipelineStageSchema = z.object({ id: firestoreIdSchema });
+const deletePipelineSchema = z.object({ id: firestoreIdSchema });
+
+const createNewDealSchema = z.object({
+    name: z.string().max(200).optional(),
+    email: z.string().email().optional().or(z.literal("")),
+    phone: z.string().max(50).optional().or(z.literal("")),
+    base: z.string().max(200).optional().or(z.literal("")),
+    stage: z.string().max(100).optional(),
+    value: z.union([z.string(), z.number()]).optional(),
+    margin: z.union([z.string(), z.number()]).optional(),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+    startDate: z.string().optional().or(z.literal("")),
+    endDate: z.string().optional().or(z.literal("")),
+    notes: z.string().max(5000).optional().or(z.literal("")),
+    contactId: z.string().optional(),
+    assigneeId: z.string().optional().nullable(),
+    specialAccommodationId: z.string().optional().nullable(),
+});
+
+const updateOpportunitySchema = z.object({
+    pipelineStageId: z.string().optional(),
+    name: z.string().max(200).optional(),
+    email: z.string().email().optional().or(z.literal("")),
+    phone: z.string().max(50).optional().or(z.literal("")),
+    value: z.number().optional(),
+    margin: z.number().optional(),
+    priority: z.string().max(50).optional(),
+    startDate: z.string().optional().or(z.literal("")),
+    endDate: z.string().optional().or(z.literal("")),
+    base: z.string().max(200).optional().or(z.literal("")),
+    notes: z.string().max(5000).optional().nullable(),
+    contactId: z.string().optional(),
+    assigneeId: z.string().optional().nullable(),
+    leadSourceId: z.string().optional().nullable(),
+    tagIds: z.array(z.string()).optional(),
+    specialAccommodationId: z.string().optional().nullable(),
+    blockers: z.array(z.string().max(500)).max(20).optional(),
+    revenueStatus: z.enum(["booked", "collected", "partial"]).optional(),
+    collectedAmount: z.number().min(0).optional(),
+    collectedDate: z.string().optional().or(z.literal("")),
+    paymentStatus: z.enum(["unpaid", "partial", "paid"]).optional(),
+});
+
+const updateBlockersSchema = z.object({
+    id: firestoreIdSchema,
+    blockers: z.array(z.string().max(500)).max(20),
+});
+
+const claimOpportunitySchema = z.object({ id: firestoreIdSchema });
+const deleteOpportunitySchema = z.object({ id: firestoreIdSchema });
+
+const updateRequiredDocsSchema = z.object({
+    opportunityId: firestoreIdSchema,
+    field: z.enum(["lease", "tc", "payment"]),
+    value: z.boolean(),
+});
+
+const moveToLeaseSignedSchema = z.object({ opportunityId: firestoreIdSchema });
+
+// ── Payment / Revenue Recognition Schemas ────────────────────────────────────
+
+const addPaymentSchema = z.object({
+    dealId: firestoreIdSchema,
+    amount: z.number().positive("Amount must be positive"),
+    date: z.string().min(1, "Date is required"),
+    method: z.enum(["check", "ach", "credit_card", "wire", "cash", "other"]),
+    notes: z.string().max(1000).optional().or(z.literal("")),
+});
+
+const getPaymentsSchema = z.object({ dealId: firestoreIdSchema });
+
+const updateExpensesSchema = z.object({
+    dealId: firestoreIdSchema,
+    expenses: z.object({
+        monthlyRent: z.number().min(0),
+        cleaningFee: z.number().min(0),
+        petFee: z.number().min(0),
+        nonrefundableDeposit: z.number().min(0),
+    }),
+});
+
+const updatePaymentStatusSchema = z.object({
+    dealId: firestoreIdSchema,
+    status: z.enum(["unpaid", "partial", "paid"]),
+});
+
+const updateRevenueStatusSchema = z.object({
+    dealId: firestoreIdSchema,
+    revenueStatus: z.enum(["booked", "collected", "partial"]),
+    collectedAmount: z.number().min(0).optional(),
+    collectedDate: z.string().optional().or(z.literal("")),
+});
 
 export async function getPipelines() {
     // Normalize Firestore Timestamp/Date to ISO string (plain-object safe for RSC serialization)
@@ -95,7 +233,7 @@ export async function getPipelines() {
             // Fallback: notes map stays empty, opp.notes will be null
         }
 
-        const allOpps = oppsSnapshot.docs.map(doc => {
+        const allOpps = oppsSnapshot.docs.filter(doc => !doc.data().deletedAt).map(doc => {
             const data = doc.data();
             const contact = data.contactId ? contactsMap[data.contactId] : null;
             const assignee = data.assigneeId ? usersMap[data.assigneeId] : null;
@@ -140,9 +278,23 @@ export async function getPipelines() {
                     tc: data.requiredDocs?.tc ?? false,
                     payment: data.requiredDocs?.payment ?? false,
                 },
+                blockers: Array.isArray(data.blockers) ? data.blockers : [],
+                stageEnteredAt: (() => {
+                    // Derive from stageHistory: last entry's enteredAt
+                    const history = Array.isArray(data.stageHistory) ? data.stageHistory : [];
+                    if (history.length > 0) {
+                        const last = history[history.length - 1];
+                        return toISO(last.enteredAt) || toISO(data.updatedAt);
+                    }
+                    return toISO(data.updatedAt) || toISO(data.createdAt);
+                })(),
                 claimedBy: data.claimedBy || null,
                 claimedByName: data.claimedByName || null,
                 claimedAt: toISO(data.claimedAt),
+                revenueStatus: data.revenueStatus || "booked",
+                collectedAmount: Number(data.collectedAmount) || 0,
+                collectedDate: toDateInput(data.collectedDate) || null,
+                paymentStatus: data.paymentStatus || "unpaid",
                 createdAt: toISO(data.createdAt),
                 updatedAt: toISO(data.updatedAt)
             };
@@ -156,12 +308,15 @@ export async function getPipelines() {
 
         return { success: true, pipelines: pipelinesMap };
     } catch (error) {
-        console.error("Failed to fetch pipelines:", error);
+        captureError(error instanceof Error ? error : new Error(String(error)), { action: "getPipelines" });
         return { success: false, error: "Failed to fetch pipeline data" };
     }
 }
 
 export async function markOpportunitySeen(id: string) {
+    const parsed = markOpportunitySeenSchema.safeParse({ id });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
         const session = await auth();
         if (!session?.user) return { success: false, error: "Unauthorized" };
@@ -184,8 +339,11 @@ export async function markOpportunitySeen(id: string) {
 }
 
 export async function bulkCreateOpportunities(opportunities: any[], pipelineId: string) {
+    const parsed = bulkCreateOpportunitiesSchema.safeParse({ opportunities, pipelineId });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
-        const pipelineRef = adminDb.collection('pipelines').doc(pipelineId);
+        const pipelineRef = adminDb.collection('pipelines').doc(parsed.data.pipelineId);
         const stagesSnapshot = await pipelineRef.collection('stages').get();
         
         const stageMap = new Map();
@@ -246,6 +404,20 @@ export async function bulkCreateOpportunities(opportunities: any[], pipelineId: 
 
         await batch.commit();
 
+        const session = await auth();
+        if (session?.user) {
+            logAudit({
+                userId: (session.user as any).id || "",
+                userEmail: session.user.email || "",
+                userName: session.user.name || "",
+                action: "create",
+                entity: "opportunity",
+                entityId: "bulk_import",
+                entityName: `Bulk import of ${opportunities.length} opportunities`,
+                metadata: { count: opportunities.length, pipelineId: parsed.data.pipelineId },
+            }).catch(() => {});
+        }
+
         revalidatePath("/pipeline");
         return { success: true, count: opportunities.length };
     } catch (error) {
@@ -255,6 +427,9 @@ export async function bulkCreateOpportunities(opportunities: any[], pipelineId: 
 }
 
 export async function createPipeline(name: string) {
+    const parsed = createPipelineSchema.safeParse({ name });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
         const session = await auth();
         if (!session?.user || (session.user as any).role === "AGENT") {
@@ -268,6 +443,16 @@ export async function createPipeline(name: string) {
             updatedAt: new Date()
         });
 
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "create",
+            entity: "pipeline",
+            entityId: pipelineRef.id,
+            entityName: name,
+        }).catch(() => {});
+
         revalidatePath("/pipeline");
         return { success: true, pipeline: { id: pipelineRef.id, name } };
     } catch (error) {
@@ -277,17 +462,31 @@ export async function createPipeline(name: string) {
 }
 
 export async function createPipelineStage(pipelineId: string, name: string, order: number) {
+    const parsed = createPipelineStageSchema.safeParse({ pipelineId, name, order });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
         const session = await auth();
         if (!session?.user || (session.user as any).role === "AGENT") {
             return { success: false, error: "Unauthorized" };
         }
 
-        const stageRef = adminDb.collection('pipelines').doc(pipelineId).collection('stages').doc();
+        const stageRef = adminDb.collection('pipelines').doc(parsed.data.pipelineId).collection('stages').doc();
         await stageRef.set({
             name,
             order
         });
+
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "create",
+            entity: "pipeline_stage",
+            entityId: stageRef.id,
+            entityName: name,
+            metadata: { pipelineId: parsed.data.pipelineId },
+        }).catch(() => {});
 
         revalidatePath("/pipeline");
         return { success: true, stage: { id: stageRef.id, name, order } };
@@ -298,6 +497,9 @@ export async function createPipelineStage(pipelineId: string, name: string, orde
 }
 
 export async function updatePipelineStage(id: string, name: string, order: number) {
+    const parsed = updatePipelineStageSchema.safeParse({ id, name, order });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
         const session = await auth();
         if (!session?.user || (session.user as any).role === "AGENT") {
@@ -314,6 +516,16 @@ export async function updatePipelineStage(id: string, name: string, order: numbe
             }
         }
 
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "update",
+            entity: "pipeline_stage",
+            entityId: id,
+            entityName: name,
+        }).catch(() => {});
+
         revalidatePath("/pipeline");
         return { success: true };
     } catch (error) {
@@ -323,6 +535,9 @@ export async function updatePipelineStage(id: string, name: string, order: numbe
 }
 
 export async function deletePipelineStage(id: string) {
+    const parsed = deletePipelineStageSchema.safeParse({ id });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
         const session = await auth();
         if (!session?.user || (session.user as any).role === "AGENT") {
@@ -331,9 +546,22 @@ export async function deletePipelineStage(id: string) {
 
         const pipelines = await adminDb.collection('pipelines').get();
         for (const pipelineDoc of pipelines.docs) {
-            const stageDoc = await pipelineDoc.ref.collection('stages').doc(id).get();
+            const stageDoc = await pipelineDoc.ref.collection('stages').doc(parsed.data.id).get();
             if (stageDoc.exists) {
+                const stageName = stageDoc.data()?.name || "";
                 await stageDoc.ref.delete();
+
+                logAudit({
+                    userId: (session.user as any).id || "",
+                    userEmail: session.user.email || "",
+                    userName: session.user.name || "",
+                    action: "delete",
+                    entity: "pipeline_stage",
+                    entityId: parsed.data.id,
+                    entityName: stageName,
+                    metadata: { pipelineId: pipelineDoc.id },
+                }).catch(() => {});
+
                 break;
             }
         }
@@ -347,14 +575,19 @@ export async function deletePipelineStage(id: string) {
 }
 
 export async function deletePipeline(id: string) {
+    const parsed = deletePipelineSchema.safeParse({ id });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
         const session = await auth();
         if (!session?.user || (session.user as any).role === "AGENT") {
             return { success: false, error: "Unauthorized" };
         }
 
-        const pipelineRef = adminDb.collection('pipelines').doc(id);
-        
+        const pipelineRef = adminDb.collection('pipelines').doc(parsed.data.id);
+        const pipelineSnap = await pipelineRef.get();
+        const pipelineName = pipelineSnap.data()?.name || "";
+
         // Delete subcollections manually in Firestore
         const stagesSnapshot = await pipelineRef.collection('stages').get();
         const batch = adminDb.batch();
@@ -363,6 +596,16 @@ export async function deletePipeline(id: string) {
         });
         batch.delete(pipelineRef);
         await batch.commit();
+
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "delete",
+            entity: "pipeline",
+            entityId: parsed.data.id,
+            entityName: pipelineName,
+        }).catch(() => {});
 
         revalidatePath("/pipeline");
         return { success: true };
@@ -373,6 +616,14 @@ export async function deletePipeline(id: string) {
 }
 
 export async function createNewDeal(data: any, pipelineId?: string) {
+    const parsed = createNewDealSchema.safeParse(data);
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+    if (pipelineId !== undefined) {
+        const pidParsed = firestoreIdSchema.safeParse(pipelineId);
+        if (!pidParsed.success) return { success: false, error: "Invalid pipeline ID" };
+    }
+    data = parsed.data;
+
     try {
         const session = await auth();
         if (!session?.user) return { success: false, error: "Unauthorized" };
@@ -509,19 +760,41 @@ export async function updateOpportunity(id: string, data: {
     startDate?: string;
     endDate?: string;
     base?: string;
-    notes?: string;
+    notes?: string | null;
     contactId?: string;
     assigneeId?: string | null;
     leadSourceId?: string | null;
     tagIds?: string[];
     specialAccommodationId?: string | null;
+    blockers?: string[];
+    revenueStatus?: "booked" | "collected" | "partial";
+    collectedAmount?: number;
+    collectedDate?: string;
+    paymentStatus?: "unpaid" | "partial" | "paid";
 }) {
-    console.log("SERVER ACTION: updateOpportunity called with id", id, data);
+    const idParsed = firestoreIdSchema.safeParse(id);
+    if (!idParsed.success) return { success: false, error: "Invalid opportunity id" };
+    const dataParsed = updateOpportunitySchema.safeParse(data);
+    if (!dataParsed.success) return { success: false, error: "Invalid input" };
+    data = dataParsed.data;
+
     try {
         const oppId = id && String(id).trim();
         if (!oppId) {
             return { success: false, error: "Invalid opportunity id" };
         }
+        const session = await auth();
+        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const currentUserId = (session.user as any).id;
+
+        // Only admins/owners can assign deals to other users
+        if (data.assigneeId !== undefined && data.assigneeId !== null && data.assigneeId !== currentUserId) {
+            const role = await getCurrentUserRole();
+            if (role !== "ADMIN" && role !== "OWNER") {
+                return { success: false, error: "Only admins and owners can assign deals to other users" };
+            }
+        }
+
         const updateData: Record<string, unknown> = { updatedAt: new Date() };
 
         if (data.pipelineStageId !== undefined) {
@@ -538,6 +811,12 @@ export async function updateOpportunity(id: string, data: {
         if (data.startDate !== undefined) updateData.stayStartDate = data.startDate && String(data.startDate).trim() ? new Date(data.startDate).toISOString() : null;
         if (data.endDate !== undefined) updateData.stayEndDate = data.endDate && String(data.endDate).trim() ? new Date(data.endDate).toISOString() : null;
         if (data.notes !== undefined) updateData.notes = data.notes != null ? String(data.notes) : null;
+
+        if (data.blockers !== undefined) updateData.blockers = data.blockers;
+        if (data.revenueStatus !== undefined) updateData.revenueStatus = data.revenueStatus;
+        if (data.collectedAmount !== undefined) updateData.collectedAmount = data.collectedAmount;
+        if (data.collectedDate !== undefined) updateData.collectedDate = data.collectedDate && String(data.collectedDate).trim() ? new Date(data.collectedDate).toISOString() : null;
+        if (data.paymentStatus !== undefined) updateData.paymentStatus = data.paymentStatus;
 
         if (data.tagIds !== undefined) {
             updateData.tags = await Promise.all(data.tagIds.map(async (tagId) => {
@@ -592,10 +871,15 @@ export async function updateOpportunity(id: string, data: {
                     }
                 }
             } catch { /* ignore commission/referral errors */ }
+
+            // Execute stage automation rules
+            try {
+                const automationUserId = currentUserId || beforeData.claimedBy || beforeData.assigneeId || "";
+                executeStageAutomations(oppId, data.pipelineStageId, automationUserId).catch(() => {});
+            } catch { /* ignore stage automation errors */ }
         }
 
         // Audit log
-        const session = await auth();
         if (session?.user) {
             const auditFields = ["pipelineStageId", "opportunityValue", "estimatedProfit", "priority", "assigneeId", "militaryBase", "stayStartDate", "stayEndDate", "notes"];
             const changes = diffChanges(beforeData, updateData, auditFields);
@@ -649,7 +933,43 @@ export async function updateOpportunity(id: string, data: {
     }
 }
 
+export async function updateBlockers(id: string, blockers: string[]) {
+    const parsed = updateBlockersSchema.safeParse({ id, blockers });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const session = await auth();
+        if (!session?.user) return { success: false, error: "Not authenticated" };
+
+        const docRef = adminDb.collection('opportunities').doc(id);
+        const snap = await docRef.get();
+        if (!snap.exists) return { success: false, error: "Opportunity not found" };
+
+        await docRef.update({ blockers, updatedAt: new Date() });
+
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "update",
+            entity: "opportunity",
+            entityId: id,
+            entityName: snap.data()?.name || "",
+            metadata: { field: "blockers", blockers },
+        }).catch(() => {});
+
+        revalidatePath("/pipeline");
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to update blockers:", error);
+        return { success: false, error: "Failed to update blockers" };
+    }
+}
+
 export async function claimOpportunity(id: string) {
+    const parsed = claimOpportunitySchema.safeParse({ id });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
         const session = await auth();
         if (!session?.user) return { success: false, error: "Not authenticated" };
@@ -701,6 +1021,9 @@ export async function claimOpportunity(id: string) {
 }
 
 export async function deleteOpportunity(id: string) {
+    const parsed = deleteOpportunitySchema.safeParse({ id });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
         const session = await auth();
         if (!session?.user || (session.user as any).role === "AGENT") {
@@ -726,6 +1049,56 @@ export async function deleteOpportunity(id: string) {
     } catch (error: any) {
         console.error("Failed to delete opportunity:", error);
         return { success: false, error: error.message || "Failed to delete opportunity" };
+    }
+}
+
+export async function softDeleteOpportunity(id: string) {
+    const parsed = deleteOpportunitySchema.safeParse({ id });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const session = await auth();
+        if (!session?.user || (session.user as any).role === "AGENT") {
+            throw new Error("Unauthorized");
+        }
+
+        const userId = (session.user as any).id || "";
+        const res = await softDelete('opportunities', id, userId);
+        if (!res.success) return res;
+
+        revalidatePath("/pipeline");
+        return { success: true };
+    } catch (error: any) {
+        console.error("Failed to soft-delete opportunity:", error);
+        return { success: false, error: error.message || "Failed to delete opportunity" };
+    }
+}
+
+export async function restoreOpportunity(id: string) {
+    const parsed = deleteOpportunitySchema.safeParse({ id });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const res = await restoreItem('opportunities', id);
+        if (!res.success) return res;
+
+        revalidatePath("/pipeline");
+        return { success: true };
+    } catch (error: any) {
+        console.error("Failed to restore opportunity:", error);
+        return { success: false, error: error.message || "Failed to restore opportunity" };
+    }
+}
+
+export async function permanentlyDeleteOpportunity(id: string) {
+    const parsed = deleteOpportunitySchema.safeParse({ id });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        return await deleteOpportunity(id);
+    } catch (error: any) {
+        console.error("Failed to permanently delete opportunity:", error);
+        return { success: false, error: error.message || "Failed to permanently delete opportunity" };
     }
 }
 
@@ -760,8 +1133,11 @@ export async function getUsers() {
 }
 
 export async function updateRequiredDocs(opportunityId: string, field: "lease" | "tc" | "payment", value: boolean) {
+    const parsed = updateRequiredDocsSchema.safeParse({ opportunityId, field, value });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
-        await adminDb.collection('opportunities').doc(opportunityId).update({
+        await adminDb.collection('opportunities').doc(parsed.data.opportunityId).update({
             [`requiredDocs.${field}`]: value,
             updatedAt: new Date()
         });
@@ -774,9 +1150,12 @@ export async function updateRequiredDocs(opportunityId: string, field: "lease" |
 }
 
 export async function moveToLeaseSigned(opportunityId: string) {
+    const parsed = moveToLeaseSignedSchema.safeParse({ opportunityId });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
     try {
         // Find the opportunity to get its pipeline
-        const oppDoc = await adminDb.collection('opportunities').doc(opportunityId).get();
+        const oppDoc = await adminDb.collection('opportunities').doc(parsed.data.opportunityId).get();
         if (!oppDoc.exists) return { success: false, error: "Opportunity not found" };
 
         const oppData = oppDoc.data()!;
@@ -805,6 +1184,13 @@ export async function moveToLeaseSigned(opportunityId: string) {
             stageHistory: history,
             updatedAt: new Date()
         });
+
+        // Execute stage automation rules for Lease Signed
+        try {
+            const session = await auth();
+            const userId = (session?.user as any)?.id || oppData.claimedBy || oppData.assigneeId || "";
+            executeStageAutomations(opportunityId, leaseSignedStageId, userId).catch(() => {});
+        } catch { /* ignore stage automation errors */ }
 
         revalidatePath("/pipeline");
         return { success: true };
@@ -905,5 +1291,388 @@ export async function runStayReminders() {
     } catch (error) {
         console.error("Failed to run stay reminders:", error);
         return { success: false };
+    }
+}
+
+// ── Bulk Actions ────────────────────────────────────────────────────────────
+
+const bulkDealIdsSchema = z.array(firestoreIdSchema).min(1).max(200);
+
+export async function bulkDeleteDeals(dealIds: string[]) {
+    const parsed = bulkDealIdsSchema.safeParse(dealIds);
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const session = await auth();
+        if (!session?.user || (session.user as any).role === "AGENT") {
+            throw new Error("Unauthorized");
+        }
+
+        const batch = adminDb.batch();
+        for (const id of parsed.data) {
+            batch.delete(adminDb.collection('opportunities').doc(id));
+        }
+        await batch.commit();
+
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "bulk_delete",
+            entity: "opportunity",
+            entityId: parsed.data.join(","),
+            entityName: `${parsed.data.length} opportunities`,
+        }).catch(() => {});
+
+        revalidatePath("/pipeline");
+        return { success: true, count: parsed.data.length };
+    } catch (error: any) {
+        console.error("Failed to bulk delete deals:", error);
+        return { success: false, error: error.message || "Failed to bulk delete deals" };
+    }
+}
+
+export async function bulkMoveDeals(dealIds: string[], stageId: string) {
+    const idsParsed = bulkDealIdsSchema.safeParse(dealIds);
+    const stageParsed = firestoreIdSchema.safeParse(stageId);
+    if (!idsParsed.success || !stageParsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const session = await auth();
+        if (!session?.user) throw new Error("Unauthorized");
+
+        const batch = adminDb.batch();
+        for (const id of idsParsed.data) {
+            const docRef = adminDb.collection('opportunities').doc(id);
+            batch.update(docRef, {
+                pipelineStageId: stageParsed.data,
+                updatedAt: new Date(),
+            });
+        }
+        await batch.commit();
+
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "bulk_move",
+            entity: "opportunity",
+            entityId: idsParsed.data.join(","),
+            entityName: `${idsParsed.data.length} opportunities moved to stage ${stageParsed.data}`,
+        }).catch(() => {});
+
+        revalidatePath("/pipeline");
+        return { success: true, count: idsParsed.data.length };
+    } catch (error: any) {
+        console.error("Failed to bulk move deals:", error);
+        return { success: false, error: error.message || "Failed to bulk move deals" };
+    }
+}
+
+// ── Payment Tracking Actions ─────────────────────────────────────────────────
+
+export async function addPayment(dealId: string, amount: number, date: string, method: string, notes?: string) {
+    const parsed = addPaymentSchema.safeParse({ dealId, amount, date, method, notes });
+    if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message || "Invalid input" };
+
+    try {
+        const session = await auth();
+        if (!session?.user) return { success: false, error: "Unauthorized" };
+
+        const paymentRef = adminDb.collection('opportunities').doc(parsed.data.dealId).collection('payments').doc();
+        await paymentRef.set({
+            amount: parsed.data.amount,
+            date: parsed.data.date,
+            method: parsed.data.method,
+            notes: parsed.data.notes || "",
+            recordedBy: session.user.name || session.user.email || "Unknown",
+            createdAt: new Date(),
+        });
+
+        // Recalculate payment status based on total payments vs deal value
+        const oppDoc = await adminDb.collection('opportunities').doc(parsed.data.dealId).get();
+        const oppData = oppDoc.data();
+        const dealValue = Number(oppData?.opportunityValue) || 0;
+
+        const paymentsSnap = await adminDb.collection('opportunities').doc(parsed.data.dealId).collection('payments').get();
+        let totalPaid = 0;
+        paymentsSnap.docs.forEach(doc => { totalPaid += Number(doc.data().amount) || 0; });
+
+        let paymentStatus: "unpaid" | "partial" | "paid" = "unpaid";
+        let revenueStatus: "booked" | "partial" | "collected" = "booked";
+        if (totalPaid > 0 && totalPaid < dealValue) {
+            paymentStatus = "partial";
+            revenueStatus = "partial";
+        } else if (totalPaid >= dealValue && dealValue > 0) {
+            paymentStatus = "paid";
+            revenueStatus = "collected";
+        }
+
+        await adminDb.collection('opportunities').doc(parsed.data.dealId).update({
+            paymentStatus,
+            revenueStatus,
+            collectedAmount: totalPaid,
+            collectedDate: paymentStatus === "paid" ? new Date().toISOString() : null,
+            updatedAt: new Date(),
+        });
+
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "create",
+            entity: "payment",
+            entityId: paymentRef.id,
+            entityName: `Payment of $${parsed.data.amount.toFixed(2)} on deal ${parsed.data.dealId}`,
+            metadata: { dealId: parsed.data.dealId, amount: parsed.data.amount, method: parsed.data.method },
+        }).catch(() => {});
+
+        revalidatePath("/pipeline");
+        revalidatePath("/finance");
+        return { success: true, paymentId: paymentRef.id, totalPaid, paymentStatus, revenueStatus };
+    } catch (error) {
+        console.error("Failed to add payment:", error);
+        return { success: false, error: "Failed to record payment" };
+    }
+}
+
+export async function getPayments(dealId: string) {
+    const parsed = getPaymentsSchema.safeParse({ dealId });
+    if (!parsed.success) return { success: false, error: "Invalid input", payments: [] };
+
+    try {
+        const session = await auth();
+        if (!session?.user) return { success: false, error: "Unauthorized", payments: [] };
+
+        const paymentsSnap = await adminDb
+            .collection('opportunities')
+            .doc(parsed.data.dealId)
+            .collection('payments')
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        const payments = paymentsSnap.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                amount: Number(data.amount) || 0,
+                date: data.date || "",
+                method: data.method || "other",
+                notes: data.notes || "",
+                recordedBy: data.recordedBy || "Unknown",
+                createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            };
+        });
+
+        return { success: true, payments };
+    } catch (error) {
+        console.error("Failed to get payments:", error);
+        return { success: false, error: "Failed to fetch payments", payments: [] };
+    }
+}
+
+export async function updatePaymentStatus(dealId: string, status: "unpaid" | "partial" | "paid") {
+    const parsed = updatePaymentStatusSchema.safeParse({ dealId, status });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const session = await auth();
+        if (!session?.user) return { success: false, error: "Unauthorized" };
+
+        await adminDb.collection('opportunities').doc(parsed.data.dealId).update({
+            paymentStatus: parsed.data.status,
+            updatedAt: new Date(),
+        });
+
+        revalidatePath("/pipeline");
+        revalidatePath("/finance");
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to update payment status:", error);
+        return { success: false, error: "Failed to update payment status" };
+    }
+}
+
+export async function updateRevenueStatus(dealId: string, revenueStatus: "booked" | "collected" | "partial", collectedAmount?: number, collectedDate?: string) {
+    const parsed = updateRevenueStatusSchema.safeParse({ dealId, revenueStatus, collectedAmount, collectedDate });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const session = await auth();
+        if (!session?.user) return { success: false, error: "Unauthorized" };
+
+        const updateData: Record<string, unknown> = {
+            revenueStatus: parsed.data.revenueStatus,
+            updatedAt: new Date(),
+        };
+        if (parsed.data.collectedAmount !== undefined) {
+            updateData.collectedAmount = parsed.data.collectedAmount;
+        }
+        if (parsed.data.collectedDate) {
+            updateData.collectedDate = new Date(parsed.data.collectedDate).toISOString();
+        }
+        if (parsed.data.revenueStatus === "collected") {
+            updateData.paymentStatus = "paid";
+            if (!parsed.data.collectedDate) {
+                updateData.collectedDate = new Date().toISOString();
+            }
+        }
+
+        await adminDb.collection('opportunities').doc(parsed.data.dealId).update(updateData);
+
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "update",
+            entity: "opportunity",
+            entityId: parsed.data.dealId,
+            entityName: `Revenue status updated to ${parsed.data.revenueStatus}`,
+        }).catch(() => {});
+
+        revalidatePath("/pipeline");
+        revalidatePath("/finance");
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to update revenue status:", error);
+        return { success: false, error: "Failed to update revenue status" };
+    }
+}
+
+export async function getRevenueData() {
+    try {
+        const session = await auth();
+        if (!session?.user) return { success: false, error: "Unauthorized" };
+
+        const toDateInput = (val: any): string => {
+            if (!val) return "";
+            if (typeof val === "string") return val.split("T")[0];
+            if (val instanceof Date) return val.toISOString().split("T")[0];
+            if (val && typeof val.toDate === "function") return val.toDate().toISOString().split("T")[0];
+            if (typeof val === "object" && typeof val._seconds === "number") {
+                return new Date(val._seconds * 1000).toISOString().split("T")[0];
+            }
+            return "";
+        };
+
+        const oppsSnap = await adminDb.collection('opportunities').get();
+        const deals = oppsSnap.docs
+            .filter(doc => !doc.data().deletedAt)
+            .map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    name: data.name || "Unknown",
+                    value: Number(data.opportunityValue) || 0,
+                    revenueStatus: data.revenueStatus || "booked",
+                    collectedAmount: Number(data.collectedAmount) || 0,
+                    collectedDate: toDateInput(data.collectedDate),
+                    paymentStatus: data.paymentStatus || "unpaid",
+                    stage: data.pipelineStageId || null,
+                };
+            });
+
+        const totalBooked = deals.reduce((sum, d) => sum + d.value, 0);
+        const totalCollected = deals.reduce((sum, d) => sum + d.collectedAmount, 0);
+        const outstanding = totalBooked - totalCollected;
+
+        return {
+            success: true,
+            data: {
+                totalBooked,
+                totalCollected,
+                outstanding,
+                deals,
+            },
+        };
+    } catch (error) {
+        console.error("Failed to get revenue data:", error);
+        return { success: false, error: "Failed to fetch revenue data" };
+    }
+}
+
+export async function bulkAssignDeals(dealIds: string[], userId: string) {
+    const idsParsed = bulkDealIdsSchema.safeParse(dealIds);
+    const userParsed = firestoreIdSchema.safeParse(userId);
+    if (!idsParsed.success || !userParsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const session = await auth();
+        if (!session?.user) throw new Error("Unauthorized");
+
+        // Only admins/owners can bulk assign deals
+        const role = await getCurrentUserRole();
+        if (role !== "ADMIN" && role !== "OWNER") {
+            return { success: false, error: "Only admins and owners can assign deals to other users" };
+        }
+
+        const batch = adminDb.batch();
+        for (const id of idsParsed.data) {
+            const docRef = adminDb.collection('opportunities').doc(id);
+            batch.update(docRef, {
+                assigneeId: userParsed.data,
+                updatedAt: new Date(),
+            });
+        }
+        await batch.commit();
+
+        logAudit({
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "bulk_assign",
+            entity: "opportunity",
+            entityId: idsParsed.data.join(","),
+            entityName: `${idsParsed.data.length} opportunities assigned to ${userParsed.data}`,
+        }).catch(() => {});
+
+        revalidatePath("/pipeline");
+        return { success: true, count: idsParsed.data.length };
+    } catch (error: any) {
+        console.error("Failed to bulk assign deals:", error);
+        return { success: false, error: error.message || "Failed to bulk assign deals" };
+    }
+}
+
+// ── Expenses ────────────────────────────────────────────────────────────────
+
+export async function updateDealExpenses(dealId: string, expenses: { monthlyRent: number; cleaningFee: number; petFee: number; nonrefundableDeposit: number }) {
+    const parsed = updateExpensesSchema.safeParse({ dealId, expenses });
+    if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message || "Invalid input" };
+
+    try {
+        const session = await auth();
+        if (!session?.user) return { success: false, error: "Unauthorized" };
+
+        await adminDb.collection('opportunities').doc(parsed.data.dealId).update({
+            expenses: parsed.data.expenses,
+            updatedAt: new Date(),
+        });
+
+        revalidatePath("/pipeline");
+        return { success: true };
+    } catch (error: any) {
+        console.error("Failed to update deal expenses:", error);
+        return { success: false, error: error.message || "Failed to update expenses" };
+    }
+}
+
+export async function getDealExpenses(dealId: string) {
+    const parsed = firestoreIdSchema.safeParse(dealId);
+    if (!parsed.success) return { success: false, expenses: null };
+
+    try {
+        const session = await auth();
+        if (!session?.user) return { success: false, expenses: null };
+
+        const doc = await adminDb.collection('opportunities').doc(parsed.data).get();
+        const data = doc.data();
+        return {
+            success: true,
+            expenses: data?.expenses || { monthlyRent: 0, cleaningFee: 0, petFee: 0, nonrefundableDeposit: 0 },
+        };
+    } catch (error: any) {
+        console.error("Failed to get deal expenses:", error);
+        return { success: false, expenses: null };
     }
 }

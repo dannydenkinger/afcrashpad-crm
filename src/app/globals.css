@@ -129,6 +129,54 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Focus-visible styles for keyboard navigation */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+
+  /* Skip to content link */
+  .skip-to-content {
+    @apply sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:text-sm focus:font-medium;
+  }
+
+  /* Reduced motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Page transition animation */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-page-enter {
+  animation: page-enter 0.2s ease-out;
+}
+
+/* Responsive table scroll indicator */
+.table-scroll-container {
+  position: relative;
+}
+.table-scroll-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--background));
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.table-scroll-container.has-scroll-right::after {
+  opacity: 1;
 }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -143,6 +191,51 @@
   [class*="overflow-x-auto"],
   [class*="overflow-auto"] {
     -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Print styles - hide app chrome, show only content */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide navigation, sidebar, overlays, and interactive elements */
+  nav,
+  aside,
+  header,
+  [role="navigation"],
+  [data-radix-popper-content-wrapper],
+  .skip-to-content,
+  button,
+  input,
+  select,
+  textarea,
+  [role="tablist"] {
+    display: none !important;
+  }
+
+  /* Ensure printable content is visible and fills the page */
+  [data-print-content] {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 20px !important;
+  }
+
+  /* Remove shadows and decorative borders */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Prevent page breaks inside key sections */
+  .print-section {
+    page-break-inside: avoid;
   }
 }
 

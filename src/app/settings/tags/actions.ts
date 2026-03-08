@@ -3,6 +3,7 @@
 import { adminDb } from "@/lib/firebase-admin";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
+import { requireAdmin } from "@/lib/auth-guard";
 
 export async function getTags() {
     try {
@@ -20,11 +21,12 @@ export async function getTags() {
 
 export async function createTag(name: string, color: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         // Check for duplicates since name should ideally be unique
         const existing = await adminDb.collection('tags').where('name', '==', name).limit(1).get();
         if (!existing.empty) {
@@ -47,11 +49,12 @@ export async function createTag(name: string, color: string) {
 
 export async function updateTag(id: string, name: string, color: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('tags').doc(id).update({
             name,
             color,
@@ -67,11 +70,12 @@ export async function updateTag(id: string, name: string, color: string) {
 
 export async function deleteTag(id: string) {
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
-            return { success: false, error: "Unauthorized" };
-        }
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
+    try {
         await adminDb.collection('tags').doc(id).delete();
 
         revalidatePath("/settings");

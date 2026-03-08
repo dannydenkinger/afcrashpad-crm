@@ -1,9 +1,46 @@
 "use server"
 
+import { z } from "zod"
 import { adminDb } from "@/lib/firebase-admin"
 import { auth } from "@/auth"
 import { revalidatePath } from "next/cache"
 import { FieldValue } from "firebase-admin/firestore"
+import { requireAdmin } from "@/lib/auth-guard"
+import { logAudit } from "@/lib/audit"
+
+// ── Zod Schemas ──────────────────────────────────────────────────────────────
+
+const firestoreIdSchema = z.string().min(1).max(128)
+
+const updateUserRoleSchema = z.object({
+    userId: firestoreIdSchema,
+    newRole: z.enum(["OWNER", "ADMIN", "AGENT"]),
+})
+
+const deleteUserSchema = z.object({ userId: firestoreIdSchema })
+
+const updateProfileSchema = z.object({
+    name: z.string().min(1).max(200),
+    phone: z.string().max(50).or(z.literal("")),
+})
+
+const updateNotificationPreferencesSchema = z.object({
+    prefs: z.record(z.string(), z.boolean()),
+})
+
+const saveFcmTokenSchema = z.object({
+    token: z.string().min(1).max(500),
+})
+
+const removeFcmTokenSchema = z.object({
+    token: z.string().min(1).max(500),
+})
+
+const createUserSchema = z.object({
+    name: z.string().min(1).max(200),
+    email: z.string().email(),
+    role: z.enum(["OWNER", "ADMIN", "AGENT"]),
+})
 
 export async function getCurrentUserRole() {
     const session = await auth()
@@ -22,20 +59,41 @@ export async function getCurrentUserRole() {
 }
 
 export async function updateUserRole(userId: string, newRole: string) {
-    const session = await auth()
-    if (!session?.user?.email) throw new Error("Unauthorized")
+    const parsed = updateUserRoleSchema.safeParse({ userId, newRole })
+    if (!parsed.success) throw new Error("Invalid input")
+    userId = parsed.data.userId
+    newRole = parsed.data.newRole
 
-    const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-    
-    if (usersSnap.empty || usersSnap.docs[0].data()?.role !== "OWNER") {
-        throw new Error("Unauthorized: Only owners can manage roles.")
+    try {
+        await requireAdmin()
+    } catch {
+        throw new Error("Admin access required")
     }
 
     try {
+        const userDoc = await adminDb.collection('users').doc(userId).get()
+        const previousRole = userDoc.data()?.role || ""
+        const targetUserName = userDoc.data()?.name || userDoc.data()?.email || ""
+
         await adminDb.collection('users').doc(userId).update({
             role: newRole,
             updatedAt: new Date()
         })
+
+        const session = await auth()
+        if (session?.user) {
+            logAudit({
+                userId: (session.user as any).id || "",
+                userEmail: session.user.email || "",
+                userName: session.user.name || "",
+                action: "update",
+                entity: "user",
+                entityId: userId,
+                entityName: targetUserName,
+                changes: { role: { from: previousRole, to: newRole } },
+            }).catch(() => {})
+        }
+
         revalidatePath("/settings/users")
         return { success: true }
     } catch (error) {
@@ -45,17 +103,35 @@ export async function updateUserRole(userId: string, newRole: string) {
 }
 
 export async function deleteUser(userId: string) {
-    const session = await auth()
-    if (!session?.user?.email) throw new Error("Unauthorized")
+    const parsed = deleteUserSchema.safeParse({ userId })
+    if (!parsed.success) throw new Error("Invalid input")
+    userId = parsed.data.userId
 
-    const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-
-    if (usersSnap.empty || usersSnap.docs[0].data()?.role !== "OWNER") {
-        throw new Error("Unauthorized: Only owners can manage roles.")
+    try {
+        await requireAdmin()
+    } catch {
+        throw new Error("Admin access required")
     }
 
     try {
+        const userDoc = await adminDb.collection('users').doc(userId).get()
+        const deletedUserName = userDoc.data()?.name || userDoc.data()?.email || ""
+
         await adminDb.collection('users').doc(userId).delete()
+
+        const session = await auth()
+        if (session?.user) {
+            logAudit({
+                userId: (session.user as any).id || "",
+                userEmail: session.user.email || "",
+                userName: session.user.name || "",
+                action: "delete",
+                entity: "user",
+                entityId: userId,
+                entityName: deletedUserName,
+            }).catch(() => {})
+        }
+
         revalidatePath("/settings/users")
         return { success: true }
     } catch (error) {
@@ -65,6 +141,11 @@ export async function deleteUser(userId: string) {
 }
 
 export async function updateProfile(name: string, phone: string) {
+    const parsed = updateProfileSchema.safeParse({ name, phone })
+    if (!parsed.success) throw new Error("Invalid input")
+    name = parsed.data.name
+    phone = parsed.data.phone
+
     const session = await auth()
     if (!session?.user?.email) throw new Error("Unauthorized")
 
@@ -82,6 +163,34 @@ export async function updateProfile(name: string, phone: string) {
     } catch (error) {
         console.error("Error updating profile:", error)
         throw new Error("Failed to update profile")
+    }
+}
+
+export async function getProfileImageUrl(): Promise<string | null> {
+    try {
+        const session = await auth()
+        if (!session?.user?.email) return null
+        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
+        if (usersSnap.empty) return null
+        return usersSnap.docs[0].data().profileImageUrl || null
+    } catch {
+        return null
+    }
+}
+
+export async function getSidebarProfile(): Promise<{ name: string | null; imageUrl: string | null }> {
+    try {
+        const session = await auth()
+        if (!session?.user?.email) return { name: null, imageUrl: null }
+        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
+        if (usersSnap.empty) return { name: null, imageUrl: null }
+        const data = usersSnap.docs[0].data()
+        return {
+            name: data.name || null,
+            imageUrl: data.profileImageUrl || null,
+        }
+    } catch {
+        return { name: null, imageUrl: null }
     }
 }
 
@@ -131,6 +240,10 @@ export async function getNotificationPreferences() {
 }
 
 export async function updateNotificationPreferences(prefs: Record<string, boolean>) {
+    const parsed = updateNotificationPreferencesSchema.safeParse({ prefs })
+    if (!parsed.success) throw new Error("Invalid input")
+    prefs = parsed.data.prefs
+
     const session = await auth()
     if (!session?.user?.email) throw new Error("Unauthorized")
 
@@ -152,6 +265,10 @@ export async function updateNotificationPreferences(prefs: Record<string, boolea
 }
 
 export async function saveFcmToken(token: string) {
+    const parsed = saveFcmTokenSchema.safeParse({ token })
+    if (!parsed.success) throw new Error("Invalid input")
+    token = parsed.data.token
+
     const session = await auth()
     if (!session?.user?.email) throw new Error("Unauthorized")
 
@@ -169,6 +286,10 @@ export async function saveFcmToken(token: string) {
 }
 
 export async function removeFcmToken(token: string) {
+    const parsed = removeFcmTokenSchema.safeParse({ token })
+    if (!parsed.success) throw new Error("Invalid input")
+    token = parsed.data.token
+
     const session = await auth()
     if (!session?.user?.email) throw new Error("Unauthorized")
 
@@ -183,13 +304,14 @@ export async function removeFcmToken(token: string) {
 }
 
 export async function createUser(data: { name: string, email: string, role: string }) {
-    const session = await auth()
-    if (!session?.user?.email) return { success: false, error: "Unauthorized" }
+    const parsed = createUserSchema.safeParse(data)
+    if (!parsed.success) return { success: false, error: "Invalid input" }
+    data = parsed.data
 
-    const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-
-    if (usersSnap.empty || usersSnap.docs[0].data()?.role !== "OWNER") {
-        return { success: false, error: "Unauthorized: Only owners can create users." }
+    try {
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
     }
 
     try {
@@ -206,13 +328,28 @@ export async function createUser(data: { name: string, email: string, role: stri
         // will log in with Google and NextAuth will create the user document with its own ID.
         // For pre-created users, we can just create a document and NextAuth firestore adapter
         // should link it if the email matches.
-        await adminDb.collection('users').add({
+        const newUserRef = await adminDb.collection('users').add({
             name: data.name,
             email: data.email,
             role: data.role,
             createdAt: new Date(),
             updatedAt: new Date()
         })
+
+        const session = await auth()
+        if (session?.user) {
+            logAudit({
+                userId: (session.user as any).id || "",
+                userEmail: session.user.email || "",
+                userName: session.user.name || "",
+                action: "create",
+                entity: "user",
+                entityId: newUserRef.id,
+                entityName: data.name,
+                metadata: { email: data.email, role: data.role },
+            }).catch(() => {})
+        }
+
         revalidatePath("/settings")
         return { success: true }
     } catch (error: any) {

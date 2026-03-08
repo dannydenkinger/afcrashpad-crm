@@ -2,9 +2,11 @@
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { disconnectGoogleCalendar } from "./users/actions"
 import { useState } from "react"
-import { Loader2 } from "lucide-react"
+import { Loader2, CalendarSync, Apple, MessageSquare, CreditCard, ExternalLink, Copy, Check } from "lucide-react"
+import { toast } from "sonner"
 
 export function IntegrationsTab({
     isConnected,
@@ -14,12 +16,12 @@ export function IntegrationsTab({
     icsFeedUrl: string;
 }) {
     const [isDisconnecting, setIsDisconnecting] = useState(false)
+    const [copied, setCopied] = useState(false)
 
     const handleDisconnect = async () => {
         setIsDisconnecting(true)
         try {
             await disconnectGoogleCalendar()
-            // Router refresh is handled by revalidatePath in the server action
         } catch (error) {
             console.error(error)
         } finally {
@@ -27,75 +29,103 @@ export function IntegrationsTab({
         }
     }
 
+    const handleCopy = async () => {
+        await navigator.clipboard.writeText(icsFeedUrl)
+        setCopied(true)
+        toast.success("Feed URL copied to clipboard")
+        setTimeout(() => setCopied(false), 2000)
+    }
+
     return (
-        <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 border rounded-xl bg-card shadow-sm hover:shadow-md transition-all">
-                <div className="flex items-center gap-4">
-                    <div className="text-3xl bg-muted/30 p-2 rounded-xl border border-white/5 shadow-inner">🗓</div>
+        <div className="space-y-3">
+            {/* Google Calendar */}
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-card">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center h-9 w-9 rounded-md bg-muted/50">
+                        <CalendarSync className="h-4.5 w-4.5 text-muted-foreground" />
+                    </div>
                     <div>
-                        <div className="font-bold text-base tracking-tight">Google Calendar</div>
-                        <div className="text-sm text-muted-foreground/80 font-medium">Two-way sync for opportunities and tasks.</div>
+                        <div className="text-sm font-semibold">Google Calendar</div>
+                        <div className="text-xs text-muted-foreground">Two-way sync for opportunities and tasks.</div>
                     </div>
                 </div>
                 {isConnected ? (
-                    <div className="flex items-center gap-3">
-                        <div className="px-3 py-1 bg-emerald-500/10 text-emerald-600 rounded-md text-xs font-black uppercase tracking-widest border border-emerald-500/20 shadow-sm flex items-center gap-2">
-                            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 bg-emerald-500/10 gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             Connected
-                        </div>
+                        </Badge>
                         <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
                             onClick={handleDisconnect}
                             disabled={isDisconnecting}
-                            className="h-8 text-[11px] font-bold uppercase tracking-wider text-muted-foreground hover:text-red-500 hover:border-red-500/50 hover:bg-red-500/10 transition-colors"
+                            className="h-8 text-xs text-muted-foreground hover:text-destructive"
                         >
                             {isDisconnecting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Disconnect"}
                         </Button>
                     </div>
                 ) : (
-                    <a href="/api/auth/google-calendar" className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-blue-500/20 active:scale-95">
-                        Connect Account
-                    </a>
+                    <Button asChild size="sm" className="h-8">
+                        <a href="/api/auth/google-calendar">
+                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                            Connect
+                        </a>
+                    </Button>
                 )}
             </div>
 
-            <div className="flex flex-col gap-3 p-5 border rounded-xl bg-card shadow-sm">
-                <div className="flex items-center gap-4">
-                    <div className="text-3xl bg-muted/30 p-2 rounded-xl border border-white/5 shadow-inner">🍎</div>
+            {/* Apple Calendar */}
+            <div className="p-4 border rounded-lg bg-card space-y-3">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center h-9 w-9 rounded-md bg-muted/50">
+                        <Apple className="h-4.5 w-4.5 text-muted-foreground" />
+                    </div>
                     <div>
-                        <div className="font-bold text-base tracking-tight">Apple Calendar (iOS / Mac)</div>
-                        <div className="text-sm text-muted-foreground/80 font-medium">One-way sync. Subscribe to this feed on your Apple device.</div>
+                        <div className="text-sm font-semibold">Apple Calendar</div>
+                        <div className="text-xs text-muted-foreground">One-way sync. Subscribe to this feed on your Apple device.</div>
                     </div>
                 </div>
-                <div className="flex mt-1">
-                    <Input readOnly value={icsFeedUrl} className="font-mono text-[11px] rounded-r-none bg-muted/30 border-r-0 focus-visible:ring-0 shadow-inner" />
-                    <a href={icsFeedUrl} className="flex border border-l-0 rounded-r-lg px-6 items-center bg-muted/50 hover:bg-muted text-xs font-black uppercase tracking-wider transition-all shadow-sm active:scale-95 whitespace-nowrap">
-                        Download .ics
-                    </a>
+                <div className="flex gap-2">
+                    <Input readOnly value={icsFeedUrl} className="font-mono text-xs bg-muted/30 focus-visible:ring-0" />
+                    <Button variant="outline" size="sm" className="h-9 shrink-0 gap-1.5" onClick={handleCopy}>
+                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copied ? "Copied" : "Copy"}
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-9 shrink-0" asChild>
+                        <a href={icsFeedUrl}>
+                            Download
+                        </a>
+                    </Button>
                 </div>
             </div>
 
-            <div className="flex items-center justify-between p-4 border rounded-xl bg-card opacity-50 grayscale cursor-not-allowed">
-                <div className="flex items-center gap-4">
-                    <div className="text-3xl bg-muted/30 p-2 rounded-xl border border-white/5">📱</div>
+            {/* Twilio SMS - Coming Soon */}
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-card opacity-50">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center h-9 w-9 rounded-md bg-muted/50">
+                        <MessageSquare className="h-4.5 w-4.5 text-muted-foreground" />
+                    </div>
                     <div>
-                        <div className="font-bold text-base tracking-tight text-muted-foreground">Twilio SMS</div>
-                        <div className="text-sm text-muted-foreground/60 font-medium">Send automated text updates to contacts.</div>
+                        <div className="text-sm font-semibold text-muted-foreground">Twilio SMS</div>
+                        <div className="text-xs text-muted-foreground/70">Send automated text updates to contacts.</div>
                     </div>
                 </div>
-                <div className="px-3 py-1 bg-muted rounded-md text-[10px] uppercase font-black tracking-widest text-muted-foreground/60 shadow-inner">Coming Soon</div>
+                <Badge variant="secondary" className="text-muted-foreground/60 text-[10px]">Coming Soon</Badge>
             </div>
 
-            <div className="flex items-center justify-between p-4 border rounded-xl bg-card opacity-50 grayscale cursor-not-allowed">
-                <div className="flex items-center gap-4">
-                    <div className="text-3xl bg-muted/30 p-2 rounded-xl border border-white/5">💳</div>
+            {/* Stripe Billing - Coming Soon */}
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-card opacity-50">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center h-9 w-9 rounded-md bg-muted/50">
+                        <CreditCard className="h-4.5 w-4.5 text-muted-foreground" />
+                    </div>
                     <div>
-                        <div className="font-bold text-base tracking-tight text-muted-foreground">Stripe Billing</div>
-                        <div className="text-sm text-muted-foreground/60 font-medium">Collect deposits and invoice payments.</div>
+                        <div className="text-sm font-semibold text-muted-foreground">Stripe Billing</div>
+                        <div className="text-xs text-muted-foreground/70">Collect deposits and invoice payments.</div>
                     </div>
                 </div>
-                <div className="px-3 py-1 bg-muted rounded-md text-[10px] uppercase font-black tracking-widest text-muted-foreground/60 shadow-inner">Coming Soon</div>
+                <Badge variant="secondary" className="text-muted-foreground/60 text-[10px]">Coming Soon</Badge>
             </div>
         </div>
     )

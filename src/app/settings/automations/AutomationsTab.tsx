@@ -27,8 +27,9 @@ import {
     getStalenessSettings,
     updateStageSettings,
 } from "./actions"
-import { autoAdvanceOpportunities } from "@/app/pipeline/actions"
+import { autoAdvanceOpportunities, getUsers } from "@/app/pipeline/actions"
 import { SequenceManager } from "./SequenceManager"
+import { StageAutomations } from "./StageAutomations"
 
 interface EmailTemplate {
     id: string
@@ -83,17 +84,20 @@ export default function AutomationsContent() {
     const [templateForm, setTemplateForm] = useState({ name: "", subject: "", body: "" })
     const [isSaving, setIsSaving] = useState(false)
     const [isAdvancing, setIsAdvancing] = useState(false)
+    const [allUsers, setAllUsers] = useState<{ id: string; name: string; email: string; role: string }[]>([])
 
     useEffect(() => {
         async function load() {
-            const [settingsRes, templatesRes, stalenessRes] = await Promise.all([
+            const [settingsRes, templatesRes, stalenessRes, usersRes] = await Promise.all([
                 getAutomationSettings(),
                 getEmailTemplates(),
                 getStalenessSettings(),
+                getUsers(),
             ])
             if (settingsRes.success && settingsRes.settings) setSettings(settingsRes.settings as AutomationSettings)
             if (templatesRes.success && templatesRes.templates) setTemplates(templatesRes.templates)
             if (stalenessRes.success && stalenessRes.pipelines) setPipelineStages(stalenessRes.pipelines)
+            if (usersRes.success && usersRes.users) setAllUsers(usersRes.users)
             setIsLoading(false)
         }
         load()
@@ -488,6 +492,17 @@ export default function AutomationsContent() {
                     </div>
                 </CardContent>
             </Card>
+
+            {/* Pipeline Stage Automations */}
+            <StageAutomations
+                pipelines={pipelineStages.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    stages: p.stages.map(s => ({ id: s.id, name: s.name })),
+                }))}
+                users={allUsers.map(u => ({ id: u.id, name: u.name, email: u.email }))}
+                templates={templates.map(t => ({ id: t.id, name: t.name }))}
+            />
 
             {/* Email Sequences */}
             <SequenceManager templates={templates.map(t => ({ id: t.id, name: t.name }))} />

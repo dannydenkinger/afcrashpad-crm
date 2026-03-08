@@ -3,6 +3,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CommissionTracker } from "@/app/dashboard/commissions/CommissionTracker"
 import { ReferralTracker } from "@/app/dashboard/referrals/ReferralTracker"
+import { RevenueTracker } from "./RevenueTracker"
 
 export default function FinancePage() {
     return (
@@ -13,7 +14,7 @@ export default function FinancePage() {
                         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
                             Finance
                         </h2>
-                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Track commissions, referral payouts, and agent earnings.</p>
+                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Track commissions, referral payouts, revenue, and agent earnings.</p>
                     </div>
                 </div>
 
@@ -21,6 +22,7 @@ export default function FinancePage() {
                     <TabsList className="bg-muted/30 border border-white/5 flex-wrap h-auto gap-0.5 p-1">
                         <TabsTrigger value="commissions" className="text-xs font-semibold">Commissions</TabsTrigger>
                         <TabsTrigger value="referrals" className="text-xs font-semibold">Referrals</TabsTrigger>
+                        <TabsTrigger value="revenue" className="text-xs font-semibold">Revenue</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="commissions" className="m-0">
@@ -29,6 +31,10 @@ export default function FinancePage() {
 
                     <TabsContent value="referrals" className="m-0">
                         <ReferralTracker />
+                    </TabsContent>
+
+                    <TabsContent value="revenue" className="m-0">
+                        <RevenueTracker />
                     </TabsContent>
                 </Tabs>
             </div>

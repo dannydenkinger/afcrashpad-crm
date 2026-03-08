@@ -1,6 +1,6 @@
 import { adminDb } from "@/lib/firebase-admin"
 
-export type AuditAction = "create" | "update" | "delete" | "export" | "settings_change" | "stage_move" | "claim"
+export type AuditAction = "create" | "update" | "delete" | "export" | "settings_change" | "stage_move" | "claim" | "bulk_delete" | "bulk_move" | "bulk_assign"
 
 export interface AuditEntry {
     userId: string

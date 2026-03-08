@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
+import { rateLimit } from "@/lib/rate-limit"
 
 const GEMINI_MODEL = "gemini-3.1-flash-image-preview"
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
@@ -9,6 +10,12 @@ export async function POST(request: NextRequest) {
         const session = await auth()
         if (!session?.user) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        }
+
+        // Rate limit: 5 image generations per minute per user
+        const { allowed } = rateLimit(`img-gen:${session.user.id}`, 5)
+        if (!allowed) {
+            return NextResponse.json({ error: "Rate limit exceeded. Please wait." }, { status: 429 })
         }
 
         const apiKey = process.env.GOOGLE_GEMINI_API_KEY

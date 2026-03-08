@@ -18,9 +18,8 @@ import {
     createReferral,
     updateReferralStatus,
     sendPayoutFormEmail,
-    type ReferralsData,
-    type ReferralStatus,
 } from "./actions"
+import type { ReferralsData, ReferralStatus } from "./types"
 
 function formatCurrency(value: number) {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
@@ -377,10 +376,10 @@ export function ReferralTracker() {
                 </CardHeader>
                 <CardContent className="pt-0 px-4 sm:px-6 pb-4">
                     {filteredReferrals.length === 0 ? (
-                        <div className="text-center py-12 text-muted-foreground text-sm">
-                            <Share2 className="h-10 w-10 mx-auto mb-3 opacity-20" />
-                            <p>No referrals yet.</p>
-                            <p className="text-xs mt-1">Record referrals when past travelers recommend friends.</p>
+                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                            <Share2 className="h-12 w-12 text-muted-foreground/20 mb-4" />
+                            <p className="text-lg font-medium text-foreground mb-1">No referrals yet</p>
+                            <p className="text-sm text-muted-foreground mb-4 max-w-sm">Record referrals when past travelers recommend friends.</p>
                         </div>
                     ) : (
                         <div className="space-y-3">

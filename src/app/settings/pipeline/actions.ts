@@ -3,15 +3,12 @@
 import { adminDb } from "@/lib/firebase-admin"
 import { auth } from "@/auth"
 import { revalidatePath } from "next/cache"
+import { requireAdmin } from "@/lib/auth-guard"
+import type { PipelinePrioritySettings } from "./types"
 
 const DEFAULT_URGENT_DAYS = 14
 const DEFAULT_SOON_DAYS = 30
 const SETTINGS_DOC_ID = "pipeline"
-
-export type PipelinePrioritySettings = {
-    urgentDays: number
-    soonDays: number
-}
 
 export async function getPipelinePrioritySettings(): Promise<{ success: boolean; settings?: PipelinePrioritySettings }> {
     try {
@@ -34,12 +31,11 @@ export async function getPipelinePrioritySettings(): Promise<{ success: boolean;
 }
 
 export async function updatePipelinePrioritySettings(settings: PipelinePrioritySettings) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Unauthorized" }
-    const usersSnap = await adminDb.collection("users").where("email", "==", session.user.email).limit(1).get()
-    if (usersSnap.empty) return { success: false, error: "Unauthorized" }
-    const dbUser = usersSnap.docs[0].data() as { role?: string }
-    if (dbUser.role !== "OWNER" && dbUser.role !== "ADMIN") return { success: false, error: "Admin access required" }
+    try {
+        await requireAdmin()
+    } catch {
+        return { success: false, error: "Admin access required" }
+    }
 
     const urgentDays = Math.max(0, Math.floor(Number(settings.urgentDays)) || DEFAULT_URGENT_DAYS)
     const soonDays = Math.max(urgentDays, Math.floor(Number(settings.soonDays)) || DEFAULT_SOON_DAYS)

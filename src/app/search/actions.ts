@@ -1,11 +1,7 @@
 "use server"
 
 import { adminDb } from "@/lib/firebase-admin";
-
-export type SearchResult =
-    | { id: string; name: string; email?: string; type: "contact" }
-    | { id: string; name: string; contactId: string; contactName: string; type: "opportunity" }
-    | { id: string; content: string; contactId: string; contactName: string; type: "note" };
+import type { SearchResult } from "./types";
 
 export async function globalSearch(q: string): Promise<{
     contacts: SearchResult[];

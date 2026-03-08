@@ -2,38 +2,7 @@
 
 import { adminDb } from "@/lib/firebase-admin"
 import { auth } from "@/auth"
-
-export interface BookingEntry {
-    id: string
-    contactId: string
-    name: string
-    email: string | null
-    phone: string | null
-    base: string
-    startDate: string
-    endDate: string
-    value: number
-    margin: number
-    stage: string
-    claimedByName: string | null
-    assigneeName: string | null
-}
-
-export interface OverlapGroup {
-    base: string
-    travelers: BookingEntry[]
-    overlapStart: string
-    overlapEnd: string
-    overlapDays: number
-    combinedRevenue: number
-    arbitrageNote: string
-}
-
-export interface BookingsData {
-    bookings: BookingEntry[]
-    overlaps: OverlapGroup[]
-    bases: string[]
-}
+import type { BookingEntry, OverlapGroup, BookingsData } from "./types"
 
 function datesOverlap(s1: string, e1: string, s2: string, e2: string): { start: string; end: string; days: number } | null {
     const start1 = new Date(s1).getTime()

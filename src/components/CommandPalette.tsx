@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useDebounce } from "@/hooks/useDebounce"
 import { useRouter } from "next/navigation"
 import {
     Dialog,
@@ -9,12 +10,14 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Search, User, LayoutGrid, FileText } from "lucide-react"
-import { globalSearch, SearchResult } from "@/app/search/actions"
+import { globalSearch } from "@/app/search/actions"
+import type { SearchResult } from "@/app/search/types"
 
 export function CommandPalette() {
     const router = useRouter()
     const [open, setOpen] = useState(false)
     const [query, setQuery] = useState("")
+    const debouncedQuery = useDebounce(query, 200)
     const [results, setResults] = useState<{ contacts: SearchResult[]; opportunities: SearchResult[]; notes: SearchResult[] }>({ contacts: [], opportunities: [], notes: [] })
     const [loading, setLoading] = useState(false)
     const [selectedIndex, setSelectedIndex] = useState(0)
@@ -25,22 +28,22 @@ export function CommandPalette() {
         ...results.notes.map((r) => r.type === "note" ? { item: r, href: `/contacts?contact=${r.contactId}` } : null).filter(Boolean) as { item: SearchResult; href: string }[],
     ]
 
-    const runSearch = useCallback(async (q: string) => {
-        if (q.length < 2) {
+    useEffect(() => {
+        if (debouncedQuery.length < 2) {
             setResults({ contacts: [], opportunities: [], notes: [] })
             return
         }
+        let cancelled = false
         setLoading(true)
-        const res = await globalSearch(q)
-        setResults(res)
-        setSelectedIndex(0)
-        setLoading(false)
-    }, [])
-
-    useEffect(() => {
-        const t = setTimeout(() => runSearch(query), 200)
-        return () => clearTimeout(t)
-    }, [query, runSearch])
+        globalSearch(debouncedQuery).then((res) => {
+            if (!cancelled) {
+                setResults(res)
+                setSelectedIndex(0)
+                setLoading(false)
+            }
+        })
+        return () => { cancelled = true }
+    }, [debouncedQuery])
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {

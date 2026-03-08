@@ -22,7 +22,6 @@ export interface CalendarEvent {
 
 export async function fetchGoogleEvents(days: number = 30): Promise<CalendarEvent[]> {
     if (!clientEmail || !privateKey) {
-        console.warn("Google credentials missing for Calendar sync.");
         return [];
     }
 
@@ -62,7 +61,6 @@ export async function fetchGoogleEvents(days: number = 30): Promise<CalendarEven
 
 export async function fetchAppleEvents(): Promise<CalendarEvent[]> {
     if (!appleCalendarUrl) {
-        console.warn("Apple Calendar URL missing.");
         return [];
     }
 

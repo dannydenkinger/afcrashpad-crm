@@ -21,6 +21,12 @@ import {
 import { createTask, updateTask } from "@/app/calendar/actions"
 import { getAllContacts } from "@/app/communications/actions"
 
+interface Recurrence {
+    type: "none" | "daily" | "weekly" | "monthly"
+    interval?: number
+    endDate?: string | Date | null
+}
+
 interface TaskData {
     id?: string
     title: string
@@ -29,6 +35,8 @@ interface TaskData {
     priority?: string
     contactId?: string | null
     opportunityId?: string | null
+    recurrence?: Recurrence | null
+    blockedByTaskId?: string | null
 }
 
 interface CreateTaskDialogProps {
@@ -37,14 +45,20 @@ interface CreateTaskDialogProps {
     onSaved: () => void
     initialData?: TaskData | null
     initialContactId?: string | null
+    initialDate?: Date | null
+    availableTasks?: { id: string; title: string }[]
 }
 
-export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initialContactId }: CreateTaskDialogProps) {
+export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initialContactId, initialDate, availableTasks }: CreateTaskDialogProps) {
     const [title, setTitle] = useState("")
     const [description, setDescription] = useState("")
     const [dueDate, setDueDate] = useState("")
     const [priority, setPriority] = useState("MEDIUM")
     const [contactId, setContactId] = useState<string>("")
+    const [blockedByTaskId, setBlockedByTaskId] = useState<string>("")
+    const [recurrenceType, setRecurrenceType] = useState<"none" | "daily" | "weekly" | "monthly">("none")
+    const [recurrenceInterval, setRecurrenceInterval] = useState(1)
+    const [recurrenceEndDate, setRecurrenceEndDate] = useState("")
     const [contacts, setContacts] = useState<{ id: string; name: string; email: string }[]>([])
     const [isLoading, setIsLoading] = useState(false)
 
@@ -65,7 +79,6 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                 if (initialData.dueDate) {
                     try {
                         const dateObj = new Date(initialData.dueDate);
-                        // Convert to local ISO string format (YYYY-MM-DDThh:mm)
                         const tzoffset = dateObj.getTimezoneOffset() * 60000;
                         const localISOTime = new Date(dateObj.getTime() - tzoffset).toISOString().slice(0, 16);
                         setDueDate(localISOTime);
@@ -77,15 +90,47 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                 }
                 setPriority(initialData.priority || "MEDIUM")
                 setContactId(initialData.contactId || initialContactId || "")
+                setBlockedByTaskId(initialData.blockedByTaskId || "")
+                if (initialData.recurrence && initialData.recurrence.type !== "none") {
+                    setRecurrenceType(initialData.recurrence.type as any)
+                    setRecurrenceInterval(initialData.recurrence.interval || 1)
+                    if (initialData.recurrence.endDate) {
+                        try {
+                            const endDateObj = new Date(initialData.recurrence.endDate);
+                            setRecurrenceEndDate(endDateObj.toISOString().slice(0, 10));
+                        } catch { setRecurrenceEndDate("") }
+                    } else {
+                        setRecurrenceEndDate("")
+                    }
+                } else {
+                    setRecurrenceType("none")
+                    setRecurrenceInterval(1)
+                    setRecurrenceEndDate("")
+                }
             } else {
                 setTitle("")
                 setDescription("")
-                setDueDate("")
+                setBlockedByTaskId("")
+                // Auto-fill date from initialDate prop (click-to-add from calendar)
+                if (initialDate) {
+                    try {
+                        const tzoffset = initialDate.getTimezoneOffset() * 60000;
+                        const localISOTime = new Date(initialDate.getTime() - tzoffset).toISOString().slice(0, 16);
+                        setDueDate(localISOTime);
+                    } catch {
+                        setDueDate("")
+                    }
+                } else {
+                    setDueDate("")
+                }
                 setPriority("MEDIUM")
                 setContactId(initialContactId || "")
+                setRecurrenceType("none")
+                setRecurrenceInterval(1)
+                setRecurrenceEndDate("")
             }
         }
-    }, [isOpen, initialData, initialContactId])
+    }, [isOpen, initialData, initialContactId, initialDate])
 
     const handleSave = async () => {
         if (!title.trim()) return
@@ -95,10 +140,17 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
             title,
             description,
             dueDate: dueDate ? new Date(dueDate) : undefined,
-            priority
+            priority,
+            recurrence: recurrenceType !== "none" ? {
+                type: recurrenceType,
+                interval: recurrenceInterval,
+                endDate: recurrenceEndDate ? new Date(recurrenceEndDate) : null,
+            } : { type: "none" },
         }
         if (contactId && contactId !== "none") taskData.contactId = contactId
         else taskData.contactId = null
+        if (blockedByTaskId && blockedByTaskId !== "none") taskData.blockedByTaskId = blockedByTaskId
+        else taskData.blockedByTaskId = null
 
         try {
             if (initialData?.id) {
@@ -179,6 +231,66 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                                 ))}
                             </SelectContent>
                         </Select>
+                    </div>
+
+                    {availableTasks && availableTasks.length > 0 && (
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium">Blocked by</label>
+                            <Select value={blockedByTaskId} onValueChange={setBlockedByTaskId}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="None" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    {availableTasks.filter(t => t.id !== initialData?.id).map(t => (
+                                        <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
+
+                    <div className="flex flex-col gap-2">
+                        <label className="text-sm font-medium">Recurrence</label>
+                        <div className="grid grid-cols-2 gap-4">
+                            <Select value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as any)}>
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">No repeat</SelectItem>
+                                    <SelectItem value="daily">Daily</SelectItem>
+                                    <SelectItem value="weekly">Weekly</SelectItem>
+                                    <SelectItem value="monthly">Monthly</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            {recurrenceType !== "none" && (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-muted-foreground whitespace-nowrap">Every</span>
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        max={365}
+                                        value={recurrenceInterval}
+                                        onChange={(e) => setRecurrenceInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                                        className="w-16"
+                                    />
+                                    <span className="text-sm text-muted-foreground">
+                                        {recurrenceType === "daily" ? "day(s)" : recurrenceType === "weekly" ? "week(s)" : "month(s)"}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                        {recurrenceType !== "none" && (
+                            <div className="flex flex-col gap-1">
+                                <label className="text-xs text-muted-foreground">End date (optional)</label>
+                                <Input
+                                    type="date"
+                                    value={recurrenceEndDate}
+                                    onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
 

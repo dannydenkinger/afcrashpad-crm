@@ -1,11 +1,23 @@
 "use client"
 
 import { useState } from "react"
+import dynamic from "next/dynamic"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TrendingUp, FileText, Search } from "lucide-react"
-import AnalyticsDashboard from "./AnalyticsDashboard"
-import BlogDashboard from "./blog/BlogDashboard"
-import SEODashboard from "./seo/SEODashboard"
+import { Skeleton } from "@/components/ui/skeleton"
+
+const AnalyticsDashboard = dynamic(() => import("./AnalyticsDashboard"), {
+    loading: () => <Skeleton className="h-[500px] w-full rounded-xl" />,
+    ssr: false,
+})
+const SEODashboard = dynamic(() => import("./seo/SEODashboard"), {
+    loading: () => <Skeleton className="h-[500px] w-full rounded-xl" />,
+    ssr: false,
+})
+const BlogDashboard = dynamic(() => import("./blog/BlogDashboard"), {
+    loading: () => <Skeleton className="h-[500px] w-full rounded-xl" />,
+    ssr: false,
+})
 
 export default function MarketingPage() {
     const [activeTab, setActiveTab] = useState("analytics")

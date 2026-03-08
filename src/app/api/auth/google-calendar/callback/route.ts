@@ -25,7 +25,7 @@ export async function GET(request: Request) {
         if (!tokens.refresh_token) {
             // Google only hands out refresh tokens on the FIRST prompt=consent flow.
             // If we don't get one, it means they need to disconnect and reconnect, or we missed it.
-            console.warn("No refresh token returned. The user may have already authorized the app. Make sure prompt='consent' is used.")
+            // No refresh token returned - user may have already authorized. Ensure prompt='consent' is used.
         }
 
         const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get();

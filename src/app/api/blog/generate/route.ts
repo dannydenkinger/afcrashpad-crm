@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import Anthropic from "@anthropic-ai/sdk"
 import type { AIGenerateRequest } from "@/app/marketing/blog/types"
+import { rateLimit, getRateLimitKey } from "@/lib/rate-limit"
 
 export async function POST(request: NextRequest) {
     try {
         const session = await auth()
         if (!session?.user) {
             return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+        }
+
+        // Rate limit: 10 generations per minute per user
+        const { allowed } = rateLimit(`blog-gen:${session.user.id}`, 10)
+        if (!allowed) {
+            return NextResponse.json({ success: false, error: "Rate limit exceeded. Please wait a moment." }, { status: 429 })
         }
 
         const apiKey = process.env.ANTHROPIC_API_KEY
