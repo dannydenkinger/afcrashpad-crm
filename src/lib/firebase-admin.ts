@@ -2,6 +2,10 @@ import * as admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 
+let _db: FirebaseFirestore.Firestore | null = null;
+let _auth: admin.auth.Auth | null = null;
+let _messaging: admin.messaging.Messaging | null = null;
+
 function ensureApp() {
     if (!admin.apps.length) {
         admin.initializeApp({
@@ -16,27 +20,47 @@ function ensureApp() {
     return admin.app();
 }
 
-// Lazy getters — only initialize when actually called at runtime, not at build/import time
-export const adminDb = new Proxy({} as FirebaseFirestore.Firestore, {
-    get(_, prop) {
+function getDb() {
+    if (!_db) {
         const dbId = process.env.FIREBASE_DATABASE_ID;
         if (!dbId) throw new Error("FIREBASE_DATABASE_ID environment variable is not set");
-        const db = getFirestore(ensureApp(), dbId);
-        return (db as any)[prop];
+        _db = getFirestore(ensureApp(), dbId);
+    }
+    return _db;
+}
+
+function getAuth() {
+    if (!_auth) _auth = admin.auth(ensureApp());
+    return _auth;
+}
+
+function getMessaging() {
+    if (!_messaging) _messaging = admin.messaging(ensureApp());
+    return _messaging;
+}
+
+// Lazy proxy — defers initialization until first property access at runtime
+export const adminDb = new Proxy({} as FirebaseFirestore.Firestore, {
+    get(_, prop) {
+        const db = getDb();
+        const val = (db as any)[prop];
+        return typeof val === 'function' ? val.bind(db) : val;
     },
 });
 
 export const adminAuth = new Proxy({} as admin.auth.Auth, {
     get(_, prop) {
-        const a = ensureApp();
-        return (admin.auth(a) as any)[prop];
+        const a = getAuth();
+        const val = (a as any)[prop];
+        return typeof val === 'function' ? val.bind(a) : val;
     },
 });
 
 export const adminMessaging = new Proxy({} as admin.messaging.Messaging, {
     get(_, prop) {
-        const a = ensureApp();
-        return (admin.messaging(a) as any)[prop];
+        const m = getMessaging();
+        const val = (m as any)[prop];
+        return typeof val === 'function' ? val.bind(m) : val;
     },
 });
 
