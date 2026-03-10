@@ -12,30 +12,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }),
     ],
     session: { strategy: "jwt" },
-    pages: {
-        signIn: "/",
-        error: "/",
-    },
     callbacks: {
-        async signIn({ user }) {
-            // Only allow users that have been pre-created in Firestore by the owner
-            if (!user?.email) return false
-            try {
-                const { adminDb } = await import("@/lib/firebase-admin")
-                const usersSnap = await adminDb.collection("users")
-                    .where("email", "==", user.email)
-                    .limit(1)
-                    .get()
-                if (usersSnap.empty) {
-                    console.warn(`Sign-in blocked: ${user.email} is not a registered user`)
-                    return false
-                }
-                return true
-            } catch (err) {
-                console.error("Failed to verify user during sign-in:", err)
-                return false
-            }
-        },
         async jwt({ token, user, trigger }) {
             // On sign-in, look up role from Firestore (Google OAuth doesn't include role)
             if (user || trigger === "signIn") {
