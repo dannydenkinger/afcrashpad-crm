@@ -39,6 +39,7 @@ export async function getRevenueForecast(pipelineId: string, months: number = 6)
                 return {
                     value: Number(data.opportunityValue) || 0,
                     stageId: data.pipelineStageId || "",
+                    status: (data.status as string) || "open",
                     startDate: toDate(data.stayStartDate),
                     createdAt: toDate(data.createdAt),
                 }
@@ -49,12 +50,17 @@ export async function getRevenueForecast(pipelineId: string, months: number = 6)
             const stageOpps = opps.filter(o => o.stageId === stage.id)
             const rawValue = stageOpps.reduce((sum, o) => sum + o.value, 0)
             const isClosed = closedNames.has(stage.name)
+            // Count deals by status for this stage
+            const closedWonOpps = stageOpps.filter(o => o.status === "closed_won")
+            const openOpps = stageOpps.filter(o => o.status === "open")
+            const closedWonValue = closedWonOpps.reduce((sum, o) => sum + o.value, 0)
+            const openValue = openOpps.reduce((sum, o) => sum + o.value, 0)
             return {
                 stageName: stage.name,
                 probability: stage.probability,
                 dealCount: stageOpps.length,
                 rawValue,
-                weightedValue: isClosed ? rawValue : Math.round(rawValue * (stage.probability / 100)),
+                weightedValue: isClosed ? rawValue : (closedWonValue + Math.round(openValue * (stage.probability / 100))),
             }
         })
 

@@ -85,6 +85,7 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 pipelineId: stageInfo?.pipelineId || null,
                 stageId: (d.pipelineStageId as string) || '',
                 stageName: stageInfo?.name || 'Unknown',
+                status: (d.status as string) || 'open',
                 value: Number(d.opportunityValue) || 0,
                 militaryBase: d.militaryBase || (d.contactId ? contactBaseMap[d.contactId] : null) || null,
                 utmSource: (d.utmSource as string) || null,
@@ -129,9 +130,9 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
         const activeStayCount = filteredContactDocs.filter(doc => doc.data().status === 'Active Stay').length
         const totalContacts = filteredContactDocs.length
         const totalPipelineValue = opps.reduce((sum, o) => sum + o.value, 0)
-        // Open inquiries = opportunities NOT in a closed/booked/lost stage
-        const openInquiries = opps.filter(o => !closedStageIds.has(o.stageId)).length
-        const bookedCount = opps.filter(o => bookedStageIds.has(o.stageId)).length
+        // Open inquiries = opportunities with open status OR not in a closed stage
+        const openInquiries = opps.filter(o => o.status === "open" && !closedStageIds.has(o.stageId)).length
+        const bookedCount = opps.filter(o => o.status === "closed_won" || bookedStageIds.has(o.stageId)).length
         const conversionRate = opps.length > 0 ? Math.round((bookedCount / opps.length) * 1000) / 10 : 0
 
         // Monthly revenue (booked opps created this month vs last month)
@@ -141,10 +142,10 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
         const lastMonthEnd = new Date(now2.getFullYear(), now2.getMonth(), 0, 23, 59, 59)
 
         const monthlyRevenue = opps
-            .filter(o => bookedStageIds.has(o.stageId) && o.createdAt >= thisMonthStart)
+            .filter(o => (o.status === "closed_won" || bookedStageIds.has(o.stageId)) && o.createdAt >= thisMonthStart)
             .reduce((sum, o) => sum + o.value, 0)
         const previousMonthRevenue = opps
-            .filter(o => bookedStageIds.has(o.stageId) && o.createdAt >= lastMonthStart && o.createdAt <= lastMonthEnd)
+            .filter(o => (o.status === "closed_won" || bookedStageIds.has(o.stageId)) && o.createdAt >= lastMonthStart && o.createdAt <= lastMonthEnd)
             .reduce((sum, o) => sum + o.value, 0)
         const revenueTrend = previousMonthRevenue > 0
             ? Math.round(((monthlyRevenue - previousMonthRevenue) / previousMonthRevenue) * 1000) / 10

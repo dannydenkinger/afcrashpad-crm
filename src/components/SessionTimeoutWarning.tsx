@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useSession } from "next-auth/react"
 import { signOut } from "next-auth/react"
 import {
@@ -14,56 +14,59 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 
-const TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes of inactivity
+const TIMEOUT_MS = 60 * 60 * 1000 // 60 minutes of inactivity
 const WARNING_MS = 5 * 60 * 1000  // Show warning 5 minutes before timeout
 
 export function SessionTimeoutWarning() {
     const { status } = useSession()
     const [showWarning, setShowWarning] = useState(false)
-    const [timeoutId, setTimeoutId] = useState<ReturnType<typeof setTimeout> | null>(null)
-    const [warningId, setWarningId] = useState<ReturnType<typeof setTimeout> | null>(null)
+    const warningRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const showWarningRef = useRef(false)
 
     const resetTimers = useCallback(() => {
-        if (status !== "authenticated") return
+        if (showWarningRef.current) return
 
-        if (timeoutId) clearTimeout(timeoutId)
-        if (warningId) clearTimeout(warningId)
-        setShowWarning(false)
+        if (warningRef.current) clearTimeout(warningRef.current)
+        if (timeoutRef.current) clearTimeout(timeoutRef.current)
 
-        const newWarningId = setTimeout(() => {
+        warningRef.current = setTimeout(() => {
+            showWarningRef.current = true
             setShowWarning(true)
         }, TIMEOUT_MS - WARNING_MS)
 
-        const newTimeoutId = setTimeout(() => {
+        timeoutRef.current = setTimeout(() => {
             signOut({ callbackUrl: "/" })
         }, TIMEOUT_MS)
+    }, [])
 
-        setWarningId(newWarningId)
-        setTimeoutId(newTimeoutId)
-    }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
+    const handleStaySignedIn = useCallback(() => {
+        showWarningRef.current = false
+        setShowWarning(false)
+        resetTimers()
+    }, [resetTimers])
 
     useEffect(() => {
         if (status !== "authenticated") return
 
         resetTimers()
 
+        // Only track interactions within the CRM — not window focus/blur
         const events = ["mousedown", "keydown", "scroll", "touchstart"]
-        const handler = () => {
-            if (!showWarning) resetTimers()
-        }
+        const handler = () => resetTimers()
 
-        events.forEach(event => window.addEventListener(event, handler, { passive: true }))
+        events.forEach(event => document.addEventListener(event, handler, { passive: true }))
         return () => {
-            events.forEach(event => window.removeEventListener(event, handler))
-            if (timeoutId) clearTimeout(timeoutId)
-            if (warningId) clearTimeout(warningId)
+            events.forEach(event => document.removeEventListener(event, handler))
+            if (warningRef.current) clearTimeout(warningRef.current)
+            if (timeoutRef.current) clearTimeout(timeoutRef.current)
         }
-    }, [status, resetTimers]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [status, resetTimers])
 
     if (status !== "authenticated") return null
 
     return (
-        <AlertDialog open={showWarning} onOpenChange={setShowWarning}>
+        <AlertDialog open={showWarning}>
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>Session expiring soon</AlertDialogTitle>
@@ -75,7 +78,7 @@ export function SessionTimeoutWarning() {
                     <AlertDialogCancel onClick={() => signOut({ callbackUrl: "/" })}>
                         Sign Out
                     </AlertDialogCancel>
-                    <AlertDialogAction onClick={resetTimers}>
+                    <AlertDialogAction onClick={handleStaySignedIn}>
                         Stay Signed In
                     </AlertDialogAction>
                 </AlertDialogFooter>

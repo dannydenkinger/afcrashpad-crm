@@ -44,7 +44,7 @@ const STATUS_ORDER: ReferralStatus[] = ["pending", "contacted", "booked", "activ
 
 const METHOD_LABELS: Record<string, string> = { zelle: "Zelle", venmo: "Venmo", paypal: "PayPal", check: "Check/Mail" }
 
-export function ReferralTracker() {
+export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; end: string } | null }) {
     const [data, setData] = useState<ReferralsData | null>(null)
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState<string>("all")
@@ -73,10 +73,23 @@ export function ReferralTracker() {
 
     const filteredReferrals = useMemo(() => {
         if (!data) return []
-        if (filter === "all") return data.referrals
-        if (filter === "payout_due") return data.referrals.filter(r => r.status === "active_tenant")
-        return data.referrals.filter(r => r.status === filter)
-    }, [data, filter])
+        let referrals = data.referrals
+        if (filter === "payout_due") {
+            referrals = referrals.filter(r => r.status === "active_tenant")
+        } else if (filter !== "all") {
+            referrals = referrals.filter(r => r.status === filter)
+        }
+        if (dateFilter) {
+            const start = new Date(dateFilter.start).getTime()
+            const end = new Date(dateFilter.end).getTime()
+            referrals = referrals.filter(r => {
+                if (!r.createdAt) return false
+                const t = new Date(r.createdAt).getTime()
+                return t >= start && t <= end
+            })
+        }
+        return referrals
+    }, [data, filter, dateFilter])
 
     async function handleCreate() {
         if (!referrerName.trim() || !referredName.trim()) {

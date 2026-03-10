@@ -24,7 +24,7 @@ export async function getReportingData() {
 
         oppsSnap.forEach(doc => {
             const data = doc.data();
-            if (bookedStageIds.includes(data.pipelineStageId)) {
+            if (data.status === "closed_won" || bookedStageIds.includes(data.pipelineStageId)) {
                 bookedCount++;
                 totalProfit += (data.estimatedProfit || 0);
             }

@@ -3,14 +3,16 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import NextImage from "next/image"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Users, Calendar, Settings, Plane, ChevronLeft, ChevronRight, Megaphone, LayoutGrid, Wrench, MessageSquare, X, Wallet } from "lucide-react"
+import { LayoutDashboard, Users, Calendar, Settings, Plane, ChevronLeft, ChevronRight, Megaphone, LayoutGrid, Wrench, MessageSquare, X, Wallet, LogOut, CheckSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useSession } from "next-auth/react"
+import { useSession, signOut } from "next-auth/react"
 import { getCurrentUserRole, getSidebarProfile } from "@/app/settings/users/actions"
 import { getVisibleNavItems, type UserRole } from "@/lib/role-permissions"
 import { getBrandingSettings } from "@/app/settings/branding/actions"
+import { getOverdueTaskCount } from "@/app/calendar/actions"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 type NavItem = { name: string; href: string; icon: any } | { separator: string }
 
@@ -22,6 +24,7 @@ const navItems: NavItem[] = [
     { separator: "Activity" },
     { name: "Calendar", href: "/calendar", icon: Calendar },
     { name: "Communications", href: "/communications", icon: MessageSquare },
+    { name: "Tasks", href: "/tasks", icon: CheckSquare },
     { separator: "Finance & Growth" },
     { name: "Finance", href: "/finance", icon: Wallet },
     { name: "Marketing", href: "/marketing", icon: Megaphone },
@@ -45,6 +48,7 @@ export function Sidebar({ onNavigate, className, mobileCollapsed }: SidebarProps
     const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
     const [displayName, setDisplayName] = useState<string | null>(null)
     const [branding, setBranding] = useState<{ logoUrl?: string; primaryColor?: string; companyName?: string } | null>(null)
+    const [overdueCount, setOverdueCount] = useState(0)
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -77,6 +81,14 @@ export function Sidebar({ onNavigate, className, mobileCollapsed }: SidebarProps
             } catch { }
         }
         fetchBranding()
+
+        async function fetchOverdueCount() {
+            try {
+                const count = await getOverdueTaskCount()
+                setOverdueCount(count)
+            } catch { }
+        }
+        fetchOverdueCount()
 
         return () => clearTimeout(timer)
     }, [session])
@@ -170,35 +182,50 @@ export function Sidebar({ onNavigate, className, mobileCollapsed }: SidebarProps
                         >
                             <Icon className={cn("shrink-0", showCollapsed ? "h-5 w-5" : "h-4 w-4")} />
                             {!showCollapsed && <span>{item.name}</span>}
+                            {!showCollapsed && item.name === "Tasks" && overdueCount > 0 && (
+                                <span className="ml-auto text-[10px] font-bold bg-rose-500 text-white rounded-full h-5 min-w-[20px] flex items-center justify-center px-1.5">
+                                    {overdueCount}
+                                </span>
+                            )}
                         </Link>
                     )
                 })}
             </nav>
 
-            <div className={cn("mt-auto flex items-center border-t pt-4 pb-2 min-h-[52px]", showCollapsed ? "justify-center" : "gap-3 px-2")}>
-                <Avatar className="h-9 w-9 border shrink-0">
-                    {(profileImageUrl || session?.user?.image) ? (
-                        <NextImage
-                            src={profileImageUrl || session!.user!.image!}
-                            alt={session?.user?.name || "User avatar"}
-                            width={36}
-                            height={36}
-                            className="aspect-square size-full rounded-full object-cover"
-                        />
-                    ) : null}
-                    <AvatarFallback>{(displayName || session?.user?.name)?.charAt(0) || "U"}</AvatarFallback>
-                </Avatar>
-                {!showCollapsed && (
-                    <div className="flex flex-col overflow-hidden">
-                        <span className="truncate text-sm font-medium">
-                            {displayName || session?.user?.name || "Loading..."}
-                        </span>
-                        <span className="truncate text-xs text-muted-foreground capitalize">
-                            {realRole.toLowerCase()}
-                        </span>
-                    </div>
-                )}
-            </div>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <button className={cn("mt-auto flex items-center border-t pt-4 pb-2 min-h-[52px] w-full cursor-pointer rounded-md hover:bg-secondary/50 transition-colors", showCollapsed ? "justify-center" : "gap-3 px-2")}>
+                        <Avatar className="h-9 w-9 border shrink-0">
+                            {(profileImageUrl || session?.user?.image) ? (
+                                <NextImage
+                                    src={profileImageUrl || session!.user!.image!}
+                                    alt={session?.user?.name || "User avatar"}
+                                    width={36}
+                                    height={36}
+                                    className="aspect-square size-full rounded-full object-cover"
+                                />
+                            ) : null}
+                            <AvatarFallback>{(displayName || session?.user?.name)?.charAt(0) || "U"}</AvatarFallback>
+                        </Avatar>
+                        {!showCollapsed && (
+                            <div className="flex flex-col overflow-hidden text-left">
+                                <span className="truncate text-sm font-medium">
+                                    {displayName || session?.user?.name || "Loading..."}
+                                </span>
+                                <span className="truncate text-xs text-muted-foreground capitalize">
+                                    {realRole.toLowerCase()}
+                                </span>
+                            </div>
+                        )}
+                    </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="top" align="start" className="w-48">
+                    <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/" })} className="text-destructive focus:text-destructive">
+                        <LogOut className="h-4 w-4 mr-2" />
+                        Sign Out
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
     )
 }

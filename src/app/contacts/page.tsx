@@ -140,6 +140,7 @@ function ContactsContent() {
     // Filter and Sort State
     const [searchTerm, setSearchTerm] = useState("");
     const [statusFilter, setStatusFilter] = useState<string[]>([]);
+    const [tagFilter, setTagFilter] = useState<string[]>([]);
     const [sortConfig, setSortConfig] = useState<{ key: ColumnId | 'dealValue'; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
@@ -816,14 +817,18 @@ function ContactsContent() {
     const filteredAndSortedContacts = useMemo(() => [...allContacts]
         .filter(contact => {
             const matchesSearch =
-                contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                contact.phone.includes(searchTerm) ||
-                contact.businessName.toLowerCase().includes(searchTerm.toLowerCase());
+                (contact.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (contact.email || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (contact.phone || "").includes(searchTerm) ||
+                (contact.businessName || "").toLowerCase().includes(searchTerm.toLowerCase());
 
             const matchesStatus = statusFilter.length === 0 || statusFilter.includes(contact.status);
 
-            return matchesSearch && matchesStatus;
+            const matchesTags = tagFilter.length === 0 || tagFilter.some(tagId =>
+                contact.tags?.some((t: any) => t.tagId === tagId || t.id === tagId)
+            );
+
+            return matchesSearch && matchesStatus && matchesTags;
         })
         .sort((a, b) => {
             const { key, direction } = sortConfig;
@@ -844,7 +849,7 @@ function ContactsContent() {
             if ((valA as number | string) < (valB as number | string)) return direction === 'asc' ? -1 : 1;
             if ((valA as number | string) > (valB as number | string)) return direction === 'asc' ? 1 : -1;
             return 0;
-        }), [allContacts, searchTerm, statusFilter, sortConfig]);
+        }), [allContacts, searchTerm, statusFilter, tagFilter, sortConfig]);
 
     return (
         <div className="flex-1 min-h-0 overflow-y-auto">
@@ -1034,6 +1039,42 @@ function ContactsContent() {
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0">
+                                        <Tag className="mr-2 h-4 w-4" />
+                                        Tags {tagFilter.length > 0 && `(${tagFilter.length})`}
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="start" className="w-[200px] max-h-[300px] overflow-y-auto">
+                                    <DropdownMenuLabel>Filter by Tag</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <div className="flex flex-col gap-1 p-1">
+                                        {availableTags.map(tag => (
+                                            <div key={tag.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted rounded-sm transition-colors cursor-pointer" onClick={() => {
+                                                setTagFilter(prev =>
+                                                    prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id]
+                                                )
+                                            }}>
+                                                <Checkbox checked={tagFilter.includes(tag.id)} />
+                                                <span className="mr-2 inline-block h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: tag.color || '#6b7280' }} />
+                                                <span className="text-sm">{tag.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {tagFilter.length > 0 && (
+                                        <>
+                                            <DropdownMenuSeparator />
+                                            <div className="p-1">
+                                                <Button variant="ghost" className="w-full justify-center h-7 text-xs" onClick={() => setTagFilter([])}>
+                                                    Clear Tags
+                                                </Button>
+                                            </div>
+                                        </>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0">
                                         <ArrowDown className="mr-2 h-4 w-4" />
                                         Sort
                                     </Button>
@@ -1169,6 +1210,9 @@ function ContactsContent() {
                     </div>
                 </CardHeader>
                 <CardContent className="px-4 sm:px-6">
+                    <div className="text-xs text-muted-foreground px-1 py-2">
+                        Showing {filteredAndSortedContacts.length} of {allContacts.length} contacts
+                    </div>
                     {/* Mobile: virtualized card list */}
                     <div className="md:hidden">
                         {filteredAndSortedContacts.length > 0 ? (
@@ -1222,10 +1266,17 @@ function ContactsContent() {
                                     );
                                 }}
                             />
-                        ) : null}
+                        ) : (
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <Search className="h-10 w-10 text-muted-foreground/20 mb-3" />
+                                <p className="text-sm font-medium text-foreground mb-1">No contacts found</p>
+                                <p className="text-xs text-muted-foreground">Try adjusting your search or filters</p>
+                            </div>
+                        )}
                     </div>
                     {/* Desktop: virtualized table */}
                     <div className="hidden md:block">
+                    {filteredAndSortedContacts.length > 0 ? (
                     <ContactsVirtualTable
                         contacts={filteredAndSortedContacts}
                         columns={columns}
@@ -1245,6 +1296,13 @@ function ContactsContent() {
                         }}
                         onReorderColumns={handleReorderColumns}
                     />
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                            <Search className="h-10 w-10 text-muted-foreground/20 mb-3" />
+                            <p className="text-sm font-medium text-foreground mb-1">No contacts found</p>
+                            <p className="text-xs text-muted-foreground">Try adjusting your search or filters</p>
+                        </div>
+                    )}
                     </div>
                     {/* Infinite scroll sentinel */}
                     <div ref={loadMoreRef} className="py-2" />

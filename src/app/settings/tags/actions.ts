@@ -8,10 +8,16 @@ import { requireAdmin } from "@/lib/auth-guard";
 export async function getTags() {
     try {
         const snapshot = await adminDb.collection('tags').orderBy('name', 'asc').get();
-        const tags = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+        const tags = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                name: data.name || "",
+                color: data.color || "",
+                createdAt: data.createdAt?.toDate?.().toISOString() ?? data.createdAt ?? null,
+                updatedAt: data.updatedAt?.toDate?.().toISOString() ?? data.updatedAt ?? null,
+            };
+        });
         return { success: true, tags };
     } catch (error) {
         console.error("Failed to fetch tags:", error);

@@ -26,16 +26,29 @@ function formatCurrency(value: number) {
     return `$${value.toLocaleString()}`
 }
 
+const SCOPES = [
+    { key: "3", label: "3M" },
+    { key: "6", label: "6M" },
+    { key: "12", label: "12M" },
+] as const
+
 export function RevenueForecast({ pipelineId }: RevenueForecastProps) {
     const [data, setData] = useState<any>(null)
     const [loading, setLoading] = useState(true)
+    const [transitioning, setTransitioning] = useState(false)
+    const [months, setMonths] = useState(6)
 
     useEffect(() => {
-        getRevenueForecast(pipelineId).then(result => {
+        // Only show full spinner on initial load
+        if (!data) setLoading(true)
+        else setTransitioning(true)
+
+        getRevenueForecast(pipelineId, months).then(result => {
             if (result.success) setData(result.data)
             setLoading(false)
+            setTransitioning(false)
         })
-    }, [pipelineId])
+    }, [pipelineId, months]) // eslint-disable-line react-hooks/exhaustive-deps
 
     if (loading) {
         return (
@@ -71,8 +84,25 @@ export function RevenueForecast({ pipelineId }: RevenueForecastProps) {
 
             {/* Forecast Chart */}
             <div>
-                <h4 className="text-sm font-semibold mb-3">6-Month Revenue Forecast</h4>
-                <div className="h-[240px] w-full">
+                <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold">Revenue Forecast</h4>
+                    <div className="flex bg-muted/30 p-0.5 rounded-md">
+                        {SCOPES.map(s => (
+                            <button
+                                key={s.key}
+                                onClick={() => setMonths(Number(s.key))}
+                                className={`px-2.5 py-1 text-[10px] font-medium rounded-sm transition-colors ${
+                                    months === Number(s.key)
+                                        ? "bg-background text-foreground shadow-sm"
+                                        : "text-muted-foreground hover:text-foreground"
+                                }`}
+                            >
+                                {s.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div className={`h-[240px] w-full transition-opacity duration-300 ${transitioning ? "opacity-50" : "opacity-100"}`}>
                     {data.forecastByMonth.some((m: any) => m.bestCase > 0) ? (
                         <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={data.forecastByMonth}>
@@ -119,6 +149,8 @@ export function RevenueForecast({ pipelineId }: RevenueForecastProps) {
                                     strokeDasharray="4 2"
                                     fillOpacity={1}
                                     fill="url(#colorBest)"
+                                    animationDuration={600}
+                                    animationEasing="ease-in-out"
                                 />
                                 <Area
                                     type="monotone"
@@ -128,6 +160,8 @@ export function RevenueForecast({ pipelineId }: RevenueForecastProps) {
                                     strokeWidth={2}
                                     fillOpacity={1}
                                     fill="url(#colorExpected)"
+                                    animationDuration={600}
+                                    animationEasing="ease-in-out"
                                 />
                                 <Area
                                     type="monotone"
@@ -138,6 +172,8 @@ export function RevenueForecast({ pipelineId }: RevenueForecastProps) {
                                     strokeDasharray="4 2"
                                     fillOpacity={0}
                                     fill="transparent"
+                                    animationDuration={600}
+                                    animationEasing="ease-in-out"
                                 />
                             </AreaChart>
                         </ResponsiveContainer>

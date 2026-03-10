@@ -48,6 +48,8 @@ import { getLengthOfStay } from "./utils"
 import { KanbanView } from "./KanbanView"
 import { ListView } from "./ListView"
 import { SavedViews, type PipelineViewState } from "./SavedViews"
+import type { DealStatus } from "@/types"
+import { DEAL_STATUS_LABELS } from "@/types"
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh"
 import { useRealtimeRefreshOnChange } from "@/hooks/useRealtimeCollection"
 import { toast } from "sonner"
@@ -94,14 +96,17 @@ function PipelineContent() {
     const [draggedDealId, setDraggedDealId] = useState<string | null>(null)
     const [dragOverStageId, setDragOverStageId] = useState<string | null>(null)
     const [isContactPickerOpen, setIsContactPickerOpen] = useState(false)
+    const [linkingDealId, setLinkingDealId] = useState<string | null>(null)
     const [contactList, setContactList] = useState<{ id: string; name: string; email: string; phone: string; militaryBase: string }[]>([])
     const [contactSearch, setContactSearch] = useState("")
+    const [pipelineSearch, setPipelineSearch] = useState("")
     const [contactTimeline, setContactTimeline] = useState<TimelineItem[] | null>(null)
     const [timelineLoading, setTimelineLoading] = useState(false)
     const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
     const [selectedDealIds, setSelectedDealIds] = useState<Set<string>>(new Set())
     const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
     const [bulkActionLoading, setBulkActionLoading] = useState(false)
+    const [statusFilter, setStatusFilter] = useState<DealStatus>("open")
 
     const handleDragStart = (e: React.DragEvent, dealId: string) => {
         e.dataTransfer.setData("dealId", dealId)
@@ -345,16 +350,36 @@ function PipelineContent() {
     };
 
     const handleSelectContactForOpportunity = (c: { id: string; name: string; email: string; phone: string; militaryBase: string }) => {
-        setSelectedDeal({
-            ...newDealTemplate(),
-            contactId: c.id,
-            name: c.name || "New Lead",
-            email: c.email || "",
-            phone: c.phone || "",
-            base: c.militaryBase || ""
-        });
+        if (linkingDealId && selectedDeal && selectedDeal.id === linkingDealId) {
+            // Link contact to existing deal
+            setSelectedDeal((prev: any) => prev ? {
+                ...prev,
+                contactId: c.id,
+                name: c.name || prev.name,
+                email: c.email || prev.email,
+                phone: c.phone || prev.phone,
+                base: c.militaryBase || prev.base,
+            } : null);
+            setLinkingDealId(null);
+        } else {
+            // Create new deal from contact
+            setSelectedDeal({
+                ...newDealTemplate(),
+                contactId: c.id,
+                name: c.name || "New Lead",
+                email: c.email || "",
+                phone: c.phone || "",
+                base: c.militaryBase || ""
+            });
+        }
         setIsContactPickerOpen(false);
         setActiveTab("details");
+    };
+
+    const handleLinkContactToExistingDeal = () => {
+        if (!selectedDeal || selectedDeal.id === 'new') return;
+        setLinkingDealId(selectedDeal.id);
+        handleOpenContactPicker();
     };
 
     const handleDeleteOpportunity = async (id: string) => {
@@ -662,9 +687,25 @@ function PipelineContent() {
     }, [currentPipeline.stages, mobileSelectedStage]);
 
     const sortedDeals = useMemo(() => {
-        const sortableDeals = [...currentPipeline.deals];
+        let filteredDeals = [...currentPipeline.deals];
+
+        // Filter by deal status
+        filteredDeals = filteredDeals.filter((d: any) => (d.status || "open") === statusFilter);
+
+        // Filter by search term
+        if (pipelineSearch.trim()) {
+            const term = pipelineSearch.trim().toLowerCase();
+            filteredDeals = filteredDeals.filter((deal: any) => {
+                const name = (deal.name || deal.contactName || '').toLowerCase();
+                const email = (deal.email || deal.contactEmail || '').toLowerCase();
+                const phone = (deal.phone || deal.contactPhone || '').toLowerCase();
+                const base = (deal.base || deal.militaryBase || '').toLowerCase();
+                return name.includes(term) || email.includes(term) || phone.includes(term) || base.includes(term);
+            });
+        }
+
         if (sortConfig !== null) {
-            sortableDeals.sort((a, b) => {
+            filteredDeals.sort((a, b) => {
                 let aValue: any = a[sortConfig.key as keyof typeof a];
                 let bValue: any = b[sortConfig.key as keyof typeof b];
 
@@ -681,8 +722,14 @@ function PipelineContent() {
                 return 0;
             });
         }
-        return sortableDeals;
-    }, [currentPipeline.deals, sortConfig]);
+        return filteredDeals;
+    }, [currentPipeline.deals, sortConfig, pipelineSearch, statusFilter]);
+
+    // Pipeline with deals filtered by search (for KanbanView)
+    const filteredPipeline = useMemo(() => ({
+        ...currentPipeline,
+        deals: sortedDeals,
+    }), [currentPipeline, sortedDeals]);
 
     const requestSort = (key: string) => {
         let direction: 'asc' | 'desc' = 'asc';
@@ -695,6 +742,7 @@ function PipelineContent() {
     const currentViewState: PipelineViewState = {
         activePipelineKey,
         viewMode,
+        statusFilter,
         showBase,
         showValue,
         showPriority,
@@ -710,6 +758,7 @@ function PipelineContent() {
             setActivePipelineKey(state.activePipelineKey)
         }
         setViewMode(state.viewMode)
+        if (state.statusFilter) setStatusFilter(state.statusFilter)
         setShowBase(state.showBase)
         setShowValue(state.showValue)
         setShowPriority(state.showPriority)
@@ -799,10 +848,10 @@ function PipelineContent() {
                     <SavedViews currentState={currentViewState} onApplyView={applyView} />
 
                     <div className="flex bg-muted/60 p-0.5 sm:p-1 rounded-md items-center shrink-0 h-[44px] sm:h-auto">
-                        <Button variant={viewMode === "kanban" ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("kanban"); setSelectedDealIds(new Set()); }} className="h-full sm:h-7 px-3 sm:px-2.5 shadow-none">
+                        <Button variant={viewMode === "kanban" ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("kanban"); setSelectedDealIds(new Set()); }} className="h-full sm:h-7 px-3 sm:px-2.5 shadow-none" disabled={statusFilter !== "open"}>
                             <LayoutGrid className="h-4 w-4" />
                         </Button>
-                        <Button variant={viewMode === "list" ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("list"); setSelectedDealIds(new Set()); }} className="h-full sm:h-7 px-3 sm:px-2.5 shadow-none">
+                        <Button variant={(viewMode === "list" || statusFilter !== "open") ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("list"); setSelectedDealIds(new Set()); }} className="h-full sm:h-7 px-3 sm:px-2.5 shadow-none">
                             <ListIcon className="h-4 w-4" />
                         </Button>
                     </div>
@@ -905,7 +954,7 @@ function PipelineContent() {
                 onPipelinesChange={fetchPipelines}
             />
 
-            <Dialog open={isContactPickerOpen} onOpenChange={setIsContactPickerOpen}>
+            <Dialog open={isContactPickerOpen} onOpenChange={(open) => { setIsContactPickerOpen(open); if (!open) setLinkingDealId(null); }}>
                 <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col p-0 gap-0">
                     <DialogHeader className="p-4 pb-2">
                         <DialogTitle>Select contact</DialogTitle>
@@ -959,16 +1008,45 @@ function PipelineContent() {
                 </DialogContent>
             </Dialog>
 
-                <div className="flex items-center">
+                <div className="flex items-center gap-3">
                     <div className="relative w-full sm:w-72 flex-1 sm:flex-initial">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="Search deals..." className="h-9 pl-8 min-h-[44px] sm:min-h-0" />
+                        <Input
+                            placeholder="Search deals..."
+                            className="h-9 pl-8 min-h-[44px] sm:min-h-0"
+                            value={pipelineSearch}
+                            onChange={(e) => setPipelineSearch(e.target.value)}
+                        />
                     </div>
                 </div>
 
-                <div className={`flex-1 min-h-0 overflow-x-auto overflow-y-auto ${viewMode === "kanban" ? "sm:overflow-y-hidden" : ""}`}>
+                <div className="flex items-center gap-1 shrink-0">
+                    {(["open", "closed_won", "closed_lost", "archive"] as DealStatus[]).map(s => {
+                        const count = currentPipeline.deals.filter((d: any) => (d.status || "open") === s).length
+                        return (
+                            <Button
+                                key={s}
+                                variant={statusFilter === s ? "secondary" : "ghost"}
+                                size="sm"
+                                onClick={() => { setStatusFilter(s); setSelectedDealIds(new Set()); }}
+                                className="h-8 px-3 text-xs gap-1.5"
+                            >
+                                {DEAL_STATUS_LABELS[s]}
+                                <Badge variant="outline" className="ml-0.5 text-[10px] px-1.5 py-0 h-4 font-normal">{count}</Badge>
+                            </Button>
+                        )
+                    })}
+                </div>
+
+                {!isLoading && currentPipeline.deals.length > 0 && (
+                    <div className="text-xs text-muted-foreground px-1 py-1">
+                        Showing {sortedDeals.length} of {currentPipeline.deals.filter((d: any) => (d.status || "open") === statusFilter).length} deals
+                    </div>
+                )}
+
+                <div className={`flex-1 min-h-0 overflow-x-auto overflow-y-auto ${(statusFilter === "open" && viewMode === "kanban") ? "sm:overflow-y-hidden" : ""}`}>
                 {isLoading ? (
-                    viewMode === "kanban" ? (
+                    (statusFilter === "open" && viewMode === "kanban") ? (
                         <div className="flex min-h-[400px] sm:min-h-[calc(100vh-220px)] h-[400px] sm:h-[calc(100vh-220px)] gap-3 sm:gap-4 pb-4 w-max">
                             {[1, 2, 3, 4, 5].map((i) => (
                                 <div key={i} className="flex flex-col w-[340px] shrink-0 bg-muted/40 rounded-xl border h-full overflow-hidden">
@@ -1037,9 +1115,9 @@ function PipelineContent() {
                             New Deal
                         </Button>
                     </div>
-                ) : viewMode === "kanban" ? (
+                ) : (statusFilter === "open" && viewMode === "kanban") ? (
                     <KanbanView
-                        currentPipeline={currentPipeline}
+                        currentPipeline={filteredPipeline}
                         mobileSelectedStage={mobileSelectedStage}
                         setMobileSelectedStage={setMobileSelectedStage}
                         showBase={showBase}
@@ -1061,6 +1139,20 @@ function PipelineContent() {
                         onOpenNotes={(deal) => {
                             setActiveTab("notes");
                             setSelectedDeal(deal);
+                        }}
+                        onCallContact={(deal) => {
+                            const phone = deal.phone || deal.contactPhone;
+                            if (phone) {
+                                window.open(`tel:${phone}`, '_self');
+                            } else {
+                                toast("No phone number on file for this contact");
+                            }
+                        }}
+                        onMessageContact={() => {
+                            router.push('/communications');
+                        }}
+                        onOpenTasks={() => {
+                            router.push('/tasks');
                         }}
                     />
                 ) : (
@@ -1165,6 +1257,7 @@ function PipelineContent() {
                             selectedDealIds={selectedDealIds}
                             onToggleSelect={handleToggleSelect}
                             onToggleSelectAll={handleToggleSelectAll}
+                            statusFilter={statusFilter}
                         />
                     </>
                 )}
@@ -1195,6 +1288,7 @@ function PipelineContent() {
                 pathname={pathname}
                 openedDealIdFromUrl={openedDealIdFromUrl}
                 fetchPipelines={fetchPipelines}
+                onLinkContact={handleLinkContactToExistingDeal}
             />
 
             <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>

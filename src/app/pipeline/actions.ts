@@ -95,6 +95,7 @@ const updateOpportunitySchema = z.object({
     collectedAmount: z.number().min(0).optional(),
     collectedDate: z.string().optional().or(z.literal("")),
     paymentStatus: z.enum(["unpaid", "partial", "paid"]).optional(),
+    status: z.enum(["open", "closed_won", "closed_lost", "archive"]).optional(),
 });
 
 const updateBlockersSchema = z.object({
@@ -253,7 +254,7 @@ export async function getPipelines() {
                 email: contact?.email || data.email || null,
                 phone: contact?.phone || data.phone || null,
                 base: base || null,
-                stage: stageInfo?.stageName || "Unknown",
+                stage: stageInfo?.stageName || (data.status && data.status !== "open" ? "—" : "Unknown"),
                 value: Number(data.opportunityValue) || 0,
                 margin: Number(data.estimatedProfit) || 0,
                 priority: data.priority || "MEDIUM",
@@ -295,14 +296,19 @@ export async function getPipelines() {
                 collectedAmount: Number(data.collectedAmount) || 0,
                 collectedDate: toDateInput(data.collectedDate) || null,
                 paymentStatus: data.paymentStatus || "unpaid",
+                status: data.status || "open",
                 createdAt: toISO(data.createdAt),
                 updatedAt: toISO(data.updatedAt)
             };
         });
         
+        const firstPipelineId = Object.keys(pipelinesMap)[0] || null;
         for (const opp of allOpps) {
             if (opp.pipelineId && pipelinesMap[opp.pipelineId]) {
                 pipelinesMap[opp.pipelineId].deals.push(opp);
+            } else if (opp.status !== "open" && firstPipelineId) {
+                // Non-open deals with deleted stages still belong to the pipeline
+                pipelinesMap[firstPipelineId].deals.push(opp);
             }
         }
 
@@ -696,6 +702,7 @@ export async function createNewDeal(data: any, pipelineId?: string) {
         await oppRef.set({
             contactId: contactId,
             pipelineStageId: stageId,
+            status: "open",
             name: `${data.name || "New Lead"} - Deal`,
             opportunityValue: Number(data.value) || 0,
             estimatedProfit: Number(data.margin) || 0,
@@ -771,6 +778,7 @@ export async function updateOpportunity(id: string, data: {
     collectedAmount?: number;
     collectedDate?: string;
     paymentStatus?: "unpaid" | "partial" | "paid";
+    status?: "open" | "closed_won" | "closed_lost" | "archive";
 }) {
     const idParsed = firestoreIdSchema.safeParse(id);
     if (!idParsed.success) return { success: false, error: "Invalid opportunity id" };
@@ -818,6 +826,11 @@ export async function updateOpportunity(id: string, data: {
         if (data.collectedDate !== undefined) updateData.collectedDate = data.collectedDate && String(data.collectedDate).trim() ? new Date(data.collectedDate).toISOString() : null;
         if (data.paymentStatus !== undefined) updateData.paymentStatus = data.paymentStatus;
 
+        // Deal status changes
+        if (data.status !== undefined) {
+            updateData.status = data.status;
+        }
+
         if (data.tagIds !== undefined) {
             updateData.tags = await Promise.all(data.tagIds.map(async (tagId) => {
                 const tagDoc = await adminDb.collection('tags').doc(tagId).get();
@@ -835,6 +848,19 @@ export async function updateOpportunity(id: string, data: {
             return { success: false, error: "Opportunity not found" };
         }
         const beforeData = snap.data() || {};
+
+        // Handle deal status transitions
+        if (data.status !== undefined && data.status !== (beforeData.status || "open")) {
+            const oldStatus = beforeData.status || "open";
+            // Moving from open to closed/archive: save current stage for reopening
+            if (oldStatus === "open" && data.status !== "open") {
+                updateData.lastActiveStageId = beforeData.pipelineStageId || null;
+            }
+            // Moving from closed/archive back to open: restore last active stage
+            if (oldStatus !== "open" && data.status === "open" && beforeData.lastActiveStageId) {
+                updateData.pipelineStageId = beforeData.lastActiveStageId;
+            }
+        }
 
         // Track stage history for conversion metrics
         if (data.pipelineStageId !== undefined && data.pipelineStageId !== beforeData.pipelineStageId) {
@@ -881,7 +907,7 @@ export async function updateOpportunity(id: string, data: {
 
         // Audit log
         if (session?.user) {
-            const auditFields = ["pipelineStageId", "opportunityValue", "estimatedProfit", "priority", "assigneeId", "militaryBase", "stayStartDate", "stayEndDate", "notes"];
+            const auditFields = ["pipelineStageId", "opportunityValue", "estimatedProfit", "priority", "assigneeId", "militaryBase", "stayStartDate", "stayEndDate", "notes", "status"];
             const changes = diffChanges(beforeData, updateData, auditFields);
             if (changes) {
                 logAudit({
@@ -1104,14 +1130,8 @@ export async function permanentlyDeleteOpportunity(id: string) {
 
 export async function getBaseNames(): Promise<string[]> {
     try {
-        const metadataDoc = await adminDb.collection('metadata').doc('bases').get();
-        if (metadataDoc.exists && metadataDoc.data()?.names) {
-            return metadataDoc.data()?.names.sort();
-        }
-        
-        // Fallback to legacy military_bases collection if metadata doc doesn't exist
         const snapshot = await adminDb.collection('military_bases').orderBy('name', 'asc').get();
-        return snapshot.docs.map(doc => doc.data().name);
+        return snapshot.docs.map(doc => doc.data().name).filter(Boolean);
     } catch {
         return [];
     }
@@ -1238,6 +1258,8 @@ export async function autoAdvanceOpportunities() {
 
                 for (const oppDoc of oppsSnap.docs) {
                     const data = oppDoc.data();
+                    // Skip non-open deals
+                    if (data.status && data.status !== "open") continue;
                     let startDate = data.stayStartDate;
 
                     // Try contact fallback if no direct start date

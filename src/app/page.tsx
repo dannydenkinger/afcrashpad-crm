@@ -3,8 +3,13 @@
 import { Button } from "@/components/ui/button"
 import { Plane } from "lucide-react"
 import { signIn } from "next-auth/react"
+import { useSearchParams } from "next/navigation"
+import { Suspense } from "react"
 
-export default function Home() {
+function SignInContent() {
+  const searchParams = useSearchParams()
+  const error = searchParams.get("error")
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black p-4 sm:p-6">
       <div className="mx-auto w-full max-w-sm space-y-6 sm:space-y-8 flex flex-col items-center">
@@ -18,6 +23,15 @@ export default function Home() {
           </p>
         </div>
 
+        {error === "AccessDenied" && (
+          <div className="w-full rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-center">
+            <p className="text-sm font-medium text-destructive">Access denied</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Your account has not been added to this workspace. Contact your administrator to get access.
+            </p>
+          </div>
+        )}
+
         <div className="w-full mt-4 sm:mt-8">
           <Button
             size="lg"
@@ -29,5 +43,13 @@ export default function Home() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <Suspense>
+      <SignInContent />
+    </Suspense>
   )
 }

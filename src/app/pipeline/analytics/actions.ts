@@ -56,6 +56,7 @@ export async function getPipelineConversionMetrics(pipelineId: string): Promise<
                 return {
                     id: d.id,
                     stageId: data.pipelineStageId || "",
+                    status: (data.status as string) || "open",
                     value: Number(data.opportunityValue) || 0,
                     createdAt: toTs(data.createdAt),
                     updatedAt: toTs(data.updatedAt),
@@ -77,13 +78,13 @@ export async function getPipelineConversionMetrics(pipelineId: string): Promise<
             }
 
             const stageName = stages.find(s => s.id === opp.stageId)?.name || ""
-            if (CLOSED_WON_NAMES.has(stageName)) {
+            if (opp.status === "closed_won" || CLOSED_WON_NAMES.has(stageName)) {
                 wonCount++
                 wonValue += opp.value
                 if (opp.createdAt && opp.updatedAt) {
                     cycleDays.push((opp.updatedAt - opp.createdAt) / 86400000)
                 }
-            } else if (CLOSED_LOST_NAMES.has(stageName)) {
+            } else if (opp.status === "closed_lost" || CLOSED_LOST_NAMES.has(stageName)) {
                 lostCount++
                 lostValue += opp.value
             }

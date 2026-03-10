@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -48,7 +48,9 @@ import { createNote, deleteNote } from "@/app/contacts/actions"
 import type { TimelineItem } from "@/app/contacts/types"
 import { NotesEditor } from "@/components/NotesEditor"
 import { CustomFieldsSection } from "@/components/CustomFieldsSection"
-import { updateRequiredDocs, moveToLeaseSigned, claimOpportunity, updateBlockers, addPayment, getPayments, updateDealExpenses, getDealExpenses } from "./actions"
+import { updateRequiredDocs, moveToLeaseSigned, claimOpportunity, updateBlockers, addPayment, getPayments, updateDealExpenses, getDealExpenses, updateOpportunity } from "./actions"
+import type { DealStatus } from "@/types"
+import { DEAL_STATUS_LABELS, DEAL_STATUS_COLORS } from "@/types"
 import { toast } from "sonner"
 import dynamic from "next/dynamic"
 
@@ -61,6 +63,52 @@ const OnBaseLodgingCalculator = dynamic(() => import("@/components/calculators/O
     ssr: false,
     loading: () => <div className="h-[300px] flex items-center justify-center">Loading On-Base Calculator...</div>
 })
+
+function BaseCombobox({ value, bases, onChange }: { value: string; bases: string[]; onChange: (val: string) => void }) {
+    const [open, setOpen] = useState(false)
+    const [search, setSearch] = useState(value)
+    const containerRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => { setSearch(value) }, [value])
+
+    useEffect(() => {
+        function handleClick(e: MouseEvent) {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+        }
+        document.addEventListener("mousedown", handleClick)
+        return () => document.removeEventListener("mousedown", handleClick)
+    }, [])
+
+    const filtered = search
+        ? bases.filter(b => b.toLowerCase().includes(search.toLowerCase()))
+        : []
+
+    return (
+        <div className="relative" ref={containerRef}>
+            <MapPin className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground z-10" />
+            <Input
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setOpen(true); onChange(e.target.value) }}
+                onFocus={() => { if (search) setOpen(true) }}
+                className="h-8 pl-8 text-sm"
+                placeholder="Type to search bases..."
+            />
+            {open && filtered.length > 0 && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
+                    {filtered.map(base => (
+                        <div
+                            key={base}
+                            className={`px-3 py-1.5 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors ${base === value ? "bg-accent/50 font-medium" : ""}`}
+                            onMouseDown={(e) => { e.preventDefault(); setSearch(base); onChange(base); setOpen(false) }}
+                        >
+                            {base}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
 
 interface DealDetailSheetProps {
     selectedDeal: any
@@ -87,6 +135,7 @@ interface DealDetailSheetProps {
     pathname: string
     openedDealIdFromUrl: React.MutableRefObject<string | null>
     fetchPipelines: () => void
+    onLinkContact?: () => void
 }
 
 export function DealDetailSheet({
@@ -114,6 +163,7 @@ export function DealDetailSheet({
     pathname,
     openedDealIdFromUrl,
     fetchPipelines,
+    onLinkContact,
 }: DealDetailSheetProps) {
     // Internal state for the sheet
     const [isCalculatorOpen, setIsCalculatorOpen] = useState(false)
@@ -340,9 +390,41 @@ export function DealDetailSheet({
                                         </Avatar>
                                         <div>
                                             <SheetTitle className="text-xl sm:text-2xl">{selectedDeal.name || "New opportunity"}</SheetTitle>
-                                            <SheetDescription className="flex items-center gap-2 mt-1">
+                                            <SheetDescription className="flex items-center gap-2 mt-1 flex-wrap">
                                                 <Badge variant="outline" className="font-normal">{selectedDeal.stage}</Badge>
-                                                <span className="text-xs text-muted-foreground">in Pipeline</span>
+                                                {selectedDeal.id !== "new" && (
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Badge variant="outline" className={`cursor-pointer font-normal ${DEAL_STATUS_COLORS[(selectedDeal.status || "open") as DealStatus]}`}>
+                                                                {DEAL_STATUS_LABELS[(selectedDeal.status || "open") as DealStatus]}
+                                                            </Badge>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="start">
+                                                            {(["open", "closed_won", "closed_lost", "archive"] as DealStatus[]).map(s => (
+                                                                <DropdownMenuItem
+                                                                    key={s}
+                                                                    disabled={s === (selectedDeal.status || "open")}
+                                                                    onClick={async () => {
+                                                                        const res = await updateOpportunity(selectedDeal.id, { status: s })
+                                                                        if (res.success) {
+                                                                            setSelectedDeal((prev: any) => prev ? { ...prev, status: s } : null)
+                                                                            fetchPipelines()
+                                                                            toast.success(`Deal marked as ${DEAL_STATUS_LABELS[s]}`)
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
+                                                                        s === "open" ? "bg-emerald-500" :
+                                                                        s === "closed_won" ? "bg-blue-500" :
+                                                                        s === "closed_lost" ? "bg-red-500" :
+                                                                        "bg-gray-400"
+                                                                    }`} />
+                                                                    {DEAL_STATUS_LABELS[s]}
+                                                                </DropdownMenuItem>
+                                                            ))}
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                )}
                                             </SheetDescription>
                                         </div>
                                     </div>
@@ -468,24 +550,24 @@ export function DealDetailSheet({
                                                 </div>
                                                 <div className="space-y-1 col-span-2">
                                                     <span className="text-muted-foreground text-xs">Military Base</span>
-                                                    <div className="relative">
-                                                        <MapPin className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                                                        <Input
-                                                            list="bases-list"
-                                                            value={selectedDeal.base || ""}
-                                                            onChange={(e) => setSelectedDeal((prev: any) => prev ? { ...prev, base: e.target.value } : null)}
-                                                            className="h-8 pl-8 text-sm"
-                                                            placeholder="Type to search bases..."
-                                                        />
-                                                        <datalist id="bases-list">
-                                                            {baseNames.map(base => (
-                                                                <option key={base} value={base} />
-                                                            ))}
-                                                        </datalist>
-                                                    </div>
+                                                    <BaseCombobox
+                                                        value={selectedDeal.base || ""}
+                                                        bases={baseNames}
+                                                        onChange={(val) => setSelectedDeal((prev: any) => prev ? { ...prev, base: val } : null)}
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {selectedDeal?.id !== 'new' && !selectedDeal?.contactId && onLinkContact && (
+                                            <div className="flex items-center gap-2 p-3 rounded-lg border border-dashed border-primary/30 bg-primary/5">
+                                                <User className="h-4 w-4 text-primary" />
+                                                <span className="text-sm text-muted-foreground flex-1">No contact linked</span>
+                                                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onLinkContact}>
+                                                    Link Contact
+                                                </Button>
+                                            </div>
+                                        )}
 
                                         <Separator />
 
@@ -519,6 +601,7 @@ export function DealDetailSheet({
                                                     <select
                                                         className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                                                         value={selectedDeal.stage}
+                                                        disabled={(selectedDeal.status || "open") !== "open"}
                                                         onChange={(e) => {
                                                             const newStage = e.target.value;
                                                             setSelectedDeal((prev: any) => prev ? { ...prev, stage: newStage } : null);

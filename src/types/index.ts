@@ -14,6 +14,22 @@ export interface Contact {
     [key: string]: any // allow extra fields for flexibility
 }
 
+export type DealStatus = "open" | "closed_won" | "closed_lost" | "archive"
+
+export const DEAL_STATUS_LABELS: Record<DealStatus, string> = {
+    open: "Open",
+    closed_won: "Closed (Won)",
+    closed_lost: "Closed (Lost)",
+    archive: "Archived",
+}
+
+export const DEAL_STATUS_COLORS: Record<DealStatus, string> = {
+    open: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+    closed_won: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+    closed_lost: "bg-red-500/10 text-red-600 border-red-500/20",
+    archive: "bg-gray-500/10 text-gray-600 border-gray-500/20",
+}
+
 export interface Opportunity {
     id: string
     name: string
@@ -21,6 +37,7 @@ export interface Opportunity {
     phone: string
     base: string
     stage: string
+    status: DealStatus
     priority: string
     startDate: string
     endDate: string

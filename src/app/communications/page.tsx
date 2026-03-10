@@ -331,23 +331,30 @@ export default function CommunicationsPage() {
                                     <Plus className="h-3 w-3 mr-1" /> Start a conversation
                                 </Button>
                             </div>
-                        ) : filteredConversations.map(convo => (
+                        ) : filteredConversations.map(convo => {
+                            const needsAttention = convo.lastMessageDirection === "inbound" && selectedContactId !== convo.contactId
+                            return (
                             <div
                                 key={convo.contactId}
                                 onClick={() => openThread(convo.contactId)}
                                 className={`flex items-start gap-3 px-4 py-3 min-h-[56px] cursor-pointer transition-colors border-b border-border/30 touch-manipulation ${selectedContactId === convo.contactId
                                         ? "bg-primary/5 border-l-2 border-l-primary"
+                                        : needsAttention
+                                        ? "bg-blue-500/5 hover:bg-blue-500/10 active:bg-blue-500/15"
                                         : "hover:bg-muted/30 active:bg-muted/40"
                                     }`}
                             >
-                                <Avatar className="h-10 w-10 shrink-0 mt-0.5">
+                                {needsAttention && (
+                                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0 mt-4" />
+                                )}
+                                <Avatar className={`h-10 w-10 shrink-0 mt-0.5 ${needsAttention ? "-ml-1" : ""}`}>
                                     <AvatarFallback className="bg-gradient-to-br from-slate-700 to-slate-900 text-white text-xs font-medium">
                                         {convo.contactName?.charAt(0)}
                                     </AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between mb-0.5">
-                                        <span className="text-sm font-semibold truncate">{convo.contactName}</span>
+                                        <span className={`text-sm truncate ${needsAttention ? "font-bold text-foreground" : "font-semibold"}`}>{convo.contactName}</span>
                                         <span className="text-[10px] text-muted-foreground shrink-0 ml-2">{formatTime(convo.lastMessageTime)}</span>
                                     </div>
                                     <div className="flex items-center gap-1.5 mb-1">
@@ -362,12 +369,16 @@ export default function CommunicationsPage() {
                                     <p className="text-xs text-muted-foreground truncate">{convo.lastMessage}</p>
                                 </div>
                             </div>
-                        ))}
+                        )})}
                     </div>
 
                     {/* Stats Footer */}
                     <div className="p-3 border-t text-[10px] text-muted-foreground text-center">
                         {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
+                        {(() => {
+                            const attentionCount = conversations.filter(c => c.lastMessageDirection === "inbound").length
+                            return attentionCount > 0 ? ` · ${attentionCount} need${attentionCount === 1 ? "s" : ""} attention` : ""
+                        })()}
                     </div>
                 </div>
 

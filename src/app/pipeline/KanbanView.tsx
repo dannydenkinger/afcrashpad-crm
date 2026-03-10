@@ -3,7 +3,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { MapPin, DollarSign, CalendarIcon, Phone, MessageSquare, Tag, FileText, CheckSquare, ChevronRight, User, Ban } from "lucide-react"
+import { MapPin, DollarSign, CalendarIcon, Phone, MessageSquare, FileText, CheckSquare, ChevronRight, User, Ban } from "lucide-react"
 import { getLengthOfStay, formatDisplayDate } from "./utils"
 
 // Use the Calendar icon under an alias to match the original import name
@@ -36,6 +36,9 @@ interface DealCardProps {
     onDragEnd: () => void
     onOpenDeal: (deal: any) => void
     onOpenNotes: (deal: any) => void
+    onCallContact: (deal: any) => void
+    onMessageContact: (deal: any) => void
+    onOpenTasks: (deal: any) => void
 }
 
 const DealCard = React.memo(function DealCard({
@@ -53,20 +56,27 @@ const DealCard = React.memo(function DealCard({
     onDragEnd,
     onOpenDeal,
     onOpenNotes,
+    onCallContact,
+    onMessageContact,
+    onOpenTasks,
 }: DealCardProps) {
     const isNewInquiry = deal.unread === true;
     const aging = getAgingInfo(deal);
     const hasBlockers = Array.isArray(deal.blockers) && deal.blockers.length > 0;
     let priorityColorClass = "bg-blue-500";
+    let priorityLabel = "";
     if (deal.startDate && deal.startDate !== "-") {
         const start = new Date(deal.startDate);
+        const end = deal.endDate && deal.endDate !== "-" ? new Date(deal.endDate) : null;
         const now = new Date();
         const diffTime = start.getTime() - now.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         const { urgentDays, soonDays } = priorityRanges;
-        if (diffDays <= urgentDays) priorityColorClass = "bg-red-500";
-        else if (diffDays <= soonDays) priorityColorClass = "bg-yellow-500";
-        else priorityColorClass = "bg-blue-500";
+        if (end && now > end) { priorityColorClass = "bg-gray-500"; priorityLabel = "EXPIRED"; }
+        else if (now >= start && (!end || now <= end)) { priorityColorClass = "bg-emerald-500"; priorityLabel = "ACTIVE"; }
+        else if (diffDays <= urgentDays) { priorityColorClass = "bg-red-500"; priorityLabel = "URGENT"; }
+        else if (diffDays <= soonDays) { priorityColorClass = "bg-yellow-500"; priorityLabel = "SOON"; }
+        else { priorityColorClass = "bg-blue-500"; priorityLabel = "PLANNED"; }
     }
 
     return (
@@ -162,11 +172,11 @@ const DealCard = React.memo(function DealCard({
                                     ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-red-500") || (!deal.startDate && deal.priority === "HIGH") ? "bg-red-500/10 text-red-600 border-red-500/20" : ""}
                                     ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-yellow-500") || (!deal.startDate && deal.priority === "MEDIUM") ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : ""}
                                     ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-blue-500") || (!deal.startDate && deal.priority === "LOW") ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : ""}
+                                    ${priorityColorClass === "bg-emerald-500" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : ""}
+                                    ${priorityColorClass === "bg-gray-500" ? "bg-gray-500/10 text-gray-500 border-gray-500/20" : ""}
                                 `}
                             >
-                                {deal.startDate && deal.startDate !== "-" ?
-                                    (priorityColorClass === "bg-red-500" ? "URGENT" : priorityColorClass === "bg-yellow-500" ? "SOON" : "PLANNED")
-                                : deal.priority}
+                                {deal.startDate && deal.startDate !== "-" ? priorityLabel : deal.priority}
                             </Badge>
                         </div>
                     )}
@@ -202,14 +212,11 @@ const DealCard = React.memo(function DealCard({
 
             {showQuickActions && (
                 <div className="flex items-center gap-1.5 pt-3 border-t border-border/50 pl-1">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted/50 hover:text-primary shrink-0 transition-colors">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted/50 hover:text-primary shrink-0 transition-colors" onClick={(e) => { e.stopPropagation(); onCallContact(deal); }}>
                         <Phone className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted/50 hover:text-primary shrink-0 transition-colors relative">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted/50 hover:text-primary shrink-0 transition-colors relative" onClick={(e) => { e.stopPropagation(); onMessageContact(deal); }}>
                         <MessageSquare className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted/50 hover:text-primary shrink-0 transition-colors">
-                        <Tag className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                         variant="ghost"
@@ -223,7 +230,7 @@ const DealCard = React.memo(function DealCard({
                         <FileText className="h-3.5 w-3.5" />
                         {deal.notes && <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-blue-500 text-[8px] text-white font-bold ring-2 ring-card border-none">1</span>}
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted/50 hover:text-primary shrink-0 transition-colors">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted/50 hover:text-primary shrink-0 transition-colors" onClick={(e) => { e.stopPropagation(); onOpenTasks(deal); }}>
                         <CheckSquare className="h-3.5 w-3.5" />
                     </Button>
                 </div>
@@ -306,6 +313,9 @@ interface KanbanViewProps {
     onDrop: (e: React.DragEvent, stageId: string, stageName: string) => void
     onOpenDeal: (deal: any) => void
     onOpenNotes: (deal: any) => void
+    onCallContact: (deal: any) => void
+    onMessageContact: (deal: any) => void
+    onOpenTasks: (deal: any) => void
 }
 
 export const KanbanView = React.memo(function KanbanView({
@@ -329,6 +339,9 @@ export const KanbanView = React.memo(function KanbanView({
     onDrop,
     onOpenDeal,
     onOpenNotes,
+    onCallContact,
+    onMessageContact,
+    onOpenTasks,
 }: KanbanViewProps) {
     // Memoize deals grouped by stage to avoid re-filtering on every render
     const dealsByStage = useMemo(() => {
@@ -446,6 +459,9 @@ export const KanbanView = React.memo(function KanbanView({
                                     onDragEnd={onDragEnd}
                                     onOpenDeal={onOpenDeal}
                                     onOpenNotes={onOpenNotes}
+                                    onCallContact={onCallContact}
+                                    onMessageContact={onMessageContact}
+                                    onOpenTasks={onOpenTasks}
                                 />
                             ))}
                             {stageDeals.length === 0 && (

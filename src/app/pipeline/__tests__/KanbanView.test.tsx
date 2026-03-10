@@ -93,6 +93,9 @@ describe('KanbanView', () => {
     onDrop: vi.fn(),
     onOpenDeal: vi.fn(),
     onOpenNotes: vi.fn(),
+    onCallContact: vi.fn(),
+    onMessageContact: vi.fn(),
+    onOpenTasks: vi.fn(),
   }
 
   it('renders stage column headers', () => {

@@ -511,6 +511,34 @@ export async function deleteTask(taskId: string) {
     return { success: true };
 }
 
+// ── Overdue Task Count (lightweight) ────────────────────────────────────────
+
+export async function getOverdueTaskCount(): Promise<number> {
+    try {
+        const now = new Date();
+        // Zero out time to get start of today
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        const snapshot = await adminDb.collection('tasks')
+            .where('completed', '==', false)
+            .get();
+
+        let count = 0;
+        snapshot.forEach(doc => {
+            const task = doc.data();
+            if (!task.dueDate) return;
+            const dueDate = task.dueDate.toDate ? task.dueDate.toDate() : new Date(task.dueDate);
+            if (dueDate < startOfToday) {
+                count++;
+            }
+        });
+
+        return count;
+    } catch {
+        return 0;
+    }
+}
+
 // ── Task Templates ──────────────────────────────────────────────────────────
 
 export async function getTaskTemplates() {

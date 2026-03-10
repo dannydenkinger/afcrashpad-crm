@@ -81,7 +81,7 @@ export async function getBookingsData(): Promise<{ success: boolean; data?: Book
             const stageName = d.pipelineStageId ? stageMap[d.pipelineStageId] || "Unknown" : "Unknown"
 
             if (!base || !startDate || !endDate) continue
-            if (excludeStages.has(stageName)) continue
+            if (d.status === "closed_lost" || d.status === "archive" || excludeStages.has(stageName)) continue
 
             bookings.push({
                 id: doc.id,

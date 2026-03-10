@@ -26,7 +26,7 @@ import {
     ChevronRight,
     X
 } from "lucide-react"
-import { format, isPast, isToday } from "date-fns"
+import { format, isPast, isToday, isTomorrow, isThisWeek } from "date-fns"
 import {
     getTasks,
     toggleTaskComplete,
@@ -145,6 +145,8 @@ export default function TasksPage() {
     const [isLoading, setIsLoading] = useState(true)
     const [searchQuery, setSearchQuery] = useState("")
     const [filter, setFilter] = useState<"all" | "active" | "completed">("active")
+    const [sortBy, setSortBy] = useState<"dueDate" | "priority" | "created">("dueDate")
+    const [quickFilters, setQuickFilters] = useState<Set<string>>(new Set())
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
     const [editingTask, setEditingTask] = useState<any>(null)
     const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -344,14 +346,88 @@ export default function TasksPage() {
         }
     }, [])
 
-    const filteredTasks = useMemo(() => tasks.filter(task => {
-        const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            task.description?.toLowerCase().includes(searchQuery.toLowerCase())
-        const matchesFilter = filter === "all" ||
-            (filter === "active" && !task.completed) ||
-            (filter === "completed" && task.completed)
-        return matchesSearch && matchesFilter
-    }), [tasks, searchQuery, filter])
+    const toggleQuickFilter = useCallback((key: string) => {
+        setQuickFilters(prev => {
+            const next = new Set(prev)
+            if (next.has(key)) next.delete(key)
+            else next.add(key)
+            return next
+        })
+    }, [])
+
+    const filteredTasks = useMemo(() => {
+        const priorityOrder: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
+
+        const filtered = tasks.filter(task => {
+            const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                task.description?.toLowerCase().includes(searchQuery.toLowerCase())
+            const matchesFilter = filter === "all" ||
+                (filter === "active" && !task.completed) ||
+                (filter === "completed" && task.completed)
+            if (!matchesSearch || !matchesFilter) return false
+
+            // Quick filters (all selected must match)
+            if (quickFilters.has("overdue")) {
+                if (!task.dueDate || !isPast(new Date(task.dueDate)) || isToday(new Date(task.dueDate)) || task.completed) return false
+            }
+            if (quickFilters.has("high")) {
+                if (task.priority !== "HIGH") return false
+            }
+            if (quickFilters.has("thisWeek")) {
+                if (!task.dueDate || !isThisWeek(new Date(task.dueDate), { weekStartsOn: 1 })) return false
+            }
+            return true
+        })
+
+        // Sort
+        filtered.sort((a, b) => {
+            if (sortBy === "dueDate") {
+                if (!a.dueDate && !b.dueDate) return 0
+                if (!a.dueDate) return 1
+                if (!b.dueDate) return -1
+                return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+            }
+            if (sortBy === "priority") {
+                return (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3)
+            }
+            // created
+            return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        })
+
+        return filtered
+    }, [tasks, searchQuery, filter, sortBy, quickFilters])
+
+    const groupedTasks = useMemo(() => {
+        const groups: { key: string; label: string; tasks: any[] }[] = [
+            { key: "overdue", label: "Overdue", tasks: [] },
+            { key: "today", label: "Today", tasks: [] },
+            { key: "tomorrow", label: "Tomorrow", tasks: [] },
+            { key: "thisWeek", label: "This Week", tasks: [] },
+            { key: "later", label: "Later", tasks: [] },
+            { key: "noDueDate", label: "No Due Date", tasks: [] },
+        ]
+
+        for (const task of filteredTasks) {
+            if (!task.dueDate) {
+                groups[5].tasks.push(task)
+            } else {
+                const date = new Date(task.dueDate)
+                if (isToday(date)) {
+                    groups[1].tasks.push(task)
+                } else if (isPast(date) && !task.completed) {
+                    groups[0].tasks.push(task)
+                } else if (isTomorrow(date)) {
+                    groups[2].tasks.push(task)
+                } else if (isThisWeek(date, { weekStartsOn: 1 })) {
+                    groups[3].tasks.push(task)
+                } else {
+                    groups[4].tasks.push(task)
+                }
+            }
+        }
+
+        return groups.filter(g => g.tasks.length > 0)
+    }, [filteredTasks])
 
     const getPriorityColor = (priority: string) => {
         switch (priority) {
@@ -403,7 +479,7 @@ export default function TasksPage() {
                 availableTasks={availableTasksForDeps}
             />
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 mb-4">
                 <div className="relative flex-1 min-w-0 group">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                     <input
@@ -440,6 +516,40 @@ export default function TasksPage() {
                         All
                     </Button>
                 </div>
+                <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+                    <SelectTrigger className="w-[140px] h-8 rounded-lg text-[11px] font-black uppercase tracking-widest bg-muted/30 border-white/5">
+                        <SelectValue placeholder="Sort by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="dueDate">Due Date</SelectItem>
+                        <SelectItem value="priority">Priority</SelectItem>
+                        <SelectItem value="created">Created</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
+
+            <div className="flex items-center gap-2 mb-6 flex-wrap">
+                {([
+                    { key: "overdue", label: "Overdue", color: "text-rose-500 border-rose-500/30 bg-rose-500/10" },
+                    { key: "high", label: "High Priority", color: "text-amber-500 border-amber-500/30 bg-amber-500/10" },
+                    { key: "thisWeek", label: "This Week", color: "text-blue-500 border-blue-500/30 bg-blue-500/10" },
+                ] as const).map(chip => (
+                    <button
+                        key={chip.key}
+                        onClick={() => toggleQuickFilter(chip.key)}
+                        className={cn(
+                            "px-3 py-1 rounded-full text-[11px] font-bold border transition-all touch-manipulation",
+                            quickFilters.has(chip.key)
+                                ? chip.color
+                                : "text-muted-foreground border-white/10 bg-muted/20 hover:bg-muted/40"
+                        )}
+                    >
+                        {chip.label}
+                        {quickFilters.has(chip.key) && (
+                            <X className="inline-block ml-1 h-3 w-3 -mt-0.5" />
+                        )}
+                    </button>
+                ))}
             </div>
 
             <div className="flex-1 overflow-auto pr-2 space-y-3">
@@ -447,124 +557,135 @@ export default function TasksPage() {
                     Array.from({ length: 5 }).map((_, i) => (
                         <div key={i} className="h-20 rounded-2xl border border-white/5 bg-muted/5 animate-pulse" />
                     ))
-                ) : filteredTasks.length > 0 ? (
-                    filteredTasks.map((task) => {
-                        const isBlocked = task.blockedByTaskId && !task.blockedByTaskCompleted && !task.completed
-                        const wasBlocked = task.blockedByTaskId && task.blockedByTaskCompleted && !task.completed
-
-                        return (
-                            <Card key={task.id} className={cn(
-                                "border-white/5 bg-card/40 backdrop-blur-md hover:bg-card/60 active:bg-card/70 transition-all group overflow-hidden touch-manipulation",
-                                task.completed && "opacity-60",
-                                isBlocked && "border-amber-500/20"
+                ) : groupedTasks.length > 0 ? (
+                    groupedTasks.map((group) => (
+                        <div key={group.key} className="space-y-2">
+                            <h4 className={cn(
+                                "text-[10px] font-black uppercase tracking-[0.15em] px-1 pt-2",
+                                group.key === "overdue" ? "text-rose-500" : "text-muted-foreground"
                             )}>
-                                <CardContent className="p-0">
-                                    <div className="flex items-center p-4 min-h-[56px]">
-                                        <div className="flex items-center gap-4 flex-1 min-w-0">
-                                            <Checkbox
-                                                checked={task.completed}
-                                                onCheckedChange={() => handleToggleTask(task.id, task.completed)}
-                                                className={cn(
-                                                    "h-5 w-5 rounded-lg border-white/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary transition-all",
-                                                    isBlocked && "border-amber-500/40"
-                                                )}
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                    <h3 className={cn(
-                                                        "text-sm font-black leading-none",
-                                                        task.completed && "line-through text-muted-foreground"
-                                                    )}>{task.title}</h3>
-                                                    <Badge className={cn("text-[9px] font-black px-2 py-0 border leading-none uppercase tracking-tighter", getPriorityColor(task.priority))}>
-                                                        {task.priority}
-                                                    </Badge>
-                                                    {task.recurrence && task.recurrence.type !== "none" && (
-                                                        <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 border-primary/30 text-primary bg-primary/5 leading-none gap-0.5">
-                                                            <Repeat className="h-2.5 w-2.5" />
-                                                            {task.recurrence.interval > 1 ? `${task.recurrence.interval} ` : ""}
-                                                            {task.recurrence.type === "daily" ? "Daily" : task.recurrence.type === "weekly" ? "Weekly" : "Monthly"}
-                                                        </Badge>
-                                                    )}
-                                                    {isBlocked && (
-                                                        <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 border-amber-500/30 text-amber-500 bg-amber-500/5 leading-none gap-0.5">
-                                                            <Lock className="h-2.5 w-2.5" />
-                                                            Blocked by: {task.blockedByTaskTitle || "task"}
-                                                        </Badge>
-                                                    )}
-                                                    {wasBlocked && (
-                                                        <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 border-emerald-500/30 text-emerald-500 bg-emerald-500/5 leading-none gap-0.5">
-                                                            <Unlock className="h-2.5 w-2.5" />
-                                                            Unblocked
-                                                        </Badge>
-                                                    )}
+                                {group.label}
+                                <span className="ml-1.5 text-muted-foreground/50">{group.tasks.length}</span>
+                            </h4>
+                            {group.tasks.map((task) => {
+                                const isBlocked = task.blockedByTaskId && !task.blockedByTaskCompleted && !task.completed
+                                const wasBlocked = task.blockedByTaskId && task.blockedByTaskCompleted && !task.completed
+
+                                return (
+                                    <Card key={task.id} className={cn(
+                                        "border-white/5 bg-card/40 backdrop-blur-md hover:bg-card/60 active:bg-card/70 transition-all group overflow-hidden touch-manipulation",
+                                        task.completed && "opacity-60",
+                                        isBlocked && "border-amber-500/20"
+                                    )}>
+                                        <CardContent className="p-0">
+                                            <div className="flex items-center p-4 min-h-[56px]">
+                                                <div className="flex items-center gap-4 flex-1 min-w-0">
+                                                    <Checkbox
+                                                        checked={task.completed}
+                                                        onCheckedChange={() => handleToggleTask(task.id, task.completed)}
+                                                        className={cn(
+                                                            "h-5 w-5 rounded-lg border-white/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary transition-all",
+                                                            isBlocked && "border-amber-500/40"
+                                                        )}
+                                                    />
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                            <h3 className={cn(
+                                                                "text-sm font-black leading-none",
+                                                                task.completed && "line-through text-muted-foreground"
+                                                            )}>{task.title}</h3>
+                                                            <Badge className={cn("text-[9px] font-black px-2 py-0 border leading-none uppercase tracking-tighter", getPriorityColor(task.priority))}>
+                                                                {task.priority}
+                                                            </Badge>
+                                                            {task.recurrence && task.recurrence.type !== "none" && (
+                                                                <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 border-primary/30 text-primary bg-primary/5 leading-none gap-0.5">
+                                                                    <Repeat className="h-2.5 w-2.5" />
+                                                                    {task.recurrence.interval > 1 ? `${task.recurrence.interval} ` : ""}
+                                                                    {task.recurrence.type === "daily" ? "Daily" : task.recurrence.type === "weekly" ? "Weekly" : "Monthly"}
+                                                                </Badge>
+                                                            )}
+                                                            {isBlocked && (
+                                                                <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 border-amber-500/30 text-amber-500 bg-amber-500/5 leading-none gap-0.5">
+                                                                    <Lock className="h-2.5 w-2.5" />
+                                                                    Blocked by: {task.blockedByTaskTitle || "task"}
+                                                                </Badge>
+                                                            )}
+                                                            {wasBlocked && (
+                                                                <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 border-emerald-500/30 text-emerald-500 bg-emerald-500/5 leading-none gap-0.5">
+                                                                    <Unlock className="h-2.5 w-2.5" />
+                                                                    Unblocked
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+                                                        {task.description && (
+                                                            <p className="text-xs text-muted-foreground truncate mb-2">{task.description}</p>
+                                                        )}
+                                                        <div className="flex items-center gap-4">
+                                                            {task.dueDate && (
+                                                                <div className={cn(
+                                                                    "flex items-center gap-1 text-[10px] font-bold",
+                                                                    isPast(new Date(task.dueDate)) && !isToday(new Date(task.dueDate)) && !task.completed ? "text-rose-500" : "text-muted-foreground"
+                                                                )}>
+                                                                    <Clock className="h-3 w-3" />
+                                                                    {format(new Date(task.dueDate), "MMM d, h:mm a")}
+                                                                </div>
+                                                            )}
+                                                            {task.contact && (
+                                                                <div className="flex items-center gap-1 text-[10px] font-bold text-primary">
+                                                                    <UserIcon className="h-3 w-3" />
+                                                                    {task.contact.name}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                {task.description && (
-                                                    <p className="text-xs text-muted-foreground truncate mb-2">{task.description}</p>
-                                                )}
-                                                <div className="flex items-center gap-4">
-                                                    {task.dueDate && (
-                                                        <div className={cn(
-                                                            "flex items-center gap-1 text-[10px] font-bold",
-                                                            isPast(new Date(task.dueDate)) && !isToday(new Date(task.dueDate)) && !task.completed ? "text-rose-500" : "text-muted-foreground"
-                                                        )}>
-                                                            <Clock className="h-3 w-3" />
-                                                            {format(new Date(task.dueDate), "MMM d, h:mm a")}
-                                                        </div>
-                                                    )}
-                                                    {task.contact && (
-                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-primary">
-                                                            <UserIcon className="h-3 w-3" />
-                                                            {task.contact.name}
-                                                        </div>
-                                                    )}
+                                                <div className="flex items-center gap-2">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        onClick={() => openComments(task.id)}
+                                                    >
+                                                        <MessageSquare className="h-4 w-4" />
+                                                    </Button>
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg transition-colors border border-transparent hover:border-white/5">
+                                                                <MoreHorizontal className="h-4 w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuItem onClick={() => openEditDialog(task)}>Edit Task</DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => openComments(task.id)}>
+                                                                <MessageSquare className="h-3.5 w-3.5 mr-2" />
+                                                                Comments
+                                                            </DropdownMenuItem>
+                                                            {task.recurrence && task.recurrence.type !== "none" && (
+                                                                <>
+                                                                    <DropdownMenuSeparator />
+                                                                    <DropdownMenuItem onClick={() => setRecurringExceptionTarget(task)}>
+                                                                        <Repeat className="h-3.5 w-3.5 mr-2" />
+                                                                        Manage Recurrence
+                                                                    </DropdownMenuItem>
+                                                                </>
+                                                            )}
+                                                            <DropdownMenuSeparator />
+                                                            <DropdownMenuItem onClick={() => setDeleteTarget(task.id)} className="text-rose-500">Delete</DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
                                                 </div>
                                             </div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                                                onClick={() => openComments(task.id)}
-                                            >
-                                                <MessageSquare className="h-4 w-4" />
-                                            </Button>
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg transition-colors border border-transparent hover:border-white/5">
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => openEditDialog(task)}>Edit Task</DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => openComments(task.id)}>
-                                                        <MessageSquare className="h-3.5 w-3.5 mr-2" />
-                                                        Comments
-                                                    </DropdownMenuItem>
-                                                    {task.recurrence && task.recurrence.type !== "none" && (
-                                                        <>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem onClick={() => setRecurringExceptionTarget(task)}>
-                                                                <Repeat className="h-3.5 w-3.5 mr-2" />
-                                                                Manage Recurrence
-                                                            </DropdownMenuItem>
-                                                        </>
-                                                    )}
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem onClick={() => setDeleteTarget(task.id)} className="text-rose-500">Delete</DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </div>
-                                    </div>
-                                    {isPast(new Date(task.dueDate)) && !isToday(new Date(task.dueDate)) && !task.completed && (
-                                        <div className="h-1 w-full bg-rose-500/20">
-                                            <div className="h-full bg-rose-500 w-1/3 animate-pulse" />
-                                        </div>
-                                    )}
-                                </CardContent>
-                            </Card>
-                        )
-                    })
+                                            {isPast(new Date(task.dueDate)) && !isToday(new Date(task.dueDate)) && !task.completed && (
+                                                <div className="h-1 w-full bg-rose-500/20">
+                                                    <div className="h-full bg-rose-500 w-1/3 animate-pulse" />
+                                                </div>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                )
+                            })}
+                        </div>
+                    ))
                 ) : (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                         <CheckSquare className="h-12 w-12 text-muted-foreground/20 mb-4" />

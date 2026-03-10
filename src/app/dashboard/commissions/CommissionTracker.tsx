@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, DollarSign, CheckCircle2, Clock, Wallet, TrendingUp } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -19,11 +20,12 @@ function formatCurrency(value: number) {
     return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-export function CommissionTracker() {
+export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string; end: string } | null }) {
     const [data, setData] = useState<CommissionsData | null>(null)
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState<"all" | "earned" | "paid">("all")
     const [payingId, setPayingId] = useState<string | null>(null)
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
     useEffect(() => {
         loadData()
@@ -37,9 +39,21 @@ export function CommissionTracker() {
 
     const filteredEntries = useMemo(() => {
         if (!data) return []
-        if (filter === "all") return data.entries
-        return data.entries.filter(e => e.status === filter)
-    }, [data, filter])
+        let entries = data.entries
+        if (filter !== "all") {
+            entries = entries.filter(e => e.status === filter)
+        }
+        if (dateFilter) {
+            const start = new Date(dateFilter.start).getTime()
+            const end = new Date(dateFilter.end).getTime()
+            entries = entries.filter(e => {
+                if (!e.earnedAt) return false
+                const t = new Date(e.earnedAt).getTime()
+                return t >= start && t <= end
+            })
+        }
+        return entries
+    }, [data, filter, dateFilter])
 
     async function handleMarkPaid(id: string) {
         setPayingId(id)
@@ -72,6 +86,41 @@ export function CommissionTracker() {
             toast.error(res.error || "Failed to mark as paid")
         }
         setPayingId(null)
+    }
+
+    const earnedIds = useMemo(() => {
+        return new Set(filteredEntries.filter(e => e.status === "earned").map(e => e.id))
+    }, [filteredEntries])
+
+    const allEarnedSelected = earnedIds.size > 0 && Array.from(earnedIds).every(id => selectedIds.has(id))
+
+    const toggleSelect = useCallback((id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }, [])
+
+    const toggleSelectAll = useCallback(() => {
+        if (allEarnedSelected) {
+            setSelectedIds(new Set())
+        } else {
+            setSelectedIds(new Set(earnedIds))
+        }
+    }, [allEarnedSelected, earnedIds])
+
+    async function handleBulkMarkPaid() {
+        const ids = Array.from(selectedIds)
+        setPayingId("bulk")
+        for (const id of ids) {
+            await markCommissionPaid(id)
+        }
+        setSelectedIds(new Set())
+        setPayingId(null)
+        toast.success(`${ids.length} commissions marked as paid`)
+        loadData()
     }
 
     if (loading) {
@@ -226,6 +275,18 @@ export function CommissionTracker() {
                     </div>
                 </CardHeader>
                 <CardContent className="pt-0 px-0">
+                    {selectedIds.size > 0 && (
+                        <div className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-primary/10 border-b border-primary/20">
+                            <span className="text-sm font-semibold text-primary">{selectedIds.size} selected</span>
+                            <Button size="sm" className="h-7 text-xs" onClick={handleBulkMarkPaid} disabled={payingId !== null}>
+                                {payingId === "bulk" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                                Mark All Paid
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedIds(new Set())}>
+                                Clear
+                            </Button>
+                        </div>
+                    )}
                     {filteredEntries.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-center">
                             <DollarSign className="h-12 w-12 text-muted-foreground/20 mb-4" />
@@ -239,7 +300,15 @@ export function CommissionTracker() {
                                 {filteredEntries.map(entry => (
                                     <div key={`mobile-${entry.id}`} className="p-3 rounded-xl border border-border/50 bg-card space-y-2">
                                         <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
+                                            {entry.status === "earned" && (
+                                                <Checkbox
+                                                    checked={selectedIds.has(entry.id)}
+                                                    onCheckedChange={() => toggleSelect(entry.id)}
+                                                    className="mt-0.5 shrink-0"
+                                                    aria-label={`Select ${entry.contactName}`}
+                                                />
+                                            )}
+                                            <div className="min-w-0 flex-1">
                                                 <div className="font-medium text-sm truncate">{entry.contactName}</div>
                                                 <div className="text-[10px] text-muted-foreground">
                                                     {entry.agentName} · {entry.base || "No base"} · {entry.earnedAt?.split("T")[0] || ""}
@@ -276,6 +345,15 @@ export function CommissionTracker() {
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="border-t border-b bg-muted/20 text-xs text-muted-foreground">
+                                            <th className="px-4 sm:px-6 py-3 w-10">
+                                                {earnedIds.size > 0 && (
+                                                    <Checkbox
+                                                        checked={allEarnedSelected}
+                                                        onCheckedChange={toggleSelectAll}
+                                                        aria-label="Select all earned commissions"
+                                                    />
+                                                )}
+                                            </th>
                                             <th className="text-left font-semibold px-4 sm:px-6 py-3">Deal</th>
                                             <th className="text-left font-semibold px-4 sm:px-6 py-3">Agent</th>
                                             <th className="text-right font-semibold px-4 sm:px-6 py-3">Deal Value</th>
@@ -287,6 +365,15 @@ export function CommissionTracker() {
                                     <tbody>
                                         {filteredEntries.map(entry => (
                                             <tr key={entry.id} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
+                                                <td className="px-4 sm:px-6 py-3.5 w-10">
+                                                    {entry.status === "earned" && (
+                                                        <Checkbox
+                                                            checked={selectedIds.has(entry.id)}
+                                                            onCheckedChange={() => toggleSelect(entry.id)}
+                                                            aria-label={`Select ${entry.contactName}`}
+                                                        />
+                                                    )}
+                                                </td>
                                                 <td className="px-4 sm:px-6 py-3.5">
                                                     <div className="font-medium text-sm">{entry.contactName}</div>
                                                     <div className="text-[10px] text-muted-foreground">

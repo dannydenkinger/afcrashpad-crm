@@ -112,12 +112,13 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
                 <span className="hidden sm:inline">{displayLabel}</span>
                 <span className="sm:hidden">Range</span>
                 {value && (
-                    <button
+                    <span
+                        role="button"
                         onClick={handleClear}
                         className="ml-1 rounded-full hover:bg-muted/50 p-0.5"
                     >
                         <X className="h-3 w-3" />
-                    </button>
+                    </span>
                 )}
                 {!value && <ChevronDown className="h-3 w-3 opacity-50" />}
             </Button>

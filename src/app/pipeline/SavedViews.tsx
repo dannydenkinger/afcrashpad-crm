@@ -21,9 +21,12 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 
+import type { DealStatus } from "@/types"
+
 export interface PipelineViewState {
     activePipelineKey: string
     viewMode: "kanban" | "list"
+    statusFilter?: DealStatus
     showBase: boolean
     showValue: boolean
     showPriority: boolean

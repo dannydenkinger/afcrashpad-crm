@@ -26,7 +26,7 @@ interface RevenueDeal {
     stage: string | null
 }
 
-export function RevenueTracker() {
+export function RevenueTracker({ dateFilter }: { dateFilter?: { start: string; end: string } | null }) {
     const [deals, setDeals] = useState<RevenueDeal[]>([])
     const [loading, setLoading] = useState(true)
     const [totals, setTotals] = useState({ totalBooked: 0, totalCollected: 0, outstanding: 0 })
@@ -61,10 +61,20 @@ export function RevenueTracker() {
             const term = searchTerm.toLowerCase()
             result = result.filter(d => d.name.toLowerCase().includes(term))
         }
+        if (dateFilter) {
+            const start = new Date(dateFilter.start).getTime()
+            const end = new Date(dateFilter.end).getTime()
+            result = result.filter(d => {
+                const dateStr = d.collectedDate || d.paymentStatus
+                if (!dateStr) return false
+                const t = new Date(dateStr).getTime()
+                return !isNaN(t) && t >= start && t <= end
+            })
+        }
         // Only show deals with value > 0
         result = result.filter(d => d.value > 0)
         return result
-    }, [deals, filter, searchTerm])
+    }, [deals, filter, searchTerm, dateFilter])
 
     async function handleMarkCollected(deal: RevenueDeal) {
         setMarkingId(deal.id)

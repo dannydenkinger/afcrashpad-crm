@@ -234,12 +234,17 @@ export async function getContactsPaginated(options?: { limit?: number; lastDocId
 
             const latestNote = latestNoteByContact[doc.id];
 
+            // Sanitize tags to plain objects (strip Firestore Timestamps)
+            const tags = Array.isArray(data.tags) ? data.tags.map((t: any) => ({
+                tagId: t.tagId || null, name: t.name || null, color: t.color || null,
+            })) : [];
+
             return {
                 id: doc.id,
                 ...data,
                 opportunities: oppsByContact[doc.id] || [],
                 notes: latestNote ? [latestNote] : [],
-                tags: data.tags || []
+                tags,
             };
         });
 
@@ -352,12 +357,17 @@ export async function getContacts() {
 
             const latestNote = latestNoteByContact[doc.id];
 
+            // Sanitize tags to plain objects (strip Firestore Timestamps)
+            const tags = Array.isArray(data.tags) ? data.tags.map((t: any) => ({
+                tagId: t.tagId || null, name: t.name || null, color: t.color || null,
+            })) : [];
+
             return {
                 id: doc.id,
                 ...data,
                 opportunities: oppsByContact[doc.id] || [],
                 notes: latestNote ? [latestNote] : [],
-                tags: data.tags || []
+                tags,
             };
         });
 

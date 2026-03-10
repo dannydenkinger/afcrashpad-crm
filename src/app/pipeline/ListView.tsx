@@ -5,6 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { ChevronRight, ArrowUpDown } from "lucide-react"
 import { getLengthOfStay, formatDisplayDate } from "./utils"
+import type { DealStatus } from "@/types"
+import { DEAL_STATUS_LABELS, DEAL_STATUS_COLORS } from "@/types"
 
 interface ListViewProps {
     sortedDeals: any[]
@@ -20,6 +22,7 @@ interface ListViewProps {
     selectedDealIds: Set<string>
     onToggleSelect: (dealId: string) => void
     onToggleSelectAll: () => void
+    statusFilter?: DealStatus
 }
 
 export function ListView({
@@ -36,6 +39,7 @@ export function ListView({
     selectedDealIds,
     onToggleSelect,
     onToggleSelectAll,
+    statusFilter = "open",
 }: ListViewProps) {
     const allSelected = sortedDeals.length > 0 && sortedDeals.every(d => selectedDealIds.has(d.id))
     const someSelected = sortedDeals.some(d => selectedDealIds.has(d.id)) && !allSelected
@@ -106,7 +110,8 @@ export function ListView({
                             />
                         </TableHead>
                         <TableHead>Contact</TableHead>
-                        <TableHead>Stage</TableHead>
+                        {statusFilter !== "open" && <TableHead>Status</TableHead>}
+                        <TableHead>{statusFilter !== "open" ? "Last Stage" : "Stage"}</TableHead>
                         {showBase && <TableHead>Location</TableHead>}
                         {showPriority && <TableHead>Priority</TableHead>}
                         {showValue && <TableHead className="cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => requestSort('value')}>Value <ArrowUpDown className="ml-1 h-3 w-3 inline-block text-muted-foreground" /></TableHead>}
@@ -140,6 +145,13 @@ export function ListView({
                                     </div>
                                     <div className="text-xs text-muted-foreground hidden sm:block">{deal.email} • {deal.phone}</div>
                                 </TableCell>
+                                {statusFilter !== "open" && (
+                                    <TableCell>
+                                        <Badge variant="outline" className={`font-normal text-[10px] ${DEAL_STATUS_COLORS[(deal.status || "open") as DealStatus]}`}>
+                                            {DEAL_STATUS_LABELS[(deal.status || "open") as DealStatus]}
+                                        </Badge>
+                                    </TableCell>
+                                )}
                                 <TableCell><Badge variant="secondary" className="font-medium bg-muted text-muted-foreground border-border">{deal.stage}</Badge></TableCell>
                                 {showBase && <TableCell className="text-muted-foreground">{deal.base}</TableCell>}
                                 {showPriority && <TableCell>
@@ -148,8 +160,13 @@ export function ListView({
                                             const { urgentDays, soonDays } = priorityRanges;
                                             let color = "";
                                             if (deal.startDate && deal.startDate !== "-") {
-                                                const diffDays = Math.ceil((new Date(deal.startDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                                                if (diffDays <= urgentDays) color = "bg-red-500/10 text-red-600 border-red-500/20";
+                                                const start = new Date(deal.startDate);
+                                                const end = deal.endDate && deal.endDate !== "-" ? new Date(deal.endDate) : null;
+                                                const now = new Date();
+                                                const diffDays = Math.ceil((start.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                                                if (end && now > end) color = "bg-gray-500/10 text-gray-500 border-gray-500/20";
+                                                else if (now >= start && (!end || now <= end)) color = "bg-emerald-500/10 text-emerald-600 border-emerald-500/20";
+                                                else if (diffDays <= urgentDays) color = "bg-red-500/10 text-red-600 border-red-500/20";
                                                 else if (diffDays <= soonDays) color = "bg-amber-500/10 text-amber-600 border-amber-500/20";
                                                 else color = "bg-blue-500/10 text-blue-600 border-blue-500/20";
                                             } else {
@@ -162,8 +179,13 @@ export function ListView({
                                     `}>
                                         {(() => {
                                             if (deal.startDate && deal.startDate !== "-") {
-                                                const diffDays = Math.ceil((new Date(deal.startDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                                                const start = new Date(deal.startDate);
+                                                const end = deal.endDate && deal.endDate !== "-" ? new Date(deal.endDate) : null;
+                                                const now = new Date();
+                                                const diffDays = Math.ceil((start.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
                                                 const { urgentDays, soonDays } = priorityRanges;
+                                                if (end && now > end) return "EXPIRED";
+                                                if (now >= start && (!end || now <= end)) return "ACTIVE";
                                                 if (diffDays <= urgentDays) return "URGENT";
                                                 if (diffDays <= soonDays) return "SOON";
                                                 return "PLANNED";

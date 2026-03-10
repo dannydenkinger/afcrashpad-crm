@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import {
     Calendar,
@@ -70,22 +71,32 @@ function formatCurrency(value: number) {
 }
 
 export default function DashboardPage() {
+    const router = useRouter()
     const [data, setData] = useState<DashboardData | null>(null)
     const [loading, setLoading] = useState(true)
 
-    // Per-card pipeline selectors
-    const [valuePipelineId, setValuePipelineId] = useState("")
-    const [statusPipelineId, setStatusPipelineId] = useState("")
-    const [stagePipelineId, setStagePipelineId] = useState("")
-    const [basePipelineId, setBasePipelineId] = useState("")
-
-    const [forecastPipelineId, setForecastPipelineId] = useState("")
+    const [globalPipelineId, setGlobalPipelineId] = useState("")
     const [timeframe, setTimeframe] = useState<"1m" | "6m" | "1y">("6m")
     const [chartView, setChartView] = useState<"forecast" | "pipeline">("forecast")
     const [tasks, setTasks] = useState<DashboardData['tasks']>([])
-    const [dateRange, setDateRange] = useState<DateRange | null>(null)
+    const [dateRange, setDateRange] = useState<DateRange | null>(() => {
+        if (typeof window === 'undefined') return null
+        try {
+            const saved = localStorage.getItem('dashboard-date-range')
+            if (saved) return JSON.parse(saved)
+        } catch {}
+        return null
+    })
     const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false)
     const [editingTask, setEditingTask] = useState<any>(null)
+
+    useEffect(() => {
+        if (dateRange) {
+            localStorage.setItem('dashboard-date-range', JSON.stringify(dateRange))
+        } else {
+            localStorage.removeItem('dashboard-date-range')
+        }
+    }, [dateRange])
 
     const fetchDashboard = useCallback(() => {
         setLoading(true)
@@ -94,11 +105,7 @@ export default function DashboardPage() {
                 setData(result.data)
                 setTasks(result.data.tasks)
                 const firstId = result.data.pipelines[0]?.id || ""
-                setForecastPipelineId(firstId)
-                setValuePipelineId(firstId)
-                setStatusPipelineId(firstId)
-                setStagePipelineId(firstId)
-                setBasePipelineId(firstId)
+                setGlobalPipelineId(firstId)
             }
             setLoading(false)
         })
@@ -197,10 +204,10 @@ export default function DashboardPage() {
     }
 
     const kpi = data.kpi
-    const valueData = data.pipelineData[valuePipelineId]?.valueOverTime[timeframe] || []
-    const stageData = data.pipelineData[stagePipelineId]?.stageDistribution || []
-    const donutData = data.pipelineData[statusPipelineId]?.stageDistribution.map(s => ({ name: s.name, value: s.count, color: s.color })) || []
-    const baseData = data.pipelineData[basePipelineId]?.dealsByBase || []
+    const valueData = data.pipelineData[globalPipelineId]?.valueOverTime[timeframe] || []
+    const stageData = data.pipelineData[globalPipelineId]?.stageDistribution || []
+    const donutData = data.pipelineData[globalPipelineId]?.stageDistribution.map(s => ({ name: s.name, value: s.count, color: s.color })) || []
+    const baseData = data.pipelineData[globalPipelineId]?.dealsByBase || []
 
     const PipelineDropdown = ({ value, onChange }: { value: string; onChange: (id: string) => void }) => (
         <DropdownMenu>
@@ -231,6 +238,7 @@ export default function DashboardPage() {
                         <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Operations overview & real-time analytics.</p>
                     </div>
                     <div className="flex items-center gap-2">
+                        <PipelineDropdown value={globalPipelineId} onChange={setGlobalPipelineId} />
                         <DateRangePicker value={dateRange} onChange={setDateRange} />
                         <Button
                             variant="outline"
@@ -258,7 +266,7 @@ export default function DashboardPage() {
 
                 {/* KPI Row */}
                 <div className="grid gap-4 sm:gap-5 grid-cols-2 lg:grid-cols-4">
-                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md overflow-hidden">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md overflow-hidden cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/contacts?status=Active+Stay')} role="link">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Tenants</CardTitle>
                             <Home className="h-4 w-4 text-primary opacity-70" />
@@ -270,7 +278,7 @@ export default function DashboardPage() {
                             </p>
                         </CardContent>
                     </Card>
-                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/pipeline')} role="link">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Conversion Rate</CardTitle>
                             <TrendingUp className="h-4 w-4 text-emerald-500 opacity-70" />
@@ -282,7 +290,7 @@ export default function DashboardPage() {
                             </p>
                         </CardContent>
                     </Card>
-                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/finance')} role="link">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Monthly Revenue</CardTitle>
                             <DollarSign className="h-4 w-4 text-emerald-500 opacity-70" />
@@ -307,7 +315,7 @@ export default function DashboardPage() {
                             </p>
                         </CardContent>
                     </Card>
-                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/pipeline')} role="link">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pipeline Value</CardTitle>
                             <DollarSign className="h-4 w-4 text-primary opacity-70" />
@@ -317,7 +325,7 @@ export default function DashboardPage() {
                             <p className="text-xs sm:text-[10px] text-muted-foreground mt-1 font-medium">Total opportunity value</p>
                         </CardContent>
                     </Card>
-                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/finance')} role="link">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Closed Profit</CardTitle>
                             <Banknote className="h-4 w-4 text-emerald-500 opacity-70" />
@@ -329,7 +337,7 @@ export default function DashboardPage() {
                             </p>
                         </CardContent>
                     </Card>
-                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/pipeline')} role="link">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Weighted Forecast</CardTitle>
                             <Target className="h-4 w-4 text-primary opacity-70" />
@@ -339,7 +347,7 @@ export default function DashboardPage() {
                             <p className="text-xs sm:text-[10px] text-muted-foreground mt-1 font-medium">Probability-adjusted</p>
                         </CardContent>
                     </Card>
-                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/contacts')} role="link">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Lead Velocity</CardTitle>
                             <Users className="h-4 w-4 text-primary opacity-70" />
@@ -364,7 +372,7 @@ export default function DashboardPage() {
                             </p>
                         </CardContent>
                     </Card>
-                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/pipeline')} role="link">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Open Inquiries</CardTitle>
                             <Inbox className="h-4 w-4 text-rose-500 opacity-70" />
@@ -399,25 +407,18 @@ export default function DashboardPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            {chartView === "forecast" && (
-                                <PipelineDropdown value={forecastPipelineId} onChange={setForecastPipelineId} />
-                            )}
                             {chartView === "pipeline" && (
-                                <>
-                                    <PipelineDropdown value={valuePipelineId} onChange={setValuePipelineId} />
-                                    <div className="h-4 w-[1px] bg-muted/50 mx-1" />
-                                    <div className="flex bg-muted/30 p-0.5 rounded-md">
-                                        {(["1m", "6m", "1y"] as const).map((t) => (
-                                            <button
-                                                key={t}
-                                                onClick={() => setTimeframe(t)}
-                                                className={`px-3 py-2 sm:px-2 sm:py-1 text-xs sm:text-[10px] font-bold rounded-sm transition-all min-h-[36px] sm:min-h-0 touch-manipulation ${timeframe === t ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                                            >
-                                                {t.toUpperCase()}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </>
+                                <div className="flex bg-muted/30 p-0.5 rounded-md">
+                                    {(["1m", "6m", "1y"] as const).map((t) => (
+                                        <button
+                                            key={t}
+                                            onClick={() => setTimeframe(t)}
+                                            className={`px-3 py-2 sm:px-2 sm:py-1 text-xs sm:text-[10px] font-bold rounded-sm transition-all min-h-[36px] sm:min-h-0 touch-manipulation ${timeframe === t ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                                        >
+                                            {t.toUpperCase()}
+                                        </button>
+                                    ))}
+                                </div>
                             )}
                         </div>
                     </CardHeader>
@@ -425,7 +426,7 @@ export default function DashboardPage() {
                         {chartView === "forecast" && (
                             <div>
                                 <p className="text-xs text-muted-foreground mb-3">Probability-weighted revenue projections</p>
-                                {forecastPipelineId && <RevenueForecast pipelineId={forecastPipelineId} />}
+                                {globalPipelineId && <RevenueForecast pipelineId={globalPipelineId} />}
                             </div>
                         )}
                         {chartView === "pipeline" && (
@@ -480,7 +481,6 @@ export default function DashboardPage() {
                                 <CardTitle className="text-base font-semibold">Opportunity Status</CardTitle>
                                 <CardDescription className="text-xs">Deal distribution by stage</CardDescription>
                             </div>
-                            <PipelineDropdown value={statusPipelineId} onChange={setStatusPipelineId} />
                         </CardHeader>
                         <CardContent className="pt-0 px-4 sm:px-6">
                             <div className="h-[240px] sm:h-[280px] w-full min-h-0">
@@ -529,7 +529,6 @@ export default function DashboardPage() {
                                 <CardTitle className="text-base font-semibold">Stage Distribution</CardTitle>
                                 <CardDescription className="text-xs">Deal volume & value by stage</CardDescription>
                             </div>
-                            <PipelineDropdown value={stagePipelineId} onChange={setStagePipelineId} />
                         </CardHeader>
                         <CardContent className="pt-2 px-4 sm:px-6">
                             <div className="space-y-4 h-[180px] overflow-y-auto pr-2 scrollbar-hide">
@@ -579,7 +578,6 @@ export default function DashboardPage() {
                                 <CardTitle className="text-base font-semibold">Inquiry Tracker</CardTitle>
                                 <CardDescription className="text-xs">Deals per Military Base</CardDescription>
                             </div>
-                            <PipelineDropdown value={basePipelineId} onChange={setBasePipelineId} />
                         </CardHeader>
                         <CardContent className="pt-2 px-4 sm:px-6">
                             <div className="space-y-4 h-[180px] overflow-y-auto pr-2 scrollbar-hide">
@@ -646,10 +644,10 @@ export default function DashboardPage() {
                                         </div>
                                         <div className="flex items-center gap-1 shrink-0">
                                             {task.dueDate && <Badge variant="outline" className="text-xs sm:text-[9px] h-7 sm:h-5">{task.dueDate.split('-').slice(1).join('/')}</Badge>}
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => handleEditTask(task, e)}>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={(e) => handleEditTask(task, e)}>
                                                 <Pencil className="h-3 w-3" />
                                             </Button>
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-destructive" onClick={(e) => handleDeleteTask(task.id, e)}>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-destructive" onClick={(e) => handleDeleteTask(task.id, e)}>
                                                 <Trash2 className="h-3 w-3" />
                                             </Button>
                                         </div>
