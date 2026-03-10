@@ -2,8 +2,8 @@ import * as admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 
-if (!admin.apps.length) {
-    try {
+function ensureApp() {
+    if (!admin.apps.length) {
         admin.initializeApp({
             credential: admin.credential.cert({
                 projectId: process.env.FIREBASE_PROJECT_ID,
@@ -12,17 +12,36 @@ if (!admin.apps.length) {
             }),
             storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
         });
-    } catch (error: any) {
-        console.error('Firebase admin initialization error', error.stack);
     }
+    return admin.app();
 }
 
-const dbId = process.env.FIREBASE_DATABASE_ID;
-if (!dbId) throw new Error("FIREBASE_DATABASE_ID environment variable is not set");
-export const adminDb = getFirestore(admin.app(), dbId);
-export const adminAuth = admin.auth();
-export const adminMessaging = admin.messaging();
+// Lazy getters — only initialize when actually called at runtime, not at build/import time
+export const adminDb = new Proxy({} as FirebaseFirestore.Firestore, {
+    get(_, prop) {
+        const dbId = process.env.FIREBASE_DATABASE_ID;
+        if (!dbId) throw new Error("FIREBASE_DATABASE_ID environment variable is not set");
+        const db = getFirestore(ensureApp(), dbId);
+        return (db as any)[prop];
+    },
+});
+
+export const adminAuth = new Proxy({} as admin.auth.Auth, {
+    get(_, prop) {
+        const a = ensureApp();
+        return (admin.auth(a) as any)[prop];
+    },
+});
+
+export const adminMessaging = new Proxy({} as admin.messaging.Messaging, {
+    get(_, prop) {
+        const a = ensureApp();
+        return (admin.messaging(a) as any)[prop];
+    },
+});
+
 export function getAdminStorageBucket() {
+    ensureApp();
     const bucketName = process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
     return getStorage().bucket(bucketName);
 }
