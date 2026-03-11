@@ -21,11 +21,28 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     session: { strategy: "jwt" },
     callbacks: {
         async jwt({ token, user, trigger, account }) {
-            // On sign-in, store OAuth tokens and look up role from Firestore
+            // On sign-in, store OAuth tokens and persist to Firestore
             if (account) {
                 token.accessToken = account.access_token
                 token.refreshToken = account.refresh_token
                 token.accessTokenExpires = account.expires_at ? account.expires_at * 1000 : 0
+
+                // Persist tokens to Firestore immediately so Gmail API can use them
+                try {
+                    const { adminDb } = await import(/* webpackIgnore: true */ "@/lib/firebase-admin")
+                    const email = token.email || user?.email || account.providerAccountId
+                    if (email && token.refreshToken) {
+                        await adminDb.collection("oauth_tokens").doc("gmail").set({
+                            accessToken: token.accessToken,
+                            refreshToken: token.refreshToken,
+                            accessTokenExpires: token.accessTokenExpires,
+                            email,
+                            updatedAt: new Date().toISOString(),
+                        }, { merge: true })
+                    }
+                } catch (err) {
+                    console.error("Failed to persist Gmail tokens:", err)
+                }
             }
 
             // Refresh access token if expired
@@ -65,17 +82,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                             token.dbUserId = usersSnap.docs[0].id
                         } else {
                             token.role = "AGENT"
-                        }
-
-                        // Persist refresh token to Firestore so cron jobs can use it
-                        if (token.refreshToken) {
-                            await adminDb.collection("oauth_tokens").doc("gmail").set({
-                                accessToken: token.accessToken,
-                                refreshToken: token.refreshToken,
-                                accessTokenExpires: token.accessTokenExpires,
-                                email,
-                                updatedAt: new Date().toISOString(),
-                            }, { merge: true })
                         }
                     }
                 } catch (err) {
