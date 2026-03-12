@@ -99,6 +99,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 session.user.role = token.role as string
                 session.user.id = (token.dbUserId as string) || (token.id as string)
             }
+            // Expose OAuth tokens for server-side use (already encrypted in JWT cookie)
+            ;(session as any).accessToken = token.accessToken
+            ;(session as any).refreshToken = token.refreshToken
+            ;(session as any).accessTokenExpires = token.accessTokenExpires
             return session
         },
     },

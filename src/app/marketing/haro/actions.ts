@@ -458,9 +458,26 @@ export async function fetchAndProcessHaroEmails() {
 }
 
 // Wrapper for UI-triggered fetch (requires auth)
+// Also ensures Gmail tokens are persisted to Firestore from the session
 export async function triggerHaroFetch() {
-    await requireAuth()
+    const session = await requireAuth()
     try {
+        // Check if Gmail tokens exist in Firestore; if not, persist from session
+        const tokenDoc = await adminDb.collection("oauth_tokens").doc("gmail").get()
+        if (!tokenDoc.exists || !tokenDoc.data()?.refreshToken) {
+            const s = session as any
+            if (s.refreshToken) {
+                await adminDb.collection("oauth_tokens").doc("gmail").set({
+                    accessToken: s.accessToken || "",
+                    refreshToken: s.refreshToken,
+                    accessTokenExpires: s.accessTokenExpires || 0,
+                    email: session.user?.email || "",
+                    updatedAt: new Date().toISOString(),
+                }, { merge: true })
+            } else {
+                return { success: false, message: "No Gmail refresh token in session. Please sign out, then sign back in and approve Gmail access.", processed: 0 }
+            }
+        }
         return await fetchAndProcessHaroEmails()
     } catch (err: any) {
         console.error("HARO fetch error:", err)
