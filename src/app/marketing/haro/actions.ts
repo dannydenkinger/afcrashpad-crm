@@ -21,6 +21,24 @@ async function requireAuth() {
     return session
 }
 
+/** Parse HARO deadline strings like "Mar 15, 2026 - 6:00 PM ET" into ISO timestamps */
+function parseHaroDeadline(deadline: string): string | null {
+    if (!deadline) return null
+    try {
+        // Remove timezone abbreviations and normalize
+        const cleaned = deadline
+            .replace(/\s*-\s*/, " ")
+            .replace(/\s+(ET|EST|EDT|CT|CST|CDT|PT|PST|PDT|MT|MST|MDT)\s*$/i, "")
+            .trim()
+        const d = new Date(cleaned)
+        if (isNaN(d.getTime())) return null
+        // Assume ET (UTC-5) if no timezone info
+        return new Date(d.getTime() + 5 * 60 * 60 * 1000).toISOString()
+    } catch {
+        return null
+    }
+}
+
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export async function getHaroSettings(): Promise<HaroSettings | null> {
@@ -663,6 +681,7 @@ ${titlesText}`
                 mediaOutlet: pq.mediaOutlet,
                 mediaUrl: pq.mediaUrl,
                 deadline: pq.deadline,
+                deadlineParsed: parseHaroDeadline(pq.deadline) || undefined,
                 relevanceScore: relevance?.score || 0,
                 isRelevant,
                 relevanceReason: relevance?.reason || "",
@@ -687,14 +706,8 @@ ${titlesText}`
         let responsesGenerated = 0
         for (const sq of savedQueries) {
             const noAI = sq.description.includes("[Note: No AI Pitches Considered]")
-            if (noAI) {
-                await adminDb.collection("haro_queries").doc(sq.id).update({
-                    status: "reviewing",
-                    aiResponse: "[This query requires a manual, human-written response — the reporter has flagged 'No AI Pitches Considered']",
-                    updatedAt: FieldValue.serverTimestamp(),
-                })
-                continue
-            }
+            // Strip the no-AI marker from the description before sending to Claude
+            const cleanDescription = sq.description.replace("[Note: No AI Pitches Considered]", "").trim()
             try {
                 const responseMsg = await anthropic.messages.create({
                     model: "claude-sonnet-4-20250514",
@@ -714,7 +727,7 @@ The journalist's query:
 Title: ${sq.title}
 Reporter: ${sq.reporterName}
 Outlet: ${sq.mediaOutlet}
-Details: ${sq.description}
+Details: ${cleanDescription}
 
 Write a concise, professional email response. Format:
 
@@ -739,18 +752,23 @@ IMPORTANT: Be genuine and helpful. Provide real, substantive answers — not gen
 
                 const aiText = responseMsg.content[0].type === "text" ? responseMsg.content[0].text : ""
                 if (aiText) {
+                    // Force "reviewing" for no-AI flagged queries to prevent accidental auto-send
+                    const status = noAI ? "reviewing" : (settings.sendMode === "draft" ? "reviewing" : "approved")
                     await adminDb.collection("haro_queries").doc(sq.id).update({
                         aiResponse: aiText,
                         responseSubject: `RE: ${sq.title} — ${settings.businessName}`,
-                        status: settings.sendMode === "draft" ? "reviewing" : "approved",
+                        status,
                         updatedAt: FieldValue.serverTimestamp(),
                     })
                     responsesGenerated++
 
-                    if (settings.sendMode === "auto" && sq.reporterEmail) {
-                        await sendHaroResponse(sq.id)
-                    } else if (settings.sendMode === "auto_with_threshold" && sq.relevanceScore >= settings.confidenceThreshold && sq.reporterEmail) {
-                        await sendHaroResponse(sq.id)
+                    // Only auto-send for non-flagged queries
+                    if (!noAI) {
+                        if (settings.sendMode === "auto" && sq.reporterEmail) {
+                            await sendHaroResponse(sq.id)
+                        } else if (settings.sendMode === "auto_with_threshold" && sq.relevanceScore >= settings.confidenceThreshold && sq.reporterEmail) {
+                            await sendHaroResponse(sq.id)
+                        }
                     }
                 }
             } catch (err) {
@@ -764,4 +782,51 @@ IMPORTANT: Be genuine and helpful. Provide real, substantive answers — not gen
         await batchRef.update({ status: "error", errorMessage: err.message || "Processing failed" })
         return { success: false, error: err.message || "Processing failed", batchId: batchRef.id }
     }
+}
+
+// ─── Deadline Expiration & Alerts ────────────────────────────────────────────
+
+/** Check for expiring/expired HARO queries. Called from cron. */
+export async function checkHaroDeadlines() {
+    const { createNotification } = await import("@/app/notifications/actions")
+    const now = new Date()
+    const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000)
+
+    // Get all pending/reviewing queries that have a parsed deadline
+    const snap = await adminDb.collection("haro_queries")
+        .where("status", "in", ["pending", "reviewing", "approved"])
+        .get()
+
+    let expired = 0
+    let alerted = 0
+
+    for (const doc of snap.docs) {
+        const data = doc.data()
+        const deadlineParsed = data.deadlineParsed
+        if (!deadlineParsed) continue
+
+        const deadline = new Date(deadlineParsed)
+
+        // Auto-expire past-deadline queries
+        if (deadline < now) {
+            await doc.ref.update({ status: "expired", updatedAt: FieldValue.serverTimestamp() })
+            expired++
+            continue
+        }
+
+        // Alert for queries expiring within 4 hours (if not already notified)
+        if (deadline < fourHoursFromNow && !data.deadlineNotified) {
+            await createNotification({
+                title: "HARO Query Expiring Soon",
+                message: `"${data.title}" expires in ${Math.round((deadline.getTime() - now.getTime()) / (60 * 1000))} minutes`,
+                type: "haro_deadline",
+                linkUrl: "/marketing",
+                dedupeKey: `haro-deadline-${doc.id}`,
+            })
+            await doc.ref.update({ deadlineNotified: true })
+            alerted++
+        }
+    }
+
+    return { expired, alerted }
 }

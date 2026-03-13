@@ -62,6 +62,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { DateRangePicker, type DateRange } from "./DateRangePicker"
 import { GoalTracker } from "./GoalTracker"
 import { MiniCalendar } from "@/components/MiniCalendar"
+import { useIsMobile } from "@/hooks/useIsMobile"
+import { usePullToRefresh } from "@/hooks/usePullToRefresh"
 
 const RevenueForecast = dynamic(
     () => import("./forecasting/RevenueForecast").then(mod => mod.RevenueForecast),
@@ -78,8 +80,154 @@ function formatCurrency(value: number) {
     return `$${value.toLocaleString()}`
 }
 
+// ─── Mobile Dashboard Component ─────────────────────────────────────
+function MobileDashboard({
+    kpi,
+    pendingTasks,
+    stageData,
+    onToggleTask,
+    onRefresh,
+    loading,
+    router,
+}: {
+    kpi: DashboardData['kpi']
+    pendingTasks: DashboardData['tasks']
+    stageData: { name: string; count: number; value: number; color: string }[]
+    onToggleTask: (taskId: string, status: string) => void
+    onRefresh: () => Promise<void>
+    loading: boolean
+    router: ReturnType<typeof useRouter>
+}) {
+    const { refreshing, pullDistance } = usePullToRefresh(onRefresh)
+
+    const kpiCards = [
+        { label: "Active Tenants", value: kpi.activeStayCount.toString(), icon: Home, color: "text-primary", href: "/contacts?status=Active+Stay" },
+        { label: "Revenue", value: formatCurrency(kpi.monthlyRevenue), icon: DollarSign, color: "text-emerald-400", href: "/finance", trend: kpi.revenueTrend },
+        { label: "Conversion", value: `${kpi.conversionRate}%`, icon: TrendingUp, color: "text-emerald-400", href: "/pipeline" },
+        { label: "Pipeline", value: formatCurrency(kpi.totalPipelineValue), icon: Target, color: "text-primary", href: "/pipeline" },
+    ]
+
+    return (
+        <div className="relative min-h-full bg-zinc-950">
+            {/* Pull-to-refresh indicator */}
+            {pullDistance > 0 && (
+                <div className="pull-indicator flex items-center justify-center" style={{ height: pullDistance }}>
+                    {refreshing ? (
+                        <div className="pull-spinner" />
+                    ) : (
+                        <div
+                            className="w-5 h-5 border-2 border-white/20 border-t-white/60 rounded-full"
+                            style={{ transform: `rotate(${pullDistance * 3}deg)`, opacity: Math.min(pullDistance / 60, 1) }}
+                        />
+                    )}
+                </div>
+            )}
+
+            <div className="px-4 pt-3 pb-24 space-y-5" style={{ transform: `translateY(${pullDistance}px)` }}>
+                {/* 2x2 KPI Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                    {kpiCards.map((card) => {
+                        const Icon = card.icon
+                        return (
+                            <button
+                                key={card.label}
+                                className="mobile-card p-3.5 text-left touch-manipulation"
+                                onClick={() => router.push(card.href)}
+                            >
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{card.label}</span>
+                                    <Icon className={`h-3.5 w-3.5 ${card.color} opacity-60`} />
+                                </div>
+                                <div className="text-xl font-bold text-white">{card.value}</div>
+                                {card.trend != null && (
+                                    <div className={`flex items-center gap-1 mt-1 text-[10px] font-medium ${card.trend >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                        {card.trend >= 0 ? <TrendingUp className="h-2.5 w-2.5" /> : <TrendingDown className="h-2.5 w-2.5" />}
+                                        {card.trend > 0 ? "+" : ""}{card.trend}%
+                                    </div>
+                                )}
+                            </button>
+                        )
+                    })}
+                </div>
+
+                {/* Quick Stats Row */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
+                    {[
+                        { label: "Profit", value: formatCurrency(kpi.totalClosedProfit), color: "bg-emerald-500/10 text-emerald-400" },
+                        { label: "Forecast", value: formatCurrency(kpi.weightedForecast), color: "bg-primary/10 text-primary" },
+                        { label: "Leads (30d)", value: kpi.leadVelocity.toString(), color: "bg-amber-500/10 text-amber-400" },
+                        { label: "Open", value: kpi.openInquiries.toString(), color: "bg-rose-500/10 text-rose-400" },
+                    ].map(stat => (
+                        <div key={stat.label} className={`flex-shrink-0 rounded-xl px-3.5 py-2 ${stat.color}`}>
+                            <span className="text-[10px] font-medium opacity-70">{stat.label}</span>
+                            <span className="ml-1.5 text-xs font-bold">{stat.value}</span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Stage Distribution (compact) */}
+                {stageData.length > 0 && (
+                    <div>
+                        <div className="mobile-section-header">Pipeline Stages</div>
+                        <div className="mobile-card p-3">
+                            <div className="space-y-2.5">
+                                {stageData.slice(0, 5).map((stage, idx) => (
+                                    <div key={idx} className="flex items-center gap-2.5">
+                                        <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
+                                        <span className="text-xs font-medium text-zinc-300 flex-1 truncate">{stage.name}</span>
+                                        <span className="text-xs font-bold text-white">{stage.count}</span>
+                                        <span className="text-[10px] text-zinc-500 w-14 text-right">{formatCurrency(stage.value)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Tasks */}
+                <div>
+                    <div className="mobile-section-header">Priority Tasks</div>
+                    {pendingTasks.length > 0 ? (
+                        <div className="space-y-2">
+                            {pendingTasks.slice(0, 6).map((task) => (
+                                <button
+                                    key={task.id}
+                                    className="mobile-card w-full p-3.5 flex items-center gap-3 touch-manipulation text-left"
+                                    onClick={() => onToggleTask(task.id, task.status)}
+                                >
+                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                                        task.status === "Completed"
+                                            ? "bg-emerald-500 border-emerald-500"
+                                            : "border-zinc-600"
+                                    }`}>
+                                        {task.status === "Completed" && <CheckCircle2 className="h-3 w-3 text-white" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <span className="text-sm font-medium text-white block truncate">{task.title}</span>
+                                        {task.dueDate && (
+                                            <span className="text-[10px] text-zinc-500">{task.dueDate.split('-').slice(1).join('/')}</span>
+                                        )}
+                                    </div>
+                                    <div className={`w-2 h-2 rounded-full shrink-0 ${
+                                        task.priority === "High" ? "bg-rose-500" : task.priority === "Medium" ? "bg-amber-500" : "bg-emerald-500"
+                                    }`} />
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="mobile-card p-6 text-center text-zinc-500 text-sm">
+                            No pending tasks
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}
+
 export default function DashboardPage() {
     const router = useRouter()
+    const isMobile = useIsMobile()
     const [data, setData] = useState<DashboardData | null>(null)
     const [loading, setLoading] = useState(true)
 
@@ -274,6 +422,21 @@ export default function DashboardPage() {
     const stageData = data.pipelineData[globalPipelineId]?.stageDistribution || []
     const donutData = data.pipelineData[globalPipelineId]?.statusDistribution.map(s => ({ name: s.name, value: s.count, color: s.color })) || []
     const baseData = data.pipelineData[globalPipelineId]?.dealsByBase || []
+
+    // ─── Mobile Dashboard ───────────────────────────────────────────
+    if (isMobile) {
+        return (
+            <MobileDashboard
+                kpi={kpi}
+                pendingTasks={pendingTasks}
+                stageData={stageData}
+                onToggleTask={handleToggleTask}
+                onRefresh={async () => { fetchDashboard() }}
+                loading={loading}
+                router={router}
+            />
+        )
+    }
 
     const PipelineDropdown = ({ value, onChange }: { value: string; onChange: (id: string) => void }) => (
         <DropdownMenu>

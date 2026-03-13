@@ -38,6 +38,7 @@ import { CalendarEvent } from "@/lib/calendar-sync"
 import { CreateTaskDialog } from "@/components/ui/CreateTaskDialog"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/useIsMobile"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { BookingCalendar } from "@/app/dashboard/bookings/BookingCalendar"
@@ -63,6 +64,7 @@ export default function CalendarPage() {
     const [clickedDate, setClickedDate] = useState<Date | null>(null)
     const [editingTaskData, setEditingTaskData] = useState<any>(null)
     const router = useRouter()
+    const isMobile = useIsMobile()
 
     const loadEvents = async () => {
         setIsLoading(true)
@@ -146,6 +148,259 @@ export default function CalendarPage() {
             loadEvents() // Rollback by reloading
         }
     }, [events])
+
+    // ─── Mobile Layout ──────────────────────────────────────────────
+    if (isMobile) {
+        const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 })
+        const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+        const todayEvents = getEventsForDay(currentDate).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+
+        return (
+            <div className="flex flex-col h-full bg-zinc-950">
+                {/* Header */}
+                <div className="px-4 pt-3 pb-2 border-b border-white/5">
+                    <div className="flex items-center justify-between mb-3">
+                        <div>
+                            <h2 className="text-lg font-bold text-white">{format(currentDate, "MMMM yyyy")}</h2>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                className="px-3 py-1.5 text-xs font-semibold text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-white/5"
+                                onClick={() => setCurrentDate(new Date())}
+                            >
+                                Today
+                            </button>
+                            <button
+                                className="h-8 w-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground"
+                                onClick={() => { setClickedDate(null); setIsCreateDialogOpen(true); }}
+                            >
+                                <Plus className="h-4 w-4" />
+                            </button>
+                        </div>
+                    </div>
+                    {/* Tab pills */}
+                    <div className="flex gap-1 bg-zinc-900 rounded-xl p-1">
+                        {[
+                            { value: "calendar", label: "Calendar" },
+                            { value: "bookings", label: "Stays" },
+                            { value: "tasks", label: "Tasks" },
+                        ].map(tab => (
+                            <button
+                                key={tab.value}
+                                onClick={() => setActiveTab(tab.value)}
+                                className={cn(
+                                    "flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all",
+                                    activeTab === tab.value
+                                        ? "bg-white/10 text-white"
+                                        : "text-zinc-500 hover:text-zinc-300"
+                                )}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {activeTab === "calendar" && (
+                    <div className="flex-1 flex flex-col min-h-0">
+                        {/* Week strip */}
+                        <div className="flex items-center border-b border-white/5 px-2 py-2">
+                            <button
+                                className="p-2 rounded-lg hover:bg-white/5 touch-manipulation"
+                                onClick={() => setCurrentDate(addDays(currentDate, -7))}
+                            >
+                                <ChevronLeft className="h-4 w-4 text-zinc-400" />
+                            </button>
+                            <div className="flex-1 flex justify-around">
+                                {weekDays.map(day => {
+                                    const dayEvts = getEventsForDay(day)
+                                    const selected = isSameDay(day, currentDate)
+                                    const today = isToday(day)
+                                    return (
+                                        <button
+                                            key={day.toISOString()}
+                                            className="flex flex-col items-center gap-1 py-1 touch-manipulation"
+                                            onClick={() => setCurrentDate(day)}
+                                        >
+                                            <span className="text-[10px] font-medium text-zinc-500">{format(day, "EEE")}</span>
+                                            <span className={cn(
+                                                "flex items-center justify-center h-9 w-9 rounded-full text-sm font-bold transition-all",
+                                                selected && today && "bg-primary text-primary-foreground shadow-lg shadow-primary/30",
+                                                selected && !today && "bg-white/15 text-white",
+                                                !selected && today && "text-primary font-black",
+                                                !selected && !today && "text-zinc-400"
+                                            )}>
+                                                {format(day, "d")}
+                                            </span>
+                                            {dayEvts.length > 0 && !selected && (
+                                                <span className="h-1 w-1 rounded-full bg-primary" />
+                                            )}
+                                            {dayEvts.length > 0 && selected && (
+                                                <span className="h-1 w-1 rounded-full bg-white/60" />
+                                            )}
+                                            {dayEvts.length === 0 && <span className="h-1" />}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                            <button
+                                className="p-2 rounded-lg hover:bg-white/5 touch-manipulation"
+                                onClick={() => setCurrentDate(addDays(currentDate, 7))}
+                            >
+                                <ChevronRight className="h-4 w-4 text-zinc-400" />
+                            </button>
+                        </div>
+
+                        {/* Day heading */}
+                        <div className="px-4 pt-3 pb-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                                {isToday(currentDate) ? "Today" : format(currentDate, "EEEE, MMM d")}
+                                {todayEvents.length > 0 && ` · ${todayEvents.length} event${todayEvents.length !== 1 ? "s" : ""}`}
+                            </span>
+                        </div>
+
+                        {/* Events list */}
+                        <div className="flex-1 overflow-y-auto px-4 pb-24">
+                            {isLoading ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                </div>
+                            ) : todayEvents.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                    <CalendarIcon className="h-10 w-10 text-zinc-700 mb-3" />
+                                    <p className="text-sm font-medium text-zinc-400">No events</p>
+                                    <p className="text-xs text-zinc-600 mt-1">Tap + to add an event</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {todayEvents.map(event => {
+                                        const startTime = new Date(event.start)
+                                        const isAllDay = startTime.getHours() === 0 && startTime.getMinutes() === 0
+                                        return (
+                                            <button
+                                                key={event.id}
+                                                className="w-full flex items-start gap-3 p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] active:bg-white/[0.08] transition-colors text-left touch-manipulation"
+                                                onClick={() => setSelectedEvent(event)}
+                                            >
+                                                <div
+                                                    className="w-1 self-stretch rounded-full shrink-0 mt-0.5"
+                                                    style={{ backgroundColor: event.color || "#3B82F6" }}
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-semibold text-white truncate">{event.title}</p>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-xs text-zinc-400">
+                                                            {isAllDay ? "All day" : format(startTime, "h:mm a")}
+                                                        </span>
+                                                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-white/10 text-zinc-400">
+                                                            {event.source === "GOOGLE" ? "Google" : event.source === "APPLE" ? "iCal" : event.source === "TASK" ? "Task" : "Stay"}
+                                                        </Badge>
+                                                    </div>
+                                                </div>
+                                                <ChevronRight className="h-4 w-4 text-zinc-600 mt-1 shrink-0" />
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Filter button */}
+                        <button
+                            className="fixed bottom-20 left-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full bg-zinc-800 border border-white/10 text-xs font-medium text-zinc-300 shadow-lg touch-manipulation"
+                            onClick={() => setFilterSheetOpen(true)}
+                        >
+                            <Filter className="h-3.5 w-3.5" />
+                            Filters
+                        </button>
+                    </div>
+                )}
+
+                {activeTab === "bookings" && (
+                    <div className="flex-1 overflow-y-auto pb-24 p-4">
+                        <BookingCalendar />
+                    </div>
+                )}
+
+                {activeTab === "tasks" && (
+                    <div className="flex-1 overflow-hidden">
+                        <TasksPage />
+                    </div>
+                )}
+
+                {/* Shared modals */}
+                <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+                    <SheetContent side="bottom" className="max-h-[70vh] rounded-t-2xl">
+                        <SheetHeader>
+                            <SheetTitle>Event Sources</SheetTitle>
+                        </SheetHeader>
+                        <div className="space-y-1 mt-4">
+                            <div className="rounded-xl overflow-hidden">
+                                <div className="flex items-center w-full p-3 rounded-xl hover:bg-muted/20 transition-colors">
+                                    <button onClick={() => setGoogleFolderOpen(o => !o)} className="flex items-center justify-center h-8 w-8 shrink-0 rounded hover:bg-white/10 transition-colors touch-manipulation">
+                                        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform duration-200", !googleFolderOpen && "-rotate-90")} />
+                                    </button>
+                                    <button onClick={toggleAllGoogle} className="flex items-center gap-3 flex-1 min-w-0 ml-1 text-sm font-semibold text-foreground text-left touch-manipulation">
+                                        <div className="h-4 w-4 rounded-sm bg-blue-500/20 border border-blue-500/40 flex items-center justify-center shrink-0">
+                                            <div className="h-2 w-2 rounded-full bg-blue-500" />
+                                        </div>
+                                        <span className="truncate">Google Calendar</span>
+                                    </button>
+                                </div>
+                                {googleFolderOpen && googleCalendars.map(cal => (
+                                    <button key={`mf-google-${cal.id}`} onClick={() => toggleGoogleCategory(cal.id)} className="flex items-center gap-3 w-full px-3 py-3 pl-11 rounded-lg text-sm font-medium transition-all hover:bg-muted/20 min-h-[44px] touch-manipulation">
+                                        <div className="w-[3px] h-4 rounded-full shrink-0" style={{ backgroundColor: cal.color, opacity: activeGoogleCalendars.includes(cal.id) ? 1 : 0.3 }} />
+                                        <span className={cn("truncate flex-1 text-left", activeGoogleCalendars.includes(cal.id) ? "opacity-100" : "opacity-40")}>{cal.name}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            {[
+                                { id: "APPLE", label: "Apple Calendar", color: "#9966FF" },
+                                { id: "SYSTEM", label: "Stay Dates", color: "#10B981" },
+                                { id: "TASK", label: "CRM Tasks", color: "#F59E0B" }
+                            ].map(source => (
+                                <button key={`mf-${source.id}`} onClick={() => toggleSource(source.id)} className="flex items-center justify-between w-full px-3 py-3 rounded-xl text-sm font-medium transition-all hover:bg-muted/20 min-h-[44px] touch-manipulation">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-3 w-3 rounded-sm shrink-0" style={{ backgroundColor: source.color }} />
+                                        <span className={cn("transition-opacity", activeSources.includes(source.id) ? "opacity-100" : "opacity-40")}>{source.label}</span>
+                                    </div>
+                                    <div className={cn("h-5 w-5 rounded border flex items-center justify-center shrink-0 transition-all", activeSources.includes(source.id) ? "border-blue-500 bg-blue-500" : "border-white/20 bg-transparent")}>
+                                        {activeSources.includes(source.id) && <Check className="h-3 w-3 text-white" />}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </SheetContent>
+                </Sheet>
+                <CreateTaskDialog
+                    isOpen={isCreateDialogOpen}
+                    onClose={() => { setIsCreateDialogOpen(false); setClickedDate(null); setEditingTaskData(null); }}
+                    onSaved={() => { toast.success(editingTaskData ? "Task updated" : "Event created"); loadEvents(); setEditingTaskData(null); }}
+                    initialDate={clickedDate}
+                    initialData={editingTaskData}
+                />
+                {selectedEvent && (
+                    <EventDetailModal
+                        event={selectedEvent}
+                        onClose={() => setSelectedEvent(null)}
+                        onNavigate={(url) => { setSelectedEvent(null); router.push(url); }}
+                        onEditTask={(taskId) => {
+                            setSelectedEvent(null)
+                            import("./actions").then(async ({ getTasks }) => {
+                                const allTasks = await getTasks()
+                                const task = allTasks.find((t: any) => t.id === taskId)
+                                if (task) {
+                                    setClickedDate(null)
+                                    setEditingTaskData(task)
+                                    setIsCreateDialogOpen(true)
+                                }
+                            })
+                        }}
+                    />
+                )}
+            </div>
+        )
+    }
 
     return (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full bg-background overflow-hidden">

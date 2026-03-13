@@ -4,12 +4,14 @@ import { useState, useMemo } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Download } from "lucide-react"
+import { useIsMobile } from "@/hooks/useIsMobile"
 import { CommissionTracker } from "@/app/dashboard/commissions/CommissionTracker"
 import { ReferralTracker } from "@/app/dashboard/referrals/ReferralTracker"
 import { RevenueTracker } from "./RevenueTracker"
 import { ExpenseTracker } from "./ExpenseTracker"
 
 export default function FinancePage() {
+    const isMobile = useIsMobile()
     const [dateRange, setDateRange] = useState<"all" | "month" | "quarter" | "year">("all")
     const [activeTab, setActiveTab] = useState("commissions")
 
@@ -56,6 +58,72 @@ export default function FinancePage() {
         }
         return null
     }, [dateRange])
+
+    // ─── Mobile Layout ──────────────────────────────────────────────
+    if (isMobile) {
+        return (
+            <div className="flex flex-col h-full bg-zinc-950">
+                <div className="px-4 pt-3 pb-2 border-b border-white/5">
+                    {/* Date range pills */}
+                    <div className="flex items-center gap-1 mb-3 overflow-x-auto">
+                        {([
+                            { value: "all", label: "All" },
+                            { value: "month", label: "Month" },
+                            { value: "quarter", label: "Quarter" },
+                            { value: "year", label: "Year" },
+                        ] as const).map(f => (
+                            <button
+                                key={f.value}
+                                onClick={() => setDateRange(f.value)}
+                                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 touch-manipulation ${
+                                    dateRange === f.value
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-zinc-900 text-zinc-500 hover:text-zinc-300"
+                                }`}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                        <button
+                            onClick={handleExportCSV}
+                            className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold bg-zinc-900 text-zinc-500 hover:text-zinc-300 shrink-0 touch-manipulation flex items-center gap-1.5"
+                        >
+                            <Download className="h-3 w-3" />
+                            Export
+                        </button>
+                    </div>
+                    {/* Tab pills */}
+                    <div className="flex gap-1 bg-zinc-900 rounded-xl p-1">
+                        {[
+                            { value: "commissions", label: "Commissions" },
+                            { value: "referrals", label: "Referrals" },
+                            { value: "revenue", label: "Revenue" },
+                            { value: "expenses", label: "Expenses" },
+                        ].map(tab => (
+                            <button
+                                key={tab.value}
+                                onClick={() => setActiveTab(tab.value)}
+                                className={`flex-1 py-1.5 text-[11px] font-semibold rounded-lg transition-all touch-manipulation ${
+                                    activeTab === tab.value
+                                        ? "bg-white/10 text-white"
+                                        : "text-zinc-500 hover:text-zinc-300"
+                                }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto overflow-x-hidden pb-24 p-4">
+                    {activeTab === "commissions" && <CommissionTracker dateFilter={dateFilter} />}
+                    {activeTab === "referrals" && <ReferralTracker dateFilter={dateFilter} />}
+                    {activeTab === "revenue" && <RevenueTracker dateFilter={dateFilter} />}
+                    {activeTab === "expenses" && <ExpenseTracker dateFilter={dateFilter} />}
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">

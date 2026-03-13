@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { fetchAndProcessHaroEmails } from "@/app/marketing/haro/actions"
+import { fetchAndProcessHaroEmails, checkHaroDeadlines } from "@/app/marketing/haro/actions"
 import { adminDb } from "@/lib/firebase-admin"
 
 export const dynamic = "force-dynamic"
@@ -20,8 +20,12 @@ export async function GET(request: Request) {
             return NextResponse.json({ message: "HARO automation is disabled", skipped: true })
         }
 
-        const result = await fetchAndProcessHaroEmails()
-        return NextResponse.json(result)
+        // Process new emails and check deadlines in parallel
+        const [result, deadlines] = await Promise.all([
+            fetchAndProcessHaroEmails(),
+            checkHaroDeadlines(),
+        ])
+        return NextResponse.json({ ...result, deadlines })
     } catch (err: any) {
         console.error("HARO cron error:", err)
         return NextResponse.json({ error: err.message || "Failed to process HARO emails" }, { status: 500 })

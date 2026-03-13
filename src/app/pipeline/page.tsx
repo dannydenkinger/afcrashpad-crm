@@ -2,7 +2,7 @@
 
 import { useState, useMemo, Suspense } from "react"
 import { Button } from "@/components/ui/button"
-import { Search, Plus, ListFilter, CheckCircle2, Settings, ChevronDown, LayoutGrid, List as ListIcon, ChevronRight, User, Building2, Upload, BarChart3, Download, Trash2, ArrowRightLeft, UserPlus, X } from "lucide-react"
+import { Search, Plus, ListFilter, CheckCircle2, Settings, ChevronDown, LayoutGrid, List as ListIcon, ChevronRight, User, Building2, Upload, BarChart3, Download, Trash2, ArrowRightLeft, UserPlus, X, Phone, MessageSquare, MapPin } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -54,6 +54,8 @@ import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh"
 import { useRealtimeRefreshOnChange } from "@/hooks/useRealtimeCollection"
 import { toast } from "sonner"
 import { withRetry, withRetryAction } from "@/lib/retry"
+import { useIsMobile } from "@/hooks/useIsMobile"
+import { SwipeableCard } from "@/components/mobile/SwipeableCard"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import dynamic from "next/dynamic"
 
@@ -77,6 +79,7 @@ export default function PipelinePage() {
 
 function PipelineContent() {
     const { data: session } = useSession()
+    const isMobile = useIsMobile()
     const [userRole, setUserRole] = useState("AGENT")
 
     const [pipelines, setPipelines] = useState<Record<string, { name: string; stages: any[]; deals: any[] }>>({})
@@ -769,6 +772,175 @@ function PipelineContent() {
         setSortConfig(state.sortConfig)
     }
 
+    // ─── Mobile Pipeline ────────────────────────────────────────────
+    if (isMobile) {
+        const mobileStages = currentPipeline.stages || []
+        const mobileStageName = mobileSelectedStage || (mobileStages[0] && (typeof mobileStages[0] === 'string' ? mobileStages[0] : mobileStages[0].name)) || ""
+        const mobileStageDeals = sortedDeals.filter((d: any) => d.stage === mobileStageName)
+
+        return (
+            <div className="flex flex-col h-full min-h-0 bg-zinc-950">
+                {/* Search */}
+                <div className="px-4 pt-3 pb-2">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                        <input
+                            placeholder="Search deals..."
+                            className="w-full h-9 pl-9 pr-3 rounded-xl bg-zinc-900 border border-white/5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                            value={pipelineSearch}
+                            onChange={(e) => setPipelineSearch(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                {/* Stage pills */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 py-2 shrink-0">
+                    {mobileStages.map((stage: any, idx: number) => {
+                        const name = typeof stage === 'string' ? stage : stage.name
+                        const count = sortedDeals.filter((d: any) => d.stage === name).length
+                        const isActive = mobileStageName === name
+                        return (
+                            <button
+                                key={name}
+                                onClick={() => setMobileSelectedStage(name)}
+                                className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold touch-manipulation transition-colors ${
+                                    isActive ? "bg-primary text-primary-foreground" : "bg-zinc-900 text-zinc-400 border border-white/5"
+                                }`}
+                            >
+                                {name}
+                                <span className="ml-1 opacity-60">{count}</span>
+                            </button>
+                        )
+                    })}
+                </div>
+
+                {/* Deal cards */}
+                <div className="flex-1 overflow-y-auto px-4 pb-24 space-y-2">
+                    {isLoading ? (
+                        <div className="space-y-3 pt-4">
+                            {[1,2,3,4].map(i => (
+                                <div key={i} className="mobile-card p-4 space-y-3 animate-pulse">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-zinc-800" />
+                                        <div className="space-y-2 flex-1">
+                                            <div className="h-4 w-32 bg-zinc-800 rounded" />
+                                            <div className="h-3 w-24 bg-zinc-800 rounded" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : mobileStageDeals.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-40 text-zinc-500 text-sm">
+                            No deals in this stage
+                        </div>
+                    ) : (
+                        mobileStageDeals.map((deal: any) => (
+                            <SwipeableCard
+                                key={deal.id}
+                                rightActions={[
+                                    {
+                                        label: "Call",
+                                        icon: <Phone className="h-4 w-4" />,
+                                        color: "bg-emerald-600",
+                                        onClick: () => {
+                                            const phone = deal.phone || deal.contactPhone
+                                            if (phone) window.open(`tel:${phone}`, '_self')
+                                            else toast("No phone number on file")
+                                        },
+                                    },
+                                    {
+                                        label: "Message",
+                                        icon: <MessageSquare className="h-4 w-4" />,
+                                        color: "bg-blue-600",
+                                        onClick: () => router.push('/communications'),
+                                    },
+                                ]}
+                            >
+                                <button
+                                    className="w-full mobile-card p-3.5 flex items-center gap-3 touch-manipulation text-left"
+                                    onClick={() => openDeal(deal)}
+                                >
+                                    <Avatar className="h-10 w-10 border-2 border-zinc-800 shrink-0">
+                                        <AvatarFallback className="bg-gradient-to-br from-zinc-700 to-zinc-900 text-white text-xs font-medium">
+                                            {(deal.name || "?").slice(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-semibold text-white truncate">{deal.name}</span>
+                                            {deal.unread && (
+                                                <span className="shrink-0 text-[9px] font-bold bg-primary text-primary-foreground px-1.5 py-0 rounded">New</span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-zinc-500">
+                                            {deal.base && (
+                                                <span className="flex items-center gap-0.5 truncate">
+                                                    <MapPin className="h-2.5 w-2.5" />
+                                                    {deal.base}
+                                                </span>
+                                            )}
+                                            {deal.value > 0 && (
+                                                <span className="font-mono font-semibold text-zinc-400">${deal.value.toLocaleString()}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <ChevronRight className="h-4 w-4 text-zinc-600 shrink-0" />
+                                </button>
+                            </SwipeableCard>
+                        ))
+                    )}
+                </div>
+
+                {/* Deal detail sheet (reused) */}
+                <DealDetailSheet
+                    selectedDeal={selectedDeal}
+                    setSelectedDeal={setSelectedDeal}
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                    currentPipeline={currentPipeline}
+                    activePipelineKey={activePipelineKey}
+                    baseNames={baseNames}
+                    allUsers={allUsers}
+                    specialAccommodations={specialAccommodations}
+                    userRole={userRole}
+                    session={session}
+                    isSaving={isSaving}
+                    saveStatus={saveStatus}
+                    onSave={handleSaveOpportunity}
+                    onDelete={(id: string) => setDeleteTarget(id)}
+                    onSyncCalculatorValue={handleSyncCalculatorValue}
+                    contactTimeline={contactTimeline}
+                    timelineLoading={timelineLoading}
+                    onRefetchTimeline={refetchContactTimeline}
+                    searchParams={searchParams}
+                    router={router}
+                    pathname={pathname}
+                    openedDealIdFromUrl={openedDealIdFromUrl}
+                    fetchPipelines={fetchPipelines}
+                    onLinkContact={handleLinkContactToExistingDeal}
+                />
+
+                {/* Delete confirm */}
+                <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Opportunity</AlertDialogTitle>
+                            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteTarget && handleDeleteOpportunity(deleteTarget)}>
+                                Delete
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </div>
+        )
+    }
+
+    // ─── Desktop Pipeline ───────────────────────────────────────────
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-4 sm:pb-6 flex flex-col min-h-0">

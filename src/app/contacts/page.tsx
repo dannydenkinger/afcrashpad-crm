@@ -91,6 +91,8 @@ import { ContactsVirtualTable } from "./ContactsVirtualTable"
 import { getSavedViews, createSavedView, deleteSavedView } from "@/app/saved-views/actions"
 import { withRetryAction } from "@/lib/retry"
 import { useRealtimeRefreshOnChange } from "@/hooks/useRealtimeCollection"
+import { useIsMobile } from "@/hooks/useIsMobile"
+import { usePullToRefresh } from "@/hooks/usePullToRefresh"
 
 type ColumnId = 'name' | 'phone' | 'email' | 'businessName' | 'status' | 'opportunity' | 'lastActivity' | 'created' | 'tags' | 'lastNote';
 
@@ -127,6 +129,7 @@ export default function ContactsPage() {
 
 function ContactsContent() {
     const router = useRouter();
+    const isMobile = useIsMobile()
     const [allContacts, setAllContacts] = useState<any[]>([])
     const [selectedContact, setSelectedContact] = useState<any>(null)
     const [editingContact, setEditingContact] = useState<any>(null);
@@ -885,6 +888,124 @@ function ContactsContent() {
             return 0;
         }), [allContacts, searchTerm, statusFilter, tagFilter, sortConfig]);
 
+    // ─── Mobile Contacts ──────────────────────────────────────────
+    if (isMobile) {
+        return (
+            <div className="flex flex-col h-full min-h-0 bg-zinc-950">
+                {/* Search */}
+                <div className="px-4 pt-3 pb-2">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                        <input
+                            placeholder="Search contacts..."
+                            className="w-full h-9 pl-9 pr-3 rounded-xl bg-zinc-900 border border-white/5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                {/* Contact list */}
+                <div className="flex-1 overflow-y-auto px-4 pb-24 space-y-1.5">
+                    {isLoading ? (
+                        <div className="space-y-2 pt-4">
+                            {[1,2,3,4,5,6].map(i => (
+                                <div key={i} className="mobile-card p-3.5 flex items-center gap-3 animate-pulse">
+                                    <div className="w-10 h-10 rounded-full bg-zinc-800" />
+                                    <div className="space-y-2 flex-1">
+                                        <div className="h-4 w-28 bg-zinc-800 rounded" />
+                                        <div className="h-3 w-20 bg-zinc-800 rounded" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : filteredAndSortedContacts.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-40 text-zinc-500 text-sm">
+                            {searchTerm ? "No matching contacts" : "No contacts yet"}
+                        </div>
+                    ) : (
+                        filteredAndSortedContacts.map((contact: any) => (
+                            <button
+                                key={contact.id}
+                                className="w-full mobile-card p-3.5 flex items-center gap-3 touch-manipulation text-left"
+                                onClick={() => handleSelectContact(contact)}
+                            >
+                                <Avatar className="h-10 w-10 border-2 border-zinc-800 shrink-0">
+                                    <AvatarFallback className="bg-gradient-to-br from-zinc-700 to-zinc-900 text-white text-xs font-medium">
+                                        {(contact.name || "?").slice(0, 2).toUpperCase()}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                    <span className="text-sm font-semibold text-white block truncate">{contact.name}</span>
+                                    <div className="flex items-center gap-2 mt-0.5 text-[11px] text-zinc-500">
+                                        {contact.phone && (
+                                            <span className="flex items-center gap-0.5">
+                                                <Phone className="h-2.5 w-2.5" />
+                                                {contact.phone}
+                                            </span>
+                                        )}
+                                        {!contact.phone && contact.email && (
+                                            <span className="flex items-center gap-0.5 truncate">
+                                                <Mail className="h-2.5 w-2.5" />
+                                                {contact.email}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {contact.status && (
+                                        <Badge variant="outline" className="text-[9px] h-5 border-white/10">
+                                            {contact.status}
+                                        </Badge>
+                                    )}
+                                    <ChevronRight className="h-4 w-4 text-zinc-600" />
+                                </div>
+                            </button>
+                        ))
+                    )}
+                    {/* Infinite scroll trigger */}
+                    <div ref={loadMoreRef} className="h-4" />
+                </div>
+
+                {/* Contact detail sheet (reused) */}
+                <ContactDetailSheet
+                    selectedContact={selectedContact}
+                    editingContact={editingContact}
+                    setEditingContact={setEditingContact}
+                    onClose={() => setSelectedContact(null)}
+                    contactStatuses={contactStatuses}
+                    noteContent={noteContent}
+                    setNoteContent={setNoteContent}
+                    onAddNote={handleAddNote}
+                    onAddNoteWithMentions={handleAddNoteWithMentions}
+                    onEditNote={handleEditNote}
+                    isSavingNote={isSavingNote}
+                    expandedNoteIds={expandedNoteIds}
+                    toggleNoteExpanded={toggleNoteExpanded}
+                    onDeleteNote={(contactId: string, noteId: string) => setNoteToDelete({ contactId, noteId })}
+                    users={allUsers}
+                    logMessageType={logMessageType}
+                    setLogMessageType={setLogMessageType}
+                    logMessageContent={logMessageContent}
+                    setLogMessageContent={setLogMessageContent}
+                    onLogMessage={handleLogMessage}
+                    isLoggingMessage={isLoggingMessage}
+                    onSave={handleSave}
+                    isSaving={isSaving}
+                    saveError={saveError}
+                    onCreateOpportunity={handleCreateOpportunity}
+                    onToggleForm={handleToggleForm}
+                    onOpenTaskDialog={() => setIsTaskDialogOpen(true)}
+                    onDeleteContact={(id: string) => setContactToDelete(id)}
+                    allContacts={allContacts.map(c => ({ id: c.id, name: c.name || "", email: c.email || "", phone: c.phone || "" }))}
+                    onRefreshContact={handleRefreshContact}
+                    onMergeWith={handleMergeWith}
+                />
+            </div>
+        )
+    }
+
+    // ─── Desktop Contacts ───────────────────────────────────────────
     return (
         <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">

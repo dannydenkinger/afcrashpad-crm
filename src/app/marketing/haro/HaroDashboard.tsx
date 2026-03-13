@@ -53,6 +53,7 @@ import {
     Trash2,
     RefreshCw,
     ChevronDown,
+    AlertTriangle,
 } from "lucide-react"
 import {
     ResponsiveContainer,
@@ -88,6 +89,18 @@ const STATUS_CONFIG: Record<HaroQueryStatus, { label: string; color: string; ico
     placed: { label: "Placed", color: "bg-green-500/10 text-green-700 border-green-500/20", icon: Award },
     declined: { label: "Skipped", color: "bg-muted text-muted-foreground border-muted", icon: XCircle },
     expired: { label: "Expired", color: "bg-rose-500/10 text-rose-600 border-rose-500/20", icon: Clock },
+}
+
+function getDeadlineUrgency(query: HaroQuery): { label: string; color: string; hoursLeft: number } | null {
+    const deadline = query.deadlineParsed
+    if (!deadline) return null
+    const now = Date.now()
+    const ms = new Date(deadline).getTime() - now
+    if (ms < 0) return { label: "EXPIRED", color: "bg-rose-600 text-white", hoursLeft: 0 }
+    const hours = ms / (1000 * 60 * 60)
+    if (hours <= 2) return { label: "URGENT", color: "bg-rose-600 text-white", hoursLeft: hours }
+    if (hours <= 6) return { label: "EXPIRING", color: "bg-amber-500 text-white", hoursLeft: hours }
+    return null
 }
 
 export function HaroDashboard() {
@@ -211,11 +224,19 @@ export function HaroDashboard() {
         fetchData()
     }
 
-    const filteredQueries = queries.filter(q => {
-        if (selectedBatchId && q.batchId !== selectedBatchId) return false
-        if (statusFilter === "all") return true
-        return q.status === statusFilter
-    })
+    const filteredQueries = queries
+        .filter(q => {
+            if (selectedBatchId && q.batchId !== selectedBatchId) return false
+            if (statusFilter === "all") return true
+            return q.status === statusFilter
+        })
+        .sort((a, b) => {
+            // Sort by deadline urgency (soonest first), then relevance score
+            const aDeadline = a.deadlineParsed ? new Date(a.deadlineParsed).getTime() : Infinity
+            const bDeadline = b.deadlineParsed ? new Date(b.deadlineParsed).getTime() : Infinity
+            if (aDeadline !== bDeadline) return aDeadline - bDeadline
+            return b.relevanceScore - a.relevanceScore
+        })
 
     if (view === "settings") {
         return (
@@ -532,10 +553,11 @@ export function HaroDashboard() {
                             ) : filteredQueries.map(query => {
                                 const statusCfg = STATUS_CONFIG[query.status]
                                 const StatusIcon = statusCfg.icon
+                                const urgency = getDeadlineUrgency(query)
                                 return (
                                     <div
                                         key={query.id}
-                                        className="p-3 rounded-lg bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer group"
+                                        className={`p-3 rounded-lg transition-colors cursor-pointer group ${urgency && urgency.hoursLeft <= 2 && urgency.hoursLeft > 0 ? "bg-rose-500/5 hover:bg-rose-500/10 ring-1 ring-rose-500/20" : "bg-muted/20 hover:bg-muted/30"}`}
                                         onClick={() => {
                                             setSelectedQuery(query)
                                             setEditedResponse(query.editedResponse || query.aiResponse)
@@ -543,7 +565,15 @@ export function HaroDashboard() {
                                     >
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0 flex-1">
-                                                <p className="text-xs font-semibold leading-tight">{query.title}</p>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-xs font-semibold leading-tight">{query.title}</p>
+                                                    {urgency && (
+                                                        <Badge className={`text-[8px] h-4 px-1.5 ${urgency.color} border-none`}>
+                                                            <AlertTriangle className="h-2 w-2 mr-0.5" />
+                                                            {urgency.label}
+                                                        </Badge>
+                                                    )}
+                                                </div>
                                                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                                     {query.mediaOutlet && (
                                                         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
@@ -586,12 +616,21 @@ export function HaroDashboard() {
                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                     {selectedQuery && (() => {
                         const statusCfg = STATUS_CONFIG[selectedQuery.status]
+                        const dialogUrgency = getDeadlineUrgency(selectedQuery)
                         return (
                             <>
                                 <DialogHeader>
                                     <div className="flex items-start justify-between gap-3">
                                         <DialogTitle className="text-base leading-tight pr-4">{selectedQuery.title}</DialogTitle>
-                                        <Badge variant="outline" className={`text-[10px] h-5 shrink-0 ${statusCfg.color}`}>{statusCfg.label}</Badge>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            {dialogUrgency && (
+                                                <Badge className={`text-[9px] h-5 ${dialogUrgency.color} border-none`}>
+                                                    <AlertTriangle className="h-2.5 w-2.5 mr-1" />
+                                                    {dialogUrgency.hoursLeft > 0 ? `${Math.round(dialogUrgency.hoursLeft * 60)}m left` : "EXPIRED"}
+                                                </Badge>
+                                            )}
+                                            <Badge variant="outline" className={`text-[10px] h-5 ${statusCfg.color}`}>{statusCfg.label}</Badge>
+                                        </div>
                                     </div>
                                     <DialogDescription className="text-xs">
                                         {[selectedQuery.mediaOutlet, selectedQuery.reporterName, selectedQuery.deadline && `Deadline: ${selectedQuery.deadline}`].filter(Boolean).join(" · ")}

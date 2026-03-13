@@ -57,6 +57,8 @@ export interface HaroQuery {
     mediaOutlet: string
     mediaUrl: string
     deadline: string
+    deadlineParsed?: string // ISO timestamp for sorting/urgency
+    deadlineNotified?: boolean
     // AI processing
     relevanceScore: number // 0-100
     isRelevant: boolean

@@ -77,6 +77,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { toast } from "sonner"
 import { withRetry } from "@/lib/retry"
+import { useIsMobile } from "@/hooks/useIsMobile"
+import { usePullToRefresh } from "@/hooks/usePullToRefresh"
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -141,9 +143,194 @@ const DEFAULT_TEMPLATES: Omit<TaskTemplate, "id" | "createdAt">[] = [
     },
 ]
 
+// ── Mobile Tasks Component ──────────────────────────────────────────────────
+
+function MobileTasksView({
+    groupedTasks,
+    isLoading,
+    searchQuery,
+    setSearchQuery,
+    filter,
+    setFilter,
+    onToggleTask,
+    onRefresh,
+    onCreateTask,
+    isCreateDialogOpen,
+    setIsCreateDialogOpen,
+    editingTask,
+    setEditingTask,
+    loadTasks,
+    availableTasksForDeps,
+}: {
+    groupedTasks: { key: string; label: string; tasks: any[] }[]
+    isLoading: boolean
+    searchQuery: string
+    setSearchQuery: (q: string) => void
+    filter: "all" | "active" | "completed"
+    setFilter: (f: "all" | "active" | "completed") => void
+    onToggleTask: (taskId: string, completed: boolean) => void
+    onRefresh: () => Promise<void>
+    onCreateTask: () => void
+    isCreateDialogOpen: boolean
+    setIsCreateDialogOpen: (open: boolean) => void
+    editingTask: any
+    setEditingTask: (task: any) => void
+    loadTasks: () => void
+    availableTasksForDeps: { id: string; title: string }[]
+}) {
+    const { refreshing, pullDistance } = usePullToRefresh(onRefresh)
+
+    return (
+        <div className="relative flex flex-col h-full min-h-0 bg-zinc-950">
+            {/* Pull-to-refresh indicator */}
+            {pullDistance > 0 && (
+                <div className="pull-indicator flex items-center justify-center" style={{ height: pullDistance }}>
+                    {refreshing ? (
+                        <div className="pull-spinner" />
+                    ) : (
+                        <div
+                            className="w-5 h-5 border-2 border-white/20 border-t-white/60 rounded-full"
+                            style={{ transform: `rotate(${pullDistance * 3}deg)`, opacity: Math.min(pullDistance / 60, 1) }}
+                        />
+                    )}
+                </div>
+            )}
+
+            <div className="flex flex-col h-full" style={{ transform: `translateY(${pullDistance}px)` }}>
+                {/* Search + filter */}
+                <div className="px-4 pt-3 pb-2 space-y-2">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                        <input
+                            placeholder="Search tasks..."
+                            className="w-full h-9 pl-9 pr-3 rounded-xl bg-zinc-900 border border-white/5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                    <div className="flex gap-1.5">
+                        {(["active", "completed", "all"] as const).map(f => (
+                            <button
+                                key={f}
+                                className={cn(
+                                    "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest touch-manipulation transition-colors",
+                                    filter === f ? "bg-primary text-primary-foreground" : "bg-zinc-900 text-zinc-500 border border-white/5"
+                                )}
+                                onClick={() => setFilter(f)}
+                            >
+                                {f}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Task groups */}
+                <div className="flex-1 overflow-y-auto px-4 pb-24 space-y-4">
+                    {isLoading ? (
+                        <div className="space-y-3 pt-4">
+                            {[1,2,3,4,5].map(i => (
+                                <div key={i} className="mobile-card p-4 h-16 animate-pulse" />
+                            ))}
+                        </div>
+                    ) : groupedTasks.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-40 text-zinc-500 text-sm">
+                            {filter === "active" ? "No active tasks" : "No tasks found"}
+                        </div>
+                    ) : (
+                        groupedTasks.map(group => (
+                            <div key={group.key}>
+                                <div className={cn(
+                                    "mobile-section-header",
+                                    group.key === "overdue" && "!text-rose-400"
+                                )}>
+                                    {group.label}
+                                    <span className="ml-1 opacity-50">{group.tasks.length}</span>
+                                </div>
+                                <div className="space-y-1.5">
+                                    {group.tasks.map(task => (
+                                        <button
+                                            key={task.id}
+                                            className="w-full mobile-card p-3.5 flex items-center gap-3 touch-manipulation text-left"
+                                            onClick={() => onToggleTask(task.id, task.completed)}
+                                        >
+                                            {/* Checkbox circle */}
+                                            <div className={cn(
+                                                "w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors",
+                                                task.completed
+                                                    ? "bg-emerald-500 border-emerald-500"
+                                                    : "border-zinc-600"
+                                            )}>
+                                                {task.completed && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
+                                            </div>
+
+                                            {/* Task content */}
+                                            <div className="flex-1 min-w-0">
+                                                <span className={cn(
+                                                    "text-sm font-medium block truncate",
+                                                    task.completed ? "text-zinc-500 line-through" : "text-white"
+                                                )}>
+                                                    {task.title}
+                                                </span>
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    {task.dueDate && (
+                                                        <span className={cn(
+                                                            "text-[10px]",
+                                                            !task.completed && isPast(new Date(task.dueDate)) && !isToday(new Date(task.dueDate))
+                                                                ? "text-rose-400 font-semibold"
+                                                                : isToday(new Date(task.dueDate))
+                                                                ? "text-primary font-semibold"
+                                                                : "text-zinc-500"
+                                                        )}>
+                                                            {format(new Date(task.dueDate), "MMM d")}
+                                                        </span>
+                                                    )}
+                                                    {task.assigneeName && (
+                                                        <span className="text-[10px] text-zinc-600 truncate">{task.assigneeName}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Priority dot */}
+                                            <div className={cn(
+                                                "w-2.5 h-2.5 rounded-full shrink-0",
+                                                task.priority === "HIGH" ? "bg-rose-500" :
+                                                task.priority === "MEDIUM" ? "bg-amber-500" : "bg-emerald-500"
+                                            )} />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            {/* FAB for new task */}
+            <button
+                className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 flex items-center justify-center touch-manipulation active:scale-95 transition-transform"
+                onClick={onCreateTask}
+            >
+                <Plus className="h-6 w-6" />
+            </button>
+
+            <CreateTaskDialog
+                isOpen={isCreateDialogOpen}
+                onClose={() => { setIsCreateDialogOpen(false); setEditingTask(null) }}
+                onSaved={() => {
+                    toast.success(editingTask ? "Task updated" : "Task created")
+                    loadTasks()
+                }}
+                initialData={editingTask}
+                availableTasks={availableTasksForDeps}
+            />
+        </div>
+    )
+}
+
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export default function TasksPage() {
+    const isMobile = useIsMobile()
     const [tasks, setTasks] = useState<any[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [searchQuery, setSearchQuery] = useState("")
@@ -521,6 +708,30 @@ export default function TasksPage() {
 
     const commentSheetTask = tasks.find(t => t.id === commentSheetTaskId)
 
+    // ─── Mobile Tasks ───────────────────────────────────────────────
+    if (isMobile) {
+        return (
+            <MobileTasksView
+                groupedTasks={groupedTasks}
+                isLoading={isLoading}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                filter={filter}
+                setFilter={setFilter}
+                onToggleTask={handleToggleTask}
+                onRefresh={async () => { await loadTasks() }}
+                onCreateTask={() => { setEditingTask(null); setIsCreateDialogOpen(true) }}
+                isCreateDialogOpen={isCreateDialogOpen}
+                setIsCreateDialogOpen={setIsCreateDialogOpen}
+                editingTask={editingTask}
+                setEditingTask={setEditingTask}
+                loadTasks={loadTasks}
+                availableTasksForDeps={availableTasksForDeps}
+            />
+        )
+    }
+
+    // ─── Desktop Tasks ──────────────────────────────────────────────
     return (
         <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">

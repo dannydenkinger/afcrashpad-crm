@@ -1,9 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { usePathname } from "next/navigation"
 import { Sidebar } from "./Sidebar"
 import { TopNav } from "./TopNav"
+import { MobileTopNav } from "./MobileTopNav"
+import { MobileBottomNav } from "./MobileBottomNav"
 import { cn } from "@/lib/utils"
 import { NotificationPanel } from "@/components/NotificationPanel"
 import { Toaster } from "@/components/ui/sonner"
@@ -16,23 +18,63 @@ import { SessionTimeoutWarning } from "@/components/SessionTimeoutWarning"
 import { QuickAddFAB } from "@/components/QuickAddFAB"
 import { OnboardingWizard } from "@/components/OnboardingWizard"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { useIsMobile } from "@/hooks/useIsMobile"
+import { getNotifications } from "@/app/notifications/actions"
 
 // Routes that render without the app shell (sidebar, topnav, etc.)
+const STANDALONE_ROUTES = ["/"]
 const STANDALONE_ROUTE_PREFIXES = ["/sign/"]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
+    const isMobile = useIsMobile()
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+    const [mobileUnreadCount, setMobileUnreadCount] = useState(0)
 
     useKeyboardShortcuts()
 
+    // Fetch unread notification count for mobile
+    const fetchMobileNotifications = useCallback(async () => {
+        if (!isMobile) return
+        const res = await getNotifications()
+        if (res.success) setMobileUnreadCount(res.unreadCount || 0)
+    }, [isMobile])
+
+    useEffect(() => {
+        fetchMobileNotifications()
+        if (!isMobile) return
+        const interval = setInterval(fetchMobileNotifications, 30000)
+        return () => clearInterval(interval)
+    }, [fetchMobileNotifications, isMobile])
+
     // Standalone pages render without the shell
-    const isStandalone = STANDALONE_ROUTE_PREFIXES.some(prefix => pathname.startsWith(prefix))
+    const isStandalone = STANDALONE_ROUTES.includes(pathname) || STANDALONE_ROUTE_PREFIXES.some(prefix => pathname.startsWith(prefix))
     if (isStandalone) {
         return <>{children}</>
     }
 
+    // ─── Mobile Layout ──────────────────────────────────────────────
+    if (isMobile) {
+        return (
+            <div className="flex flex-col h-dvh bg-zinc-950 text-white dark">
+                <MobileTopNav onNotificationsClick={() => setNotificationPanelOpen(true)} unreadCount={mobileUnreadCount} />
+                <main id="main-content" className="flex-1 min-h-0 overflow-y-auto" role="main">
+                    <ErrorBoundary section="Page content">
+                        {children}
+                    </ErrorBoundary>
+                </main>
+                <MobileBottomNav />
+                <NotificationPanel open={notificationPanelOpen} onClose={() => setNotificationPanelOpen(false)} />
+                <Toaster />
+                <PushNotificationListener />
+                <OfflineIndicator />
+                <SessionTimeoutWarning />
+            </div>
+        )
+    }
+
+    // ─── Desktop Layout ─────────────────────────────────────────────
     return (
         <>
             {/* Mobile sidebar backdrop */}
