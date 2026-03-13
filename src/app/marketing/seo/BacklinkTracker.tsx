@@ -327,7 +327,8 @@ export default function BacklinkTracker({
 
                     {/* Entry List */}
                     {entries.length > 0 ? (
-                        <div className="space-y-1">
+                        <div className="overflow-x-auto">
+                        <div className="min-w-[550px] space-y-1">
                             <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
                                 <div className="col-span-2">Date</div>
                                 <div className="col-span-2 text-right">Backlinks</div>
@@ -366,6 +367,7 @@ export default function BacklinkTracker({
                                     </div>
                                 </div>
                             ))}
+                        </div>
                         </div>
                     ) : (
                         <div className="py-6 flex flex-col items-center justify-center text-muted-foreground">

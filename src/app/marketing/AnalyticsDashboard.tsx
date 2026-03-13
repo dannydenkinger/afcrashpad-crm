@@ -220,7 +220,7 @@ export default function AnalyticsDashboard() {
                             <CardTitle className="text-base font-semibold">Traffic Analytics</CardTitle>
                             <CardDescription className="text-xs">Daily active visitors and conversions</CardDescription>
                         </div>
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
                             <div className="flex items-center gap-1.5">
                                 <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
                                 <span className="text-[10px] text-muted-foreground font-medium">Visitors</span>

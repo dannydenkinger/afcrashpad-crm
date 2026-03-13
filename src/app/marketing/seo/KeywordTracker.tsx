@@ -132,7 +132,7 @@ export default function KeywordTracker({
     return (
         <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
             <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                         <CardTitle className="text-base font-semibold">Keyword Position Tracker</CardTitle>
                         <CardDescription className="text-xs">
@@ -187,7 +187,8 @@ export default function KeywordTracker({
 
                 {/* Keywords List */}
                 {keywords.length > 0 ? (
-                    <div className="space-y-1">
+                    <div className="overflow-x-auto">
+                    <div className="min-w-[500px] space-y-1">
                         {/* Header */}
                         <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
                             <div className="col-span-4">Keyword</div>
@@ -291,6 +292,7 @@ export default function KeywordTracker({
                                 </div>
                             )
                         })}
+                    </div>
                     </div>
                 ) : (
                     <div className="py-8 flex flex-col items-center justify-center text-muted-foreground">

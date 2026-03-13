@@ -108,7 +108,7 @@ function MobileDashboard({
     ]
 
     return (
-        <div className="relative min-h-full bg-zinc-950">
+        <div className="relative min-h-full bg-zinc-950 overflow-x-hidden">
             {/* Pull-to-refresh indicator */}
             {pullDistance > 0 && (
                 <div className="pull-indicator flex items-center justify-center" style={{ height: pullDistance }}>
@@ -151,7 +151,7 @@ function MobileDashboard({
                 </div>
 
                 {/* Quick Stats Row */}
-                <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4">
+                <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 max-w-[calc(100%+2rem)]">
                     {[
                         { label: "Profit", value: formatCurrency(kpi.totalClosedProfit), color: "bg-emerald-500/10 text-emerald-400" },
                         { label: "Forecast", value: formatCurrency(kpi.weightedForecast), color: "bg-primary/10 text-primary" },

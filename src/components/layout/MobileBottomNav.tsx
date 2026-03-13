@@ -88,7 +88,7 @@ export function MobileBottomNav() {
 
             {/* More sheet */}
             {showMore && (
-                <div className="fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-white/10 rounded-t-2xl safe-bottom animate-slide-up">
+                <div className="fixed bottom-16 left-0 right-0 z-50 bg-zinc-900 border-t border-white/10 rounded-t-2xl animate-slide-up" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
                     <div className="flex items-center justify-between p-4 pb-2">
                         <span className="text-sm font-semibold text-white">More</span>
                         <button onClick={() => setShowMore(false)} className="p-1 rounded-full hover:bg-white/10">
@@ -119,7 +119,7 @@ export function MobileBottomNav() {
 
             {/* Add sheet */}
             {showAdd && (
-                <div className="fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-white/10 rounded-t-2xl safe-bottom animate-slide-up">
+                <div className="fixed bottom-16 left-0 right-0 z-50 bg-zinc-900 border-t border-white/10 rounded-t-2xl animate-slide-up" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
                     <div className="flex items-center justify-between p-4 pb-2">
                         <span className="text-sm font-semibold text-white">Quick Add</span>
                         <button onClick={() => setShowAdd(false)} className="p-1 rounded-full hover:bg-white/10">

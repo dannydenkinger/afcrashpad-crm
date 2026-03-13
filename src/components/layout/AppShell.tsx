@@ -51,7 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Standalone pages render without the shell
     const isStandalone = STANDALONE_ROUTES.includes(pathname) || STANDALONE_ROUTE_PREFIXES.some(prefix => pathname.startsWith(prefix))
     if (isStandalone) {
-        return <>{children}</>
+        return <div className="w-full h-full">{children}</div>
     }
 
     // ─── Mobile Layout ──────────────────────────────────────────────
@@ -59,7 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         return (
             <div className="flex flex-col h-dvh bg-zinc-950 text-white dark">
                 <MobileTopNav onNotificationsClick={() => setNotificationPanelOpen(true)} unreadCount={mobileUnreadCount} />
-                <main id="main-content" className="flex-1 min-h-0 overflow-y-auto" role="main">
+                <main id="main-content" className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" role="main">
                     <ErrorBoundary section="Page content">
                         {children}
                     </ErrorBoundary>

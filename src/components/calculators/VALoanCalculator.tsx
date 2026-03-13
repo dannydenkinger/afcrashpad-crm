@@ -383,7 +383,7 @@ export function VALoanCalculator({
                                     </div>
 
                                     <div className="flex flex-row items-center justify-between py-4 border-y border-white/10">
-                                        <div className="flex flex-wrap gap-x-8 gap-y-4 flex-1">
+                                        <div className="flex flex-wrap gap-x-4 sm:gap-x-8 gap-y-3 sm:gap-y-4 flex-1">
                                             <div>
                                                 <p className="text-[9px] font-bold uppercase tracking-wider text-blue-200/70 mb-0.5">Prin. & Int.</p>
                                                 <p className="text-sm font-black flex items-center text-white">

@@ -94,7 +94,7 @@ export function UserManagementTable({ initialUsers, currentUserId }: { initialUs
                 <CreateUserDialog />
             </div>
 
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>

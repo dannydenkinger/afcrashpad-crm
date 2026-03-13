@@ -225,7 +225,7 @@ export function BAHCalculator({
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-6 py-4 border-y border-white/10">
+                                    <div className="grid grid-cols-2 gap-3 sm:gap-6 py-4 border-y border-white/10">
                                         <div>
                                             <p className="text-[9px] font-bold uppercase tracking-wider text-white/50 mb-0.5">Annual Total</p>
                                             <p className="text-sm font-black flex items-center gap-1.5 italic">
@@ -233,7 +233,7 @@ export function BAHCalculator({
                                                 ${bahResult.yearlyRate?.toLocaleString() || (bahResult.monthlyRate * 12).toLocaleString()}
                                             </p>
                                         </div>
-                                        <div className="border-l border-white/10 pl-6">
+                                        <div className="border-l border-white/10 pl-3 sm:pl-6">
                                             <p className="text-[9px] font-bold uppercase tracking-wider text-white/50 mb-0.5">Status</p>
                                             <p className="text-sm font-black flex items-center gap-1.5">
                                                 <ShieldCheck size={14} className="text-emerald-400" /> FY25 Active

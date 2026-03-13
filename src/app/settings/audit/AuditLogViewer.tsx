@@ -113,7 +113,7 @@ export function AuditLogViewer() {
                         <CardDescription>Track all changes made across the CRM.</CardDescription>
                     </div>
                     <Select value={entityFilter} onValueChange={setEntityFilter}>
-                        <SelectTrigger className="w-[180px]">
+                        <SelectTrigger className="w-full sm:w-[180px]">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>

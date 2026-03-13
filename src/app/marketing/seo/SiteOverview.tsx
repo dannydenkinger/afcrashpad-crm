@@ -331,7 +331,8 @@ export default function SiteOverview({
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-1">
+                        <div className="overflow-x-auto">
+                        <div className="min-w-[600px] space-y-1">
                             {/* Header */}
                             <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
                                 <div className="col-span-5">Query</div>
@@ -370,6 +371,7 @@ export default function SiteOverview({
                                     </div>
                                 </div>
                             ))}
+                        </div>
                         </div>
                     </CardContent>
                 </Card>

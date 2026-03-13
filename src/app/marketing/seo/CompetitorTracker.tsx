@@ -136,7 +136,7 @@ export default function CompetitorTracker({
     return (
         <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
             <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                         <CardTitle className="text-base font-semibold">Competitor Analysis</CardTitle>
                         <CardDescription className="text-xs">
@@ -166,7 +166,7 @@ export default function CompetitorTracker({
             </CardHeader>
             <CardContent className="space-y-4">
                 {/* Add Competitor */}
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                     <Input
                         placeholder="competitor.com"
                         value={newDomain}
@@ -178,7 +178,7 @@ export default function CompetitorTracker({
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-                        className="h-9 text-sm w-40"
+                        className="h-9 text-sm sm:w-40"
                     />
                     <Button
                         size="sm"
@@ -197,7 +197,8 @@ export default function CompetitorTracker({
 
                 {/* Comparison Grid */}
                 {(ownPageSpeed || competitors.some((c) => c.pageSpeed)) && (
-                    <div className="space-y-1">
+                    <div className="overflow-x-auto">
+                    <div className="min-w-[600px] space-y-1">
                         {/* Header */}
                         <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
                             <div className="col-span-3">Site</div>
@@ -296,6 +297,7 @@ export default function CompetitorTracker({
                                     </div>
                                 )
                             })}
+                    </div>
                     </div>
                 )}
 
