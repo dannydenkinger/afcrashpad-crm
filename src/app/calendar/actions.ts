@@ -26,12 +26,14 @@ const createTaskSchema = z.object({
     title: z.string().min(1).max(500),
     description: z.string().max(5000).optional(),
     dueDate: z.coerce.date().optional(),
+    endDate: z.coerce.date().optional(),
     priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
     contactId: z.string().optional(),
     opportunityId: z.string().optional(),
     assigneeId: z.string().optional(),
     recurrence: recurrenceSchema,
     blockedByTaskId: z.string().optional().nullable(),
+    itemType: z.enum(["task", "event"]).optional(),
 });
 
 const toggleTaskCompleteSchema = z.object({
@@ -43,12 +45,14 @@ const updateTaskSchema = z.object({
     title: z.string().min(1).max(500).optional(),
     description: z.string().max(5000).optional(),
     dueDate: z.coerce.date().optional().nullable(),
+    endDate: z.coerce.date().optional().nullable(),
     priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
     completed: z.boolean().optional(),
     contactId: z.string().optional().nullable(),
     opportunityId: z.string().optional().nullable(),
     recurrence: recurrenceSchema,
     blockedByTaskId: z.string().optional().nullable(),
+    itemType: z.enum(["task", "event"]).optional(),
 });
 
 // ── Task Template Schemas ───────────────────────────────────────────────────
@@ -205,7 +209,7 @@ export async function getUnifiedEvents(days: number = 30): Promise<CalendarEvent
         console.error("Error fetching CRM stay dates from Firebase:", error);
     }
 
-    // 3. Fetch Internal Tasks (using Firebase)
+    // 3. Fetch Internal Tasks & Events (using Firebase)
     try {
         const tasksSnapshot = await adminDb.collection('tasks')
             .where('completed', '==', false)
@@ -215,14 +219,31 @@ export async function getUnifiedEvents(days: number = 30): Promise<CalendarEvent
             const task = doc.data();
             if (task.dueDate) {
                 const date = task.dueDate.toDate ? task.dueDate.toDate() : new Date(task.dueDate);
-                events.push({
-                    id: `task-${doc.id}`,
-                    title: `Task: ${task.title}`,
-                    start: date,
-                    end: date,
-                    source: "TASK",
-                    color: "#F59E0B"
-                });
+                const isEvent = task.itemType === "event";
+
+                if (isEvent) {
+                    const endDate = task.endDate
+                        ? (task.endDate.toDate ? task.endDate.toDate() : new Date(task.endDate))
+                        : date;
+                    events.push({
+                        id: `event-${doc.id}`,
+                        title: task.title,
+                        start: date,
+                        end: endDate,
+                        description: task.description || "",
+                        source: "EVENT",
+                        color: "#6366F1"
+                    });
+                } else {
+                    events.push({
+                        id: `task-${doc.id}`,
+                        title: `Task: ${task.title}`,
+                        start: date,
+                        end: date,
+                        source: "TASK",
+                        color: "#F59E0B"
+                    });
+                }
             }
         });
     } catch (error) {
@@ -236,12 +257,14 @@ export async function createTask(data: {
     title: string;
     description?: string;
     dueDate?: Date;
+    endDate?: Date;
     priority?: string;
     contactId?: string;
     opportunityId?: string;
     assigneeId?: string;
     recurrence?: { type: string; interval?: number; endDate?: Date | null } | null;
     blockedByTaskId?: string | null;
+    itemType?: "task" | "event";
 }) {
     const parsed = createTaskSchema.safeParse(data);
     if (!parsed.success) return { id: null, error: "Invalid input" };
@@ -259,6 +282,7 @@ export async function createTask(data: {
         title: data.title,
         description: data.description || null,
         dueDate: data.dueDate ? data.dueDate : null,
+        endDate: data.endDate ? data.endDate : null,
         priority: data.priority || 'MEDIUM',
         contactId: data.contactId || null,
         opportunityId: data.opportunityId || null,
@@ -266,10 +290,30 @@ export async function createTask(data: {
         blockedByTaskId: data.blockedByTaskId || null,
         completed: false,
         recurrence,
+        itemType: data.itemType || "task",
         createdAt: new Date(),
         updatedAt: new Date()
     });
     return { id: taskRef.id };
+}
+
+export async function getTaskById(taskId: string) {
+    const doc = await adminDb.collection('tasks').doc(taskId).get();
+    if (!doc.exists) return null;
+    const data = doc.data()!;
+    const dueDate = data.dueDate?.toDate ? data.dueDate.toDate() : (data.dueDate ? new Date(data.dueDate) : null);
+    const endDate = data.endDate?.toDate ? data.endDate.toDate() : (data.endDate ? new Date(data.endDate) : null);
+    return {
+        id: doc.id,
+        ...data,
+        title: data.title ?? '',
+        completed: data.completed ?? false,
+        itemType: data.itemType || "task",
+        dueDate: dueDate ? dueDate.toISOString() : null,
+        endDate: endDate ? endDate.toISOString() : null,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
+        updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt,
+    };
 }
 
 export async function toggleTaskComplete(taskId: string, completed: boolean) {
@@ -288,12 +332,14 @@ export async function toggleTaskComplete(taskId: string, completed: boolean) {
 export async function getTasks() {
     const tasksSnapshot = await adminDb.collection('tasks').orderBy('dueDate', 'asc').get();
     const tasks = [];
+    // Filter out calendar events — only return actual tasks
+    const taskDocs = tasksSnapshot.docs.filter(doc => doc.data().itemType !== "event");
     
     // Simple caching for related entities
     const contactsMap: Record<string, any> = {};
     const usersMap: Record<string, any> = {};
 
-    for (const doc of tasksSnapshot.docs) {
+    for (const doc of taskDocs) {
         const taskData = doc.data();
         let contactData = null;
         let assigneeData = null;

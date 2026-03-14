@@ -70,6 +70,7 @@ export async function getBookingsData(): Promise<{ success: boolean; data?: Book
         // Filter to opportunities with both dates and a base
         const bookings: BookingEntry[] = []
         const excludeStages = new Set(["Closed Lost", "Archive", "Lost", "Abandoned"])
+        const todayStr = new Date().toISOString().split("T")[0]
 
         for (const doc of oppsSnap.docs) {
             const d = doc.data()
@@ -82,6 +83,8 @@ export async function getBookingsData(): Promise<{ success: boolean; data?: Book
 
             if (!base || !startDate || !endDate) continue
             if (d.status === "closed_lost" || d.status === "archive" || excludeStages.has(stageName)) continue
+            // Skip past stays — only show current/future opportunities
+            if (endDate < todayStr) continue
 
             bookings.push({
                 id: doc.id,
@@ -128,7 +131,15 @@ export async function getBookingsData(): Promise<{ success: boolean; data?: Book
                         travelers[j].startDate, travelers[j].endDate
                     )
 
-                    if (overlap && overlap.days >= 1) {
+                    // Only count overlaps where both stays are in the same year
+                    const year_i_start = new Date(travelers[i].startDate).getFullYear()
+                    const year_i_end = new Date(travelers[i].endDate).getFullYear()
+                    const year_j_start = new Date(travelers[j].startDate).getFullYear()
+                    const year_j_end = new Date(travelers[j].endDate).getFullYear()
+                    const yearsMatch = (year_i_start === year_j_start) || (year_i_start === year_j_end) ||
+                                       (year_i_end === year_j_start) || (year_i_end === year_j_end)
+
+                    if (overlap && overlap.days >= 1 && yearsMatch) {
                         const combinedRevenue = travelers[i].value + travelers[j].value
                         overlaps.push({
                             base,

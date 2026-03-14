@@ -13,7 +13,7 @@ export interface CalendarEvent {
     start: Date;
     end: Date;
     description?: string;
-    source: "GOOGLE" | "APPLE" | "SYSTEM" | "TASK";
+    source: "GOOGLE" | "APPLE" | "SYSTEM" | "TASK" | "EVENT";
     color?: string;
     calendarId?: string;
     calendarName?: string;

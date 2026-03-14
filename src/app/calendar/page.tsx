@@ -55,7 +55,7 @@ export default function CalendarPage() {
     const [viewMode, setViewMode] = useState<ViewMode>("month")
     const [events, setEvents] = useState<CalendarEvent[]>([])
     const [isLoading, setIsLoading] = useState(false)
-    const [activeSources, setActiveSources] = useState<string[]>(["APPLE", "SYSTEM", "TASK"])
+    const [activeSources, setActiveSources] = useState<string[]>(["APPLE", "SYSTEM", "TASK", "EVENT"])
     const [activeGoogleCalendars, setActiveGoogleCalendars] = useState<string[]>([])
     const [googleFolderOpen, setGoogleFolderOpen] = useState(true)
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
@@ -125,15 +125,15 @@ export default function CalendarPage() {
 
     // Drag-and-drop handler for rescheduling events
     const handleEventDrop = useCallback(async (eventId: string, newDate: Date) => {
-        // Only allow dragging TASK events (CRM tasks we own)
+        // Only allow dragging TASK and EVENT items (CRM items we own)
         const event = events.find(e => e.id === eventId)
-        if (!event || event.source !== "TASK") {
-            toast.error("Only CRM tasks can be rescheduled by dragging")
+        if (!event || (event.source !== "TASK" && event.source !== "EVENT")) {
+            toast.error("Only CRM tasks and events can be rescheduled by dragging")
             return
         }
 
-        // Extract the real task ID from event ID (format: "task-{taskId}")
-        const taskId = eventId.replace("task-", "")
+        // Extract the real task ID from event ID (format: "task-{taskId}" or "event-{taskId}")
+        const taskId = eventId.replace(/^(task|event)-/, "")
 
         // Optimistic update
         setEvents(prev => prev.map(e =>
@@ -293,7 +293,7 @@ export default function CalendarPage() {
                                                             {isAllDay ? "All day" : format(startTime, "h:mm a")}
                                                         </span>
                                                         <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-white/10 text-zinc-400">
-                                                            {event.source === "GOOGLE" ? "Google" : event.source === "APPLE" ? "iCal" : event.source === "TASK" ? "Task" : "Stay"}
+                                                            {event.source === "GOOGLE" ? "Google" : event.source === "APPLE" ? "iCal" : event.source === "TASK" ? "Task" : event.source === "EVENT" ? "Event" : "Stay"}
                                                         </Badge>
                                                     </div>
                                                 </div>
@@ -323,7 +323,7 @@ export default function CalendarPage() {
                 )}
 
                 {activeTab === "tasks" && (
-                    <div className="flex-1 overflow-hidden">
+                    <div className="flex-1 overflow-y-auto pb-24">
                         <TasksPage />
                     </div>
                 )}
@@ -357,7 +357,8 @@ export default function CalendarPage() {
                             {[
                                 { id: "APPLE", label: "Apple Calendar", color: "#9966FF" },
                                 { id: "SYSTEM", label: "Stay Dates", color: "#10B981" },
-                                { id: "TASK", label: "CRM Tasks", color: "#F59E0B" }
+                                { id: "TASK", label: "CRM Tasks", color: "#F59E0B" },
+                                { id: "EVENT", label: "CRM Events", color: "#6366F1" }
                             ].map(source => (
                                 <button key={`mf-${source.id}`} onClick={() => toggleSource(source.id)} className="flex items-center justify-between w-full px-3 py-3 rounded-xl text-sm font-medium transition-all hover:bg-muted/20 min-h-[44px] touch-manipulation">
                                     <div className="flex items-center gap-3">
@@ -375,7 +376,7 @@ export default function CalendarPage() {
                 <CreateTaskDialog
                     isOpen={isCreateDialogOpen}
                     onClose={() => { setIsCreateDialogOpen(false); setClickedDate(null); setEditingTaskData(null); }}
-                    onSaved={() => { toast.success(editingTaskData ? "Task updated" : "Event created"); loadEvents(); setEditingTaskData(null); }}
+                    onSaved={(type) => { const label = type === "event" ? "Event" : "Task"; toast.success(editingTaskData ? `${label} updated` : `${label} created`); loadEvents(); setEditingTaskData(null); }}
                     initialDate={clickedDate}
                     initialData={editingTaskData}
                 />
@@ -386,9 +387,8 @@ export default function CalendarPage() {
                         onNavigate={(url) => { setSelectedEvent(null); router.push(url); }}
                         onEditTask={(taskId) => {
                             setSelectedEvent(null)
-                            import("./actions").then(async ({ getTasks }) => {
-                                const allTasks = await getTasks()
-                                const task = allTasks.find((t: any) => t.id === taskId)
+                            import("./actions").then(async ({ getTaskById }) => {
+                                const task = await getTaskById(taskId)
                                 if (task) {
                                     setClickedDate(null)
                                     setEditingTaskData(task)
@@ -446,7 +446,7 @@ export default function CalendarPage() {
             </TabsContent>
 
             {/* Tasks Tab */}
-            <TabsContent value="tasks" className="flex-1 overflow-hidden m-0">
+            <TabsContent value="tasks" className="flex-1 overflow-y-auto m-0">
                 <TasksPage />
             </TabsContent>
 
@@ -545,7 +545,8 @@ export default function CalendarPage() {
                             {[
                                 { id: "APPLE", label: "Apple Calendar", color: "#9966FF" },
                                 { id: "SYSTEM", label: "Stay Dates", color: "#10B981" },
-                                { id: "TASK", label: "CRM Tasks", color: "#F59E0B" }
+                                { id: "TASK", label: "CRM Tasks", color: "#F59E0B" },
+                                { id: "EVENT", label: "CRM Events", color: "#6366F1" }
                             ].map(source => (
                                 <button key={source.id} onClick={() => toggleSource(source.id)} className="flex items-center justify-between w-full px-2.5 py-2 rounded-xl text-xs font-medium transition-all hover:bg-muted/20">
                                     <div className="flex items-center gap-2.5">
@@ -680,7 +681,7 @@ export default function CalendarPage() {
             <CreateTaskDialog
                 isOpen={isCreateDialogOpen}
                 onClose={() => { setIsCreateDialogOpen(false); setClickedDate(null); setEditingTaskData(null); }}
-                onSaved={() => { toast.success(editingTaskData ? "Task updated" : "Event created"); loadEvents(); setEditingTaskData(null); }}
+                onSaved={(type) => { const label = type === "event" ? "Event" : "Task"; toast.success(editingTaskData ? `${label} updated` : `${label} created`); loadEvents(); setEditingTaskData(null); }}
                 initialDate={clickedDate}
                 initialData={editingTaskData}
             />
@@ -691,13 +692,10 @@ export default function CalendarPage() {
                     onNavigate={(url) => { setSelectedEvent(null); router.push(url); }}
                     onEditTask={(taskId) => {
                         setSelectedEvent(null)
-                        // Load task data and open edit dialog
-                        import("./actions").then(async ({ getTasks }) => {
-                            const allTasks = await getTasks()
-                            const task = allTasks.find((t: any) => t.id === taskId)
+                        import("./actions").then(async ({ getTaskById }) => {
+                            const task = await getTaskById(taskId)
                             if (task) {
                                 setClickedDate(null)
-                                // Store task for editing via a small state trick
                                 setEditingTaskData(task)
                                 setIsCreateDialogOpen(true)
                             }
@@ -1139,7 +1137,7 @@ function DayView({
 // ── Event Detail Modal ──────────────────────────────────────────────────────
 
 function EventDetailModal({ event, onClose, onNavigate, onEditTask }: { event: CalendarEvent, onClose: () => void, onNavigate: (url: string) => void, onEditTask?: (taskId: string) => void }) {
-    const sourceLabels: Record<string, string> = { GOOGLE: "Google Calendar", APPLE: "Apple Calendar", SYSTEM: "CRM -- Stay Event", TASK: "CRM Task" }
+    const sourceLabels: Record<string, string> = { GOOGLE: "Google Calendar", APPLE: "Apple Calendar", SYSTEM: "CRM -- Stay Event", TASK: "CRM Task", EVENT: "Calendar Event" }
     const isAllDay = event.start instanceof Date && event.start.getHours() === 0 && event.start.getMinutes() === 0
 
     return (
@@ -1190,10 +1188,10 @@ function EventDetailModal({ event, onClose, onNavigate, onEditTask }: { event: C
                         <Tag className="h-3 w-3 text-muted-foreground" />
                         <span className="text-xs text-muted-foreground font-medium">{sourceLabels[event.source]}</span>
                     </div>
-                    {event.source === "TASK" && onEditTask && (
-                        <Button variant="outline" className="w-full h-9 gap-2 text-sm font-semibold" onClick={() => onEditTask(event.id.replace("task-", ""))}>
+                    {(event.source === "TASK" || event.source === "EVENT") && onEditTask && (
+                        <Button variant="outline" className="w-full h-9 gap-2 text-sm font-semibold" onClick={() => onEditTask(event.id.replace(/^(task|event)-/, ""))}>
                             <Pencil className="h-3.5 w-3.5" />
-                            Edit Task
+                            {event.source === "EVENT" ? "Edit Event" : "Edit Task"}
                         </Button>
                     )}
                 </div>

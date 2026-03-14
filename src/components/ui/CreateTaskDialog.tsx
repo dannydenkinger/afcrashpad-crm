@@ -21,6 +21,7 @@ import {
 import { createTask, updateTask } from "@/app/calendar/actions"
 import { getAllContacts } from "@/app/communications/actions"
 import { getOpportunitiesList } from "@/app/pipeline/actions"
+import { CheckSquare, CalendarDays } from "lucide-react"
 
 interface Recurrence {
     type: "none" | "daily" | "weekly" | "monthly"
@@ -33,17 +34,19 @@ interface TaskData {
     title: string
     description?: string
     dueDate?: string | Date | null
+    endDate?: string | Date | null
     priority?: string
     contactId?: string | null
     opportunityId?: string | null
     recurrence?: Recurrence | null
     blockedByTaskId?: string | null
+    itemType?: "task" | "event"
 }
 
 interface CreateTaskDialogProps {
     isOpen: boolean
     onClose: () => void
-    onSaved: () => void
+    onSaved: (itemType: "task" | "event") => void
     initialData?: TaskData | null
     initialContactId?: string | null
     initialDate?: Date | null
@@ -51,9 +54,11 @@ interface CreateTaskDialogProps {
 }
 
 export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initialContactId, initialDate, availableTasks }: CreateTaskDialogProps) {
+    const [itemType, setItemType] = useState<"task" | "event">("task")
     const [title, setTitle] = useState("")
     const [description, setDescription] = useState("")
     const [dueDate, setDueDate] = useState("")
+    const [endDate, setEndDate] = useState("")
     const [priority, setPriority] = useState("MEDIUM")
     const [contactId, setContactId] = useState<string>("")
     const [blockedByTaskId, setBlockedByTaskId] = useState<string>("")
@@ -66,6 +71,15 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
     const [opportunities, setOpportunities] = useState<{ id: string; name: string }[]>([])
     const [opportunityId, setOpportunityId] = useState<string>("")
     const [isLoading, setIsLoading] = useState(false)
+
+    const formatDateForInput = (date: string | Date | null | undefined): string => {
+        if (!date) return ""
+        try {
+            const dateObj = new Date(date)
+            const tzoffset = dateObj.getTimezoneOffset() * 60000
+            return new Date(dateObj.getTime() - tzoffset).toISOString().slice(0, 16)
+        } catch { return "" }
+    }
 
     useEffect(() => {
         if (isOpen) {
@@ -81,21 +95,11 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
     useEffect(() => {
         if (isOpen) {
             if (initialData) {
+                setItemType(initialData.itemType || "task")
                 setTitle(initialData.title || "")
                 setDescription(initialData.description || "")
-                // Format date for datetime-local input
-                if (initialData.dueDate) {
-                    try {
-                        const dateObj = new Date(initialData.dueDate);
-                        const tzoffset = dateObj.getTimezoneOffset() * 60000;
-                        const localISOTime = new Date(dateObj.getTime() - tzoffset).toISOString().slice(0, 16);
-                        setDueDate(localISOTime);
-                    } catch (e) {
-                        setDueDate("")
-                    }
-                } else {
-                    setDueDate("")
-                }
+                setDueDate(formatDateForInput(initialData.dueDate))
+                setEndDate(formatDateForInput(initialData.endDate))
                 setPriority(initialData.priority || "MEDIUM")
                 setContactId(initialData.contactId || initialContactId || "")
                 setOpportunityId(initialData.opportunityId || "")
@@ -105,8 +109,8 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                     setRecurrenceInterval(initialData.recurrence.interval || 1)
                     if (initialData.recurrence.endDate) {
                         try {
-                            const endDateObj = new Date(initialData.recurrence.endDate);
-                            setRecurrenceEndDate(endDateObj.toISOString().slice(0, 10));
+                            const endDateObj = new Date(initialData.recurrence.endDate)
+                            setRecurrenceEndDate(endDateObj.toISOString().slice(0, 10))
                         } catch { setRecurrenceEndDate("") }
                     } else {
                         setRecurrenceEndDate("")
@@ -117,18 +121,13 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                     setRecurrenceEndDate("")
                 }
             } else {
+                setItemType("task")
                 setTitle("")
                 setDescription("")
                 setBlockedByTaskId("")
-                // Auto-fill date from initialDate prop (click-to-add from calendar)
+                setEndDate("")
                 if (initialDate) {
-                    try {
-                        const tzoffset = initialDate.getTimezoneOffset() * 60000;
-                        const localISOTime = new Date(initialDate.getTime() - tzoffset).toISOString().slice(0, 16);
-                        setDueDate(localISOTime);
-                    } catch {
-                        setDueDate("")
-                    }
+                    setDueDate(formatDateForInput(initialDate))
                 } else {
                     setDueDate("")
                 }
@@ -142,6 +141,8 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
         }
     }, [isOpen, initialData, initialContactId, initialDate])
 
+    const isEvent = itemType === "event"
+
     const handleSave = async () => {
         if (!title.trim()) return
         setIsLoading(true)
@@ -150,19 +151,28 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
             title,
             description,
             dueDate: dueDate ? new Date(dueDate) : undefined,
-            priority,
-            recurrence: recurrenceType !== "none" ? {
+            itemType,
+        }
+
+        if (isEvent) {
+            taskData.endDate = endDate ? new Date(endDate) : (dueDate ? new Date(dueDate) : undefined)
+        } else {
+            taskData.priority = priority
+            taskData.recurrence = recurrenceType !== "none" ? {
                 type: recurrenceType,
                 interval: recurrenceInterval,
                 endDate: recurrenceEndDate ? new Date(recurrenceEndDate) : null,
-            } : { type: "none" },
+            } : { type: "none" }
         }
+
         if (contactId && contactId !== "none") taskData.contactId = contactId
         else taskData.contactId = null
         if (opportunityId && opportunityId !== "none") taskData.opportunityId = opportunityId
         else taskData.opportunityId = null
-        if (blockedByTaskId && blockedByTaskId !== "none") taskData.blockedByTaskId = blockedByTaskId
-        else taskData.blockedByTaskId = null
+        if (!isEvent) {
+            if (blockedByTaskId && blockedByTaskId !== "none") taskData.blockedByTaskId = blockedByTaskId
+            else taskData.blockedByTaskId = null
+        }
 
         try {
             if (initialData?.id) {
@@ -170,29 +180,55 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
             } else {
                 await createTask(taskData)
             }
-            onSaved()
+            onSaved(itemType)
             onClose()
         } catch (error) {
-            console.error("Failed to save task:", error)
+            console.error("Failed to save:", error)
         } finally {
             setIsLoading(false)
         }
     }
 
+    const typeLabel = isEvent ? "Event" : "Task"
+
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
             <DialogContent className="sm:max-w-[425px] border-white/10 bg-background/95 backdrop-blur-xl">
                 <DialogHeader>
-                    <DialogTitle>{initialData?.id ? "Edit Task" : "Create New Task"}</DialogTitle>
+                    <DialogTitle>{initialData?.id ? `Edit ${typeLabel}` : `Create New ${typeLabel}`}</DialogTitle>
                 </DialogHeader>
 
                 <div className="flex flex-col gap-4 py-4">
+                    {/* Type Toggle */}
+                    <div className="flex rounded-lg bg-muted/30 p-1 border border-white/5">
+                        <button
+                            type="button"
+                            onClick={() => setItemType("task")}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-xs font-semibold transition-all ${
+                                !isEvent ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                            }`}
+                        >
+                            <CheckSquare className="h-3.5 w-3.5" />
+                            Task
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setItemType("event")}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-xs font-semibold transition-all ${
+                                isEvent ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                            }`}
+                        >
+                            <CalendarDays className="h-3.5 w-3.5" />
+                            Event
+                        </button>
+                    </div>
+
                     <div className="flex flex-col gap-2">
                         <label className="text-sm font-medium">Title</label>
                         <Input
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
-                            placeholder="What needs to be done?"
+                            placeholder={isEvent ? "What's happening?" : "What needs to be done?"}
                             autoFocus
                         />
                     </div>
@@ -207,29 +243,53 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium">Due Date & Time</label>
-                            <Input
-                                type="datetime-local"
-                                value={dueDate}
-                                onChange={(e) => setDueDate(e.target.value)}
-                            />
+                    {isEvent ? (
+                        /* Event: Start + End date/time */
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Start</label>
+                                <Input
+                                    type="datetime-local"
+                                    value={dueDate}
+                                    onChange={(e) => setDueDate(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">End</label>
+                                <Input
+                                    type="datetime-local"
+                                    value={endDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                />
+                            </div>
                         </div>
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium">Priority</label>
-                            <Select value={priority} onValueChange={setPriority}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="LOW">Low</SelectItem>
-                                    <SelectItem value="MEDIUM">Medium</SelectItem>
-                                    <SelectItem value="HIGH">High</SelectItem>
-                                </SelectContent>
-                            </Select>
+                    ) : (
+                        /* Task: Due date + Priority */
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Due Date & Time</label>
+                                <Input
+                                    type="datetime-local"
+                                    value={dueDate}
+                                    onChange={(e) => setDueDate(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Priority</label>
+                                <Select value={priority} onValueChange={setPriority}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="LOW">Low</SelectItem>
+                                        <SelectItem value="MEDIUM">Medium</SelectItem>
+                                        <SelectItem value="HIGH">High</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
-                    </div>
+                    )}
+
                     <div className="flex flex-col gap-2">
                         <label className="text-sm font-medium">Link to contact</label>
                         <div className="relative">
@@ -292,7 +352,8 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                         </Select>
                     </div>
 
-                    {availableTasks && availableTasks.length > 0 && (
+                    {/* Task-only fields */}
+                    {!isEvent && availableTasks && availableTasks.length > 0 && (
                         <div className="flex flex-col gap-2">
                             <label className="text-sm font-medium">Blocked by</label>
                             <Select value={blockedByTaskId} onValueChange={setBlockedByTaskId}>
@@ -309,54 +370,56 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                         </div>
                     )}
 
-                    <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium">Recurrence</label>
-                        <div className="grid grid-cols-2 gap-4">
-                            <Select value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as any)}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="none">No repeat</SelectItem>
-                                    <SelectItem value="daily">Daily</SelectItem>
-                                    <SelectItem value="weekly">Weekly</SelectItem>
-                                    <SelectItem value="monthly">Monthly</SelectItem>
-                                </SelectContent>
-                            </Select>
+                    {!isEvent && (
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium">Recurrence</label>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Select value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as any)}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">No repeat</SelectItem>
+                                        <SelectItem value="daily">Daily</SelectItem>
+                                        <SelectItem value="weekly">Weekly</SelectItem>
+                                        <SelectItem value="monthly">Monthly</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                {recurrenceType !== "none" && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm text-muted-foreground whitespace-nowrap">Every</span>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            max={365}
+                                            value={recurrenceInterval}
+                                            onChange={(e) => setRecurrenceInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                                            className="w-16"
+                                        />
+                                        <span className="text-sm text-muted-foreground">
+                                            {recurrenceType === "daily" ? "day(s)" : recurrenceType === "weekly" ? "week(s)" : "month(s)"}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
                             {recurrenceType !== "none" && (
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm text-muted-foreground whitespace-nowrap">Every</span>
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs text-muted-foreground">End date (optional)</label>
                                     <Input
-                                        type="number"
-                                        min={1}
-                                        max={365}
-                                        value={recurrenceInterval}
-                                        onChange={(e) => setRecurrenceInterval(Math.max(1, parseInt(e.target.value) || 1))}
-                                        className="w-16"
+                                        type="date"
+                                        value={recurrenceEndDate}
+                                        onChange={(e) => setRecurrenceEndDate(e.target.value)}
                                     />
-                                    <span className="text-sm text-muted-foreground">
-                                        {recurrenceType === "daily" ? "day(s)" : recurrenceType === "weekly" ? "week(s)" : "month(s)"}
-                                    </span>
                                 </div>
                             )}
                         </div>
-                        {recurrenceType !== "none" && (
-                            <div className="flex flex-col gap-1">
-                                <label className="text-xs text-muted-foreground">End date (optional)</label>
-                                <Input
-                                    type="date"
-                                    value={recurrenceEndDate}
-                                    onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                                />
-                            </div>
-                        )}
-                    </div>
+                    )}
                 </div>
 
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose} disabled={isLoading}>Cancel</Button>
                     <Button onClick={handleSave} disabled={isLoading || !title.trim()}>
-                        {isLoading ? "Saving..." : initialData?.id ? "Update Task" : "Create Task"}
+                        {isLoading ? "Saving..." : initialData?.id ? `Update ${typeLabel}` : `Create ${typeLabel}`}
                     </Button>
                 </DialogFooter>
             </DialogContent>

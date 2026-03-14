@@ -354,12 +354,14 @@ export function BookingCalendar() {
                                     No stays in this date range.
                                 </div>
                             )}
-                            {Object.entries(baseGrouped).map(([base, travelers]) => (
+                            {Object.entries(baseGrouped).map(([base, travelers]) => {
+                                const baseColor = getBaseColor(base, baseList)
+                                return (
                                 <div key={base} className="mb-2">
                                     {/* Base header */}
                                     <div className="flex items-center gap-2 px-2 py-2 bg-muted/10 rounded-lg mb-1">
-                                        <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                                        <span className="text-xs font-bold">{base}</span>
+                                        <MapPin className={`h-3.5 w-3.5 ${baseColor.text}`} />
+                                        <span className={`text-xs font-bold ${baseColor.text}`}>{base}</span>
                                         <Badge variant="secondary" className="text-[9px] h-4 px-1.5">
                                             {travelers.length} {travelers.length === 1 ? "traveler" : "travelers"}
                                         </Badge>
@@ -418,7 +420,7 @@ export function BookingCalendar() {
                                         )
                                     })}
                                 </div>
-                            ))}
+                            )})}
 
                             {/* Today marker */}
                             {todayPercent !== null && (
