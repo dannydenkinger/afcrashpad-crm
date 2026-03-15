@@ -53,8 +53,12 @@ import {
     Trash2,
     RefreshCw,
     ChevronDown,
+    ChevronRight,
     AlertTriangle,
+    ArrowUpDown,
+    User,
 } from "lucide-react"
+import { useIsMobile } from "@/hooks/useIsMobile"
 import {
     ResponsiveContainer,
     AreaChart,
@@ -105,6 +109,7 @@ function getDeadlineUrgency(query: HaroQuery): { label: string; color: string; h
 }
 
 export function HaroDashboard() {
+    const isMobile = useIsMobile()
     const [view, setView] = useState<View>("dashboard")
     const [loading, setLoading] = useState(true)
     const [settings, setSettings] = useState<HaroSettings | null>(null)
@@ -485,26 +490,198 @@ export function HaroDashboard() {
                 </Card>
             )}
 
-            <div className="grid gap-6 lg:grid-cols-3">
-                {/* Recent Batches */}
-                <Card className="lg:col-span-1 border-none shadow-md bg-card/40 backdrop-blur-md">
-                    <CardHeader className="p-4 pb-3">
-                        <CardTitle className="text-sm font-semibold">Recent Batches</CardTitle>
-                        <CardDescription className="text-xs">Processed HARO emails</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-0">
-                        <div className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-hide">
-                            {batches.length === 0 ? (
-                                <p className="text-xs text-muted-foreground text-center py-8">No batches yet. Process your first HARO email to get started.</p>
-                            ) : batches.map(batch => (
+            {/* ─── Query Queue (Full Width) ─────────────────────────────── */}
+            <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
+                <CardHeader className="p-4 sm:p-5 pb-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div>
+                                <CardTitle className="text-sm font-semibold">
+                                    {selectedBatchId ? "Batch Queries" : "Query Queue"}
+                                </CardTitle>
+                                <CardDescription className="text-xs">{filteredQueries.length} queries</CardDescription>
+                            </div>
+                            {selectedBatchId && (
+                                <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => setSelectedBatchId(null)}>
+                                    Clear
+                                </Button>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm" className="h-7 text-xs shrink-0">
+                                        {statusFilter === "all" ? "All Status" : STATUS_CONFIG[statusFilter as HaroQueryStatus]?.label || statusFilter}
+                                        <ChevronDown className="h-3 w-3 ml-1" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem className="text-xs" onClick={() => setStatusFilter("all")}>All Status</DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    {(Object.entries(STATUS_CONFIG) as [HaroQueryStatus, typeof STATUS_CONFIG[HaroQueryStatus]][]).map(([key, config]) => (
+                                        <DropdownMenuItem key={key} className="text-xs" onClick={() => setStatusFilter(key)}>
+                                            {config.label}
+                                        </DropdownMenuItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm" className="h-7 text-xs shrink-0">
+                                        <ArrowUpDown className="h-3 w-3 mr-1" />
+                                        {sortBy === "deadline" ? "Expiring Soon" : sortBy === "relevancy" ? "Relevancy" : sortBy === "domain" ? "Domain Rating" : "Featured"}
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem className="text-xs" onClick={() => setSortBy("deadline")}>Expiring Soon</DropdownMenuItem>
+                                    <DropdownMenuItem className="text-xs" onClick={() => setSortBy("relevancy")}>Relevancy</DropdownMenuItem>
+                                    <DropdownMenuItem className="text-xs" onClick={() => setSortBy("domain")}>Domain Rating</DropdownMenuItem>
+                                    <DropdownMenuItem className="text-xs" onClick={() => setSortBy("featured")}>Featured</DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </div>
+                </CardHeader>
+                <CardContent className="p-0 sm:px-5 sm:pb-5">
+                    <div className="divide-y divide-border/30 max-h-[600px] overflow-y-auto scrollbar-hide">
+                        {filteredQueries.length === 0 ? (
+                            <p className="text-xs text-muted-foreground text-center py-12">No queries match the current filter.</p>
+                        ) : filteredQueries.map(query => {
+                            const statusCfg = STATUS_CONFIG[query.status]
+                            const StatusIcon = statusCfg.icon
+                            const urgency = getDeadlineUrgency(query)
+                            const relevanceColor = query.relevanceScore >= 75 ? "text-emerald-500" : query.relevanceScore >= 50 ? "text-amber-500" : "text-zinc-500"
+                            return (
+                                <div
+                                    key={query.id}
+                                    className={`px-4 sm:px-3 py-3 sm:py-3 transition-colors cursor-pointer group sm:rounded-lg sm:mx-0 ${urgency && urgency.hoursLeft <= 2 && urgency.hoursLeft > 0 ? "bg-rose-500/5 hover:bg-rose-500/10" : "hover:bg-muted/20"}`}
+                                    onClick={() => {
+                                        setSelectedQuery(query)
+                                        setEditedResponse(query.editedResponse || query.aiResponse)
+                                    }}
+                                >
+                                    {/* Mobile layout */}
+                                    {isMobile ? (
+                                        <div className="flex items-start gap-3">
+                                            {/* Relevance score circle */}
+                                            <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center shrink-0 text-xs font-bold ${
+                                                query.relevanceScore >= 75 ? "border-emerald-500/40 text-emerald-500" :
+                                                query.relevanceScore >= 50 ? "border-amber-500/40 text-amber-500" :
+                                                "border-zinc-600 text-zinc-500"
+                                            }`}>
+                                                {query.relevanceScore}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <p className="text-sm font-medium leading-snug line-clamp-2">{query.title}</p>
+                                                    <ChevronRight className="h-4 w-4 text-zinc-600 shrink-0 mt-0.5" />
+                                                </div>
+                                                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                    <Badge variant="outline" className={`text-[9px] h-4 px-1.5 ${statusCfg.color}`}>
+                                                        {statusCfg.label}
+                                                    </Badge>
+                                                    {urgency && (
+                                                        <Badge className={`text-[8px] h-4 px-1.5 ${urgency.color} border-none`}>
+                                                            {urgency.label}
+                                                        </Badge>
+                                                    )}
+                                                    {query.mediaOutlet && (
+                                                        <span className="text-[10px] text-muted-foreground truncate">{query.mediaOutlet}</span>
+                                                    )}
+                                                </div>
+                                                {query.reporterName && (
+                                                    <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                                                        <User className="h-2.5 w-2.5" />{query.reporterName}
+                                                        {query.deadline && <> · <Clock className="h-2.5 w-2.5" />{query.deadline}</>}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        /* Desktop layout */
+                                        <div className="flex items-center gap-4">
+                                            {/* Relevance score */}
+                                            <div className={`w-10 text-center shrink-0 ${relevanceColor}`}>
+                                                <span className="text-lg font-bold leading-none">{query.relevanceScore}</span>
+                                                <span className="text-[8px] block text-muted-foreground">score</span>
+                                            </div>
+                                            {/* Main content */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-sm font-medium leading-tight truncate">{query.title}</p>
+                                                    {urgency && (
+                                                        <Badge className={`text-[8px] h-4 px-1.5 shrink-0 ${urgency.color} border-none`}>
+                                                            <AlertTriangle className="h-2 w-2 mr-0.5" />
+                                                            {urgency.label}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
+                                                    {query.mediaOutlet && (
+                                                        <span className="flex items-center gap-1">
+                                                            <Globe className="h-3 w-3" />{query.mediaOutlet}
+                                                        </span>
+                                                    )}
+                                                    {query.mediaUrl && (
+                                                        <a href={query.mediaUrl} target="_blank" rel="noopener noreferrer"
+                                                            className="text-primary/70 hover:text-primary flex items-center gap-0.5"
+                                                            onClick={(e) => e.stopPropagation()}>
+                                                            <Link2 className="h-3 w-3" />
+                                                            {(() => { try { return new URL(query.mediaUrl).hostname.replace("www.", "") } catch { return query.mediaUrl } })()}
+                                                        </a>
+                                                    )}
+                                                    {query.reporterName && (
+                                                        <span className="flex items-center gap-1">
+                                                            <User className="h-3 w-3" />{query.reporterName}
+                                                        </span>
+                                                    )}
+                                                    {query.deadline && (
+                                                        <span className="flex items-center gap-1">
+                                                            <Clock className="h-3 w-3" />{query.deadline}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {query.relevanceReason && (
+                                                    <p className="text-[10px] text-muted-foreground/70 mt-1 line-clamp-1 italic">{query.relevanceReason}</p>
+                                                )}
+                                            </div>
+                                            {/* Status + actions */}
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <Badge variant="outline" className={`text-[10px] h-5 ${statusCfg.color}`}>
+                                                    <StatusIcon className="h-3 w-3 mr-1" />
+                                                    {statusCfg.label}
+                                                </Badge>
+                                                <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* ─── Recent Batches (collapsible on mobile) ─────────────── */}
+            <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
+                <CardHeader className="p-4 sm:p-5 pb-3">
+                    <CardTitle className="text-sm font-semibold">Recent Batches</CardTitle>
+                    <CardDescription className="text-xs">Click a batch to filter queries</CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 sm:p-5 pt-0">
+                    {batches.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-6">No batches yet. Fetch your first HARO email to get started.</p>
+                    ) : (
+                        <div className={`grid gap-2 ${isMobile ? "grid-cols-1" : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}`}>
+                            {batches.map(batch => (
                                 <div
                                     key={batch.id}
-                                    className={`p-3 rounded-lg transition-colors cursor-pointer group ${selectedBatchId === batch.id ? "bg-primary/10 ring-1 ring-primary/20" : "bg-muted/20 hover:bg-muted/30"}`}
+                                    className={`p-3 rounded-lg transition-colors cursor-pointer group ${selectedBatchId === batch.id ? "bg-primary/10 ring-1 ring-primary/20" : "bg-muted/10 hover:bg-muted/20"}`}
                                     onClick={() => setSelectedBatchId(selectedBatchId === batch.id ? null : batch.id)}
                                 >
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="min-w-0 flex-1">
-                                            <p className="text-xs font-semibold truncate">{batch.emailSubject}</p>
+                                            <p className="text-xs font-medium truncate">{batch.emailSubject}</p>
                                             <p className="text-[10px] text-muted-foreground mt-0.5">
                                                 {new Date(batch.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                                             </p>
@@ -522,10 +699,10 @@ export function HaroDashboard() {
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </div>
-                                    <div className="flex items-center gap-3 mt-2">
-                                        <Badge variant="outline" className="text-[9px] h-5">{batch.totalQueries} queries</Badge>
-                                        <Badge variant="outline" className="text-[9px] h-5 text-amber-600">{batch.relevantQueries} relevant</Badge>
-                                        <Badge variant="outline" className="text-[9px] h-5 text-emerald-600">{batch.responsesSent} sent</Badge>
+                                    <div className="flex items-center gap-2 mt-2">
+                                        <span className="text-[10px] text-muted-foreground">{batch.totalQueries} queries</span>
+                                        <span className="text-[10px] text-amber-600">{batch.relevantQueries} relevant</span>
+                                        <span className="text-[10px] text-emerald-600">{batch.responsesSent} sent</span>
                                     </div>
                                     {batch.status === "error" && (
                                         <p className="text-[10px] text-rose-500 mt-1">{batch.errorMessage}</p>
@@ -533,166 +710,46 @@ export function HaroDashboard() {
                                 </div>
                             ))}
                         </div>
-                    </CardContent>
-                </Card>
+                    )}
+                </CardContent>
+            </Card>
 
-                {/* Query Queue */}
-                <Card className="lg:col-span-2 border-none shadow-md bg-card/40 backdrop-blur-md">
-                    <CardHeader className="p-4 pb-3">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <CardTitle className="text-sm font-semibold">
-                                    {selectedBatchId ? "Batch Queries" : "All Relevant Queries"}
-                                </CardTitle>
-                                <CardDescription className="text-xs">{filteredQueries.length} queries</CardDescription>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {selectedBatchId && (
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedBatchId(null)}>
-                                        Clear Filter
-                                    </Button>
-                                )}
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm" className="h-7 text-xs">
-                                            {statusFilter === "all" ? "All Status" : STATUS_CONFIG[statusFilter as HaroQueryStatus]?.label || statusFilter}
-                                            <ChevronDown className="h-3 w-3 ml-1" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuItem className="text-xs" onClick={() => setStatusFilter("all")}>All Status</DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        {(Object.entries(STATUS_CONFIG) as [HaroQueryStatus, typeof STATUS_CONFIG[HaroQueryStatus]][]).map(([key, config]) => (
-                                            <DropdownMenuItem key={key} className="text-xs" onClick={() => setStatusFilter(key)}>
-                                                {config.label}
-                                            </DropdownMenuItem>
-                                        ))}
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm" className="h-7 text-xs">
-                                            {sortBy === "deadline" ? "Expiring Soon" : sortBy === "relevancy" ? "Relevancy" : sortBy === "domain" ? "Domain Rating" : "Featured"}
-                                            <ChevronDown className="h-3 w-3 ml-1" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuItem className="text-xs" onClick={() => setSortBy("deadline")}>Expiring Soon</DropdownMenuItem>
-                                        <DropdownMenuItem className="text-xs" onClick={() => setSortBy("relevancy")}>Relevancy</DropdownMenuItem>
-                                        <DropdownMenuItem className="text-xs" onClick={() => setSortBy("domain")}>Domain Rating</DropdownMenuItem>
-                                        <DropdownMenuItem className="text-xs" onClick={() => setSortBy("featured")}>Featured</DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            </div>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-0">
-                        <div className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-hide">
-                            {filteredQueries.length === 0 ? (
-                                <p className="text-xs text-muted-foreground text-center py-8">No queries match the current filter.</p>
-                            ) : filteredQueries.map(query => {
-                                const statusCfg = STATUS_CONFIG[query.status]
-                                const StatusIcon = statusCfg.icon
-                                const urgency = getDeadlineUrgency(query)
-                                return (
-                                    <div
-                                        key={query.id}
-                                        className={`p-3 rounded-lg transition-colors cursor-pointer group ${urgency && urgency.hoursLeft <= 2 && urgency.hoursLeft > 0 ? "bg-rose-500/5 hover:bg-rose-500/10 ring-1 ring-rose-500/20" : "bg-muted/20 hover:bg-muted/30"}`}
-                                        onClick={() => {
-                                            setSelectedQuery(query)
-                                            setEditedResponse(query.editedResponse || query.aiResponse)
-                                        }}
-                                    >
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2">
-                                                    <p className="text-xs font-semibold leading-tight">{query.title}</p>
-                                                    {urgency && (
-                                                        <Badge className={`text-[8px] h-4 px-1.5 ${urgency.color} border-none`}>
-                                                            <AlertTriangle className="h-2 w-2 mr-0.5" />
-                                                            {urgency.label}
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                                    {query.mediaOutlet && (
-                                                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                                            <Globe className="h-2.5 w-2.5" />{query.mediaOutlet}
-                                                        </span>
-                                                    )}
-                                                    {query.mediaUrl && (
-                                                        <a href={query.mediaUrl} target="_blank" rel="noopener noreferrer"
-                                                            className="text-[10px] text-primary/70 hover:text-primary flex items-center gap-0.5"
-                                                            onClick={(e) => e.stopPropagation()}>
-                                                            <Link2 className="h-2.5 w-2.5" />
-                                                            {(() => { try { return new URL(query.mediaUrl).hostname.replace("www.", "") } catch { return query.mediaUrl } })()}
-                                                        </a>
-                                                    )}
-                                                    {query.reporterName && (
-                                                        <span className="text-[10px] text-muted-foreground">{query.reporterName}</span>
-                                                    )}
-                                                    {query.deadline && (
-                                                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                                            <Clock className="h-2.5 w-2.5" />{query.deadline}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                <Badge variant="outline" className={`text-[9px] h-5 ${statusCfg.color}`}>
-                                                    <StatusIcon className="h-2.5 w-2.5 mr-1" />
-                                                    {statusCfg.label}
-                                                </Badge>
-                                                <Badge variant="outline" className="text-[9px] h-5">
-                                                    {query.relevanceScore}%
-                                                </Badge>
-                                            </div>
-                                        </div>
-                                        {query.relevanceReason && (
-                                            <p className="text-[10px] text-muted-foreground mt-1.5 line-clamp-1">{query.relevanceReason}</p>
-                                        )}
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Query Detail Dialog */}
+            {/* ─── Query Detail Dialog ────────────────────────────────── */}
             <Dialog open={!!selectedQuery} onOpenChange={open => !open && setSelectedQuery(null)}>
-                <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                <DialogContent className={`${isMobile ? "max-w-[100vw] h-[90vh] p-0 rounded-t-2xl" : "max-w-2xl max-h-[85vh]"} overflow-y-auto`}>
                     {selectedQuery && (() => {
                         const statusCfg = STATUS_CONFIG[selectedQuery.status]
                         const dialogUrgency = getDeadlineUrgency(selectedQuery)
                         return (
                             <>
-                                <DialogHeader>
-                                    <div className="flex items-start justify-between gap-3">
-                                        <DialogTitle className="text-base leading-tight pr-4">{selectedQuery.title}</DialogTitle>
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                            {dialogUrgency && (
-                                                <Badge className={`text-[9px] h-5 ${dialogUrgency.color} border-none`}>
-                                                    <AlertTriangle className="h-2.5 w-2.5 mr-1" />
-                                                    {dialogUrgency.hoursLeft > 0 ? `${Math.round(dialogUrgency.hoursLeft * 60)}m left` : "EXPIRED"}
-                                                </Badge>
-                                            )}
-                                            <Badge variant="outline" className={`text-[10px] h-5 ${statusCfg.color}`}>{statusCfg.label}</Badge>
+                                <div className={isMobile ? "p-4 pb-0" : ""}>
+                                    <DialogHeader>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <DialogTitle className="text-base leading-tight pr-4">{selectedQuery.title}</DialogTitle>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                {dialogUrgency && (
+                                                    <Badge className={`text-[9px] h-5 ${dialogUrgency.color} border-none`}>
+                                                        <AlertTriangle className="h-2.5 w-2.5 mr-1" />
+                                                        {dialogUrgency.hoursLeft > 0 ? `${Math.round(dialogUrgency.hoursLeft * 60)}m left` : "EXPIRED"}
+                                                    </Badge>
+                                                )}
+                                                <Badge variant="outline" className={`text-[10px] h-5 ${statusCfg.color}`}>{statusCfg.label}</Badge>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <DialogDescription className="text-xs">
-                                        {[selectedQuery.mediaOutlet, selectedQuery.reporterName, selectedQuery.deadline && `Deadline: ${selectedQuery.deadline}`].filter(Boolean).join(" · ")}
-                                    </DialogDescription>
-                                    {selectedQuery.mediaUrl && (
-                                        <a href={selectedQuery.mediaUrl} target="_blank" rel="noopener noreferrer"
-                                            className="text-xs text-primary hover:underline flex items-center gap-1 mt-1">
-                                            <ExternalLink className="h-3 w-3" />
-                                            {selectedQuery.mediaUrl}
-                                        </a>
-                                    )}
-                                </DialogHeader>
+                                        <DialogDescription className="text-xs">
+                                            {[selectedQuery.mediaOutlet, selectedQuery.reporterName, selectedQuery.deadline && `Deadline: ${selectedQuery.deadline}`].filter(Boolean).join(" · ")}
+                                        </DialogDescription>
+                                        {selectedQuery.mediaUrl && (
+                                            <a href={selectedQuery.mediaUrl} target="_blank" rel="noopener noreferrer"
+                                                className="text-xs text-primary hover:underline flex items-center gap-1 mt-1">
+                                                <ExternalLink className="h-3 w-3" />
+                                                {selectedQuery.mediaUrl}
+                                            </a>
+                                        )}
+                                    </DialogHeader>
+                                </div>
 
-                                <div className="space-y-4">
+                                <div className={`space-y-4 ${isMobile ? "px-4" : ""}`}>
                                     {/* Query Details */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Query Details</label>
@@ -701,19 +758,21 @@ export function HaroDashboard() {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-4 text-xs">
-                                        <div>
-                                            <span className="text-muted-foreground">Relevance: </span>
-                                            <span className="font-bold">{selectedQuery.relevanceScore}%</span>
-                                        </div>
-                                        {selectedQuery.reporterEmail && (
+                                    <div className={`flex ${isMobile ? "flex-col gap-2" : "items-center gap-4"} text-xs`}>
+                                        <div className="flex items-center gap-4">
                                             <div>
-                                                <span className="text-muted-foreground">Email: </span>
-                                                <span className="font-medium">{selectedQuery.reporterEmail}</span>
+                                                <span className="text-muted-foreground">Relevance: </span>
+                                                <span className="font-bold">{selectedQuery.relevanceScore}%</span>
                                             </div>
-                                        )}
+                                            {selectedQuery.reporterEmail && (
+                                                <div>
+                                                    <span className="text-muted-foreground">Email: </span>
+                                                    <span className="font-medium">{selectedQuery.reporterEmail}</span>
+                                                </div>
+                                            )}
+                                        </div>
                                         {selectedQuery.relevanceReason && (
-                                            <div className="flex-1">
+                                            <div>
                                                 <span className="text-muted-foreground">Reason: </span>
                                                 <span>{selectedQuery.relevanceReason}</span>
                                             </div>
@@ -727,7 +786,7 @@ export function HaroDashboard() {
                                             <Textarea
                                                 value={editedResponse}
                                                 onChange={e => setEditedResponse(e.target.value)}
-                                                className="min-h-[250px] text-sm"
+                                                className={`text-sm ${isMobile ? "min-h-[200px]" : "min-h-[250px]"}`}
                                             />
                                         </div>
                                     )}
@@ -750,79 +809,87 @@ export function HaroDashboard() {
                                     )}
                                 </div>
 
-                                <DialogFooter className="flex-wrap gap-2">
-                                    {selectedQuery.status !== "sent" && selectedQuery.status !== "placed" && (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={async () => {
-                                                setRegenerating(true)
-                                                try {
-                                                    const result = await regenerateHaroResponse(selectedQuery.id)
-                                                    if (result.success && result.response) {
-                                                        setEditedResponse(result.response)
-                                                        setSelectedQuery({ ...selectedQuery, aiResponse: result.response, editedResponse: "", status: "reviewing" })
-                                                        fetchData()
+                                <div className={`${isMobile ? "px-4 pb-6 pt-2" : ""}`}>
+                                    <DialogFooter className={`${isMobile ? "flex-col gap-2" : "flex-wrap gap-2"}`}>
+                                        {selectedQuery.status !== "sent" && selectedQuery.status !== "placed" && (
+                                            <Button
+                                                variant="outline"
+                                                size={isMobile ? "default" : "sm"}
+                                                className={isMobile ? "w-full" : ""}
+                                                onClick={async () => {
+                                                    setRegenerating(true)
+                                                    try {
+                                                        const result = await regenerateHaroResponse(selectedQuery.id)
+                                                        if (result.success && result.response) {
+                                                            setEditedResponse(result.response)
+                                                            setSelectedQuery({ ...selectedQuery, aiResponse: result.response, editedResponse: "", status: "reviewing" })
+                                                            fetchData()
+                                                        }
+                                                    } finally {
+                                                        setRegenerating(false)
                                                     }
-                                                } finally {
-                                                    setRegenerating(false)
-                                                }
-                                            }}
-                                            disabled={regenerating}
-                                        >
-                                            {regenerating ? (
-                                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                                            ) : (
-                                                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                                                }}
+                                                disabled={regenerating}
+                                            >
+                                                {regenerating ? (
+                                                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                                                ) : (
+                                                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                                                )}
+                                                {regenerating ? "Generating..." : "Regenerate Response"}
+                                            </Button>
+                                        )}
+                                        <div className={`flex gap-2 ${isMobile ? "w-full" : ""}`}>
+                                            {selectedQuery.status !== "placed" && (
+                                                <Button
+                                                    variant="outline"
+                                                    size={isMobile ? "default" : "sm"}
+                                                    className={isMobile ? "flex-1" : ""}
+                                                    onClick={() => {
+                                                        setPlacementQueryId(selectedQuery.id)
+                                                        setShowPlacementDialog(true)
+                                                    }}
+                                                >
+                                                    <Award className="h-3.5 w-3.5 mr-1.5" />
+                                                    Placement
+                                                </Button>
                                             )}
-                                            {regenerating ? "Generating..." : "Regenerate Response"}
-                                        </Button>
-                                    )}
-                                    {selectedQuery.status !== "placed" && (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => {
-                                                setPlacementQueryId(selectedQuery.id)
-                                                setShowPlacementDialog(true)
-                                            }}
-                                        >
-                                            <Award className="h-3.5 w-3.5 mr-1.5" />
-                                            Mark Placement
-                                        </Button>
-                                    )}
-                                    {selectedQuery.status === "reviewing" && (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={async () => {
-                                                await updateHaroQuery(selectedQuery.id, { status: "declined" })
-                                                setSelectedQuery(null)
-                                                fetchData()
-                                            }}
-                                        >
-                                            <XCircle className="h-3.5 w-3.5 mr-1.5" />
-                                            Skip
-                                        </Button>
-                                    )}
-                                    {(selectedQuery.status === "reviewing" || selectedQuery.status === "approved" || selectedQuery.status === "pending") && selectedQuery.reporterEmail && (
-                                        <Button
-                                            size="sm"
-                                            onClick={() => handleSendResponse(selectedQuery.id)}
-                                            disabled={sendingResponse}
-                                        >
-                                            {sendingResponse ? (
-                                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                                            ) : (
-                                                <Send className="h-3.5 w-3.5 mr-1.5" />
+                                            {selectedQuery.status === "reviewing" && (
+                                                <Button
+                                                    variant="outline"
+                                                    size={isMobile ? "default" : "sm"}
+                                                    className={isMobile ? "flex-1" : ""}
+                                                    onClick={async () => {
+                                                        await updateHaroQuery(selectedQuery.id, { status: "declined" })
+                                                        setSelectedQuery(null)
+                                                        fetchData()
+                                                    }}
+                                                >
+                                                    <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                                                    Skip
+                                                </Button>
                                             )}
-                                            {editedResponse !== (selectedQuery.editedResponse || selectedQuery.aiResponse) ? "Save & Send" : "Send Response"}
-                                        </Button>
-                                    )}
-                                    {!selectedQuery.reporterEmail && (selectedQuery.status === "reviewing" || selectedQuery.status === "approved") && (
-                                        <p className="text-[10px] text-rose-500">No reporter email found — cannot send automatically</p>
-                                    )}
-                                </DialogFooter>
+                                        </div>
+                                        {(selectedQuery.status === "reviewing" || selectedQuery.status === "approved" || selectedQuery.status === "pending") && selectedQuery.reporterEmail && (
+                                            <Button
+                                                size={isMobile ? "default" : "sm"}
+                                                className={isMobile ? "w-full" : ""}
+                                                onClick={() => handleSendResponse(selectedQuery.id)}
+                                                disabled={sendingResponse}
+                                            >
+                                                {sendingResponse ? (
+                                                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                                                ) : (
+                                                    <Send className="h-3.5 w-3.5 mr-1.5" />
+                                                )}
+                                                {editedResponse !== (selectedQuery.editedResponse || selectedQuery.aiResponse) ? "Save & Send" : "Send Response"}
+                                            </Button>
+                                        )}
+                                        {!selectedQuery.reporterEmail && (selectedQuery.status === "reviewing" || selectedQuery.status === "approved") && (
+                                            <p className="text-[10px] text-rose-500">No reporter email found — cannot send automatically</p>
+                                        )}
+                                    </DialogFooter>
+                                </div>
                             </>
                         )
                     })()}
