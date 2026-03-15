@@ -53,6 +53,10 @@ export interface BlogArticle {
 
     scheduledPublishDate?: string; // ISO date for scheduled publishing
 
+    // Content freshness tracking
+    lastContentReviewDate?: string; // ISO date of last review
+    contentFreshnessMonths?: number; // How many months before content is "stale" (default 6)
+
     createdAt: string;
     updatedAt: string;
     publishedAt?: string;

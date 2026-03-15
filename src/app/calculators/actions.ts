@@ -1,6 +1,7 @@
 "use server"
 
 import { adminDb } from "@/lib/firebase-admin";
+import { requireAuth } from "@/lib/auth-guard";
 import { revalidatePath } from "next/cache";
 import { calculateBAH } from "@/lib/calculators/bah";
 import { calculateTDY, calculateTripCosts } from "@/lib/calculators/tdy";
@@ -19,6 +20,7 @@ async function findLatestOpportunity(contactId: string) {
 }
 
 export async function syncBAHToRent(contactId: string, monthlyRate: number) {
+    await requireAuth();
     try {
         const opportunityId = await findLatestOpportunity(contactId);
         if (!opportunityId) {
@@ -39,6 +41,7 @@ export async function syncBAHToRent(contactId: string, monthlyRate: number) {
 }
 
 export async function syncTDYToPerDiem(contactId: string, perDiemRate: number) {
+    await requireAuth();
     try {
         const opportunityId = await findLatestOpportunity(contactId);
         if (!opportunityId) {
@@ -59,6 +62,7 @@ export async function syncTDYToPerDiem(contactId: string, perDiemRate: number) {
 }
 
 export async function syncVALoanToDeal(contactId: string, loanAmount: number) {
+    await requireAuth();
     try {
         const opportunityId = await findLatestOpportunity(contactId);
         if (!opportunityId) {

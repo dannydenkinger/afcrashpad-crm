@@ -126,18 +126,19 @@ async function executeSendEmail(
         html: `<div style="font-family: Arial, sans-serif; white-space: pre-wrap;">${body}</div>`,
     })
 
-    // Log the automated email in communications
-    await adminDb.collection("communications").add({
-        type: "email",
-        direction: "outbound",
-        contactEmail: recipientEmail,
-        contactName,
-        subject,
-        body,
-        contactId: deal.contactId || null,
-        source: "stage_automation",
-        createdAt: new Date(),
-    })
+    // Log the automated email in contact's message history
+    if (deal.contactId) {
+        await adminDb.collection("contacts").doc(deal.contactId).collection("messages").add({
+            type: "email",
+            direction: "outbound",
+            contactEmail: recipientEmail,
+            contactName,
+            subject,
+            body,
+            source: "stage_automation",
+            createdAt: new Date(),
+        })
+    }
 }
 
 async function executeCreateTask(

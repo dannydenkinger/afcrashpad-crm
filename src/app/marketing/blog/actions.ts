@@ -958,6 +958,62 @@ export async function publishToWordPress(
     }
 }
 
+// ─── Content Freshness ──────────────────────────────────────────────────────
+
+export async function markArticleAsReviewed(articleId: string) {
+    try {
+        const session = await auth()
+        if (!session?.user) return { success: false, error: "Unauthorized" }
+
+        await adminDb.collection("blog_articles").doc(articleId).update({
+            lastContentReviewDate: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        })
+
+        revalidatePath("/marketing")
+        return { success: true }
+    } catch (error: any) {
+        return { success: false, error: error.message || "Failed to mark as reviewed" }
+    }
+}
+
+export async function getStaleArticles(): Promise<{ success: boolean; articles?: { id: string; title: string; publishedAt: string; lastReview: string | null; monthsSinceReview: number }[] }> {
+    try {
+        const session = await auth()
+        if (!session?.user) return { success: false }
+
+        const snap = await adminDb.collection("blog_articles")
+            .where("status", "==", "published")
+            .get()
+
+        const now = Date.now()
+        const articles = snap.docs
+            .map(doc => {
+                const d = doc.data()
+                const freshnessMonths = d.contentFreshnessMonths || 6
+                const lastReview = d.lastContentReviewDate || d.publishedAt || d.createdAt
+                const lastReviewDate = new Date(lastReview)
+                const monthsSinceReview = Math.floor((now - lastReviewDate.getTime()) / (30 * 24 * 60 * 60 * 1000))
+
+                if (monthsSinceReview < freshnessMonths) return null
+
+                return {
+                    id: doc.id,
+                    title: d.title,
+                    publishedAt: d.publishedAt || d.createdAt,
+                    lastReview: d.lastContentReviewDate || null,
+                    monthsSinceReview,
+                }
+            })
+            .filter((a): a is NonNullable<typeof a> => a !== null)
+            .sort((a, b) => b.monthsSinceReview - a.monthsSinceReview)
+
+        return { success: true, articles }
+    } catch (error) {
+        return { success: false }
+    }
+}
+
 // ─── Blog Stats ─────────────────────────────────────────────────────────────
 
 export async function getBlogStats(): Promise<{ success: boolean; data?: BlogStats; error?: string }> {

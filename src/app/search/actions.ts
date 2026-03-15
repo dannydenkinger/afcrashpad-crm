@@ -1,6 +1,7 @@
 "use server"
 
 import { adminDb } from "@/lib/firebase-admin";
+import { requireAuth } from "@/lib/auth-guard";
 import type { SearchResult } from "./types";
 
 export async function globalSearch(q: string): Promise<{
@@ -8,6 +9,7 @@ export async function globalSearch(q: string): Promise<{
     opportunities: SearchResult[];
     notes: SearchResult[];
 }> {
+    await requireAuth();
     try {
         const query = q?.trim().toLowerCase() || "";
         if (query.length < 2) return { contacts: [], opportunities: [], notes: [] };
@@ -42,20 +44,19 @@ export async function globalSearch(q: string): Promise<{
         }
 
         const oppsSnap = await adminDb.collection("opportunities").get();
+        // Build contact name map from already-fetched contacts to avoid N+1
         const contactsMap: Record<string, string> = {};
+        for (const doc of contactsSnap.docs) {
+            contactsMap[doc.id] = (doc.data().name as string) || "Unknown";
+        }
         for (const doc of oppsSnap.docs) {
             const d = doc.data();
-            let contactName = contactsMap[d.contactId];
-            if (!contactName && d.contactId) {
-                const cDoc = await adminDb.collection("contacts").doc(d.contactId).get();
-                contactName = cDoc.exists ? (cDoc.data()?.name as string) || "Unknown" : "Unknown";
-                contactsMap[d.contactId] = contactName;
-            }
-            const name = (contactName || "").toLowerCase();
+            const contactName = contactsMap[d.contactId] || "Unknown";
+            const name = contactName.toLowerCase();
             if (name.includes(query)) {
                 opps.push({
                     id: doc.id,
-                    name: contactName || "Unknown",
+                    name: contactName,
                     contactId: d.contactId,
                     contactName,
                     type: "opportunity",

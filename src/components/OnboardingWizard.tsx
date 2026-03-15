@@ -4,12 +4,15 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { X, ChevronRight, ChevronLeft, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getOnboardingCompleted, completeOnboarding as markOnboardingComplete } from "@/app/dashboard/setup-actions"
 
 interface OnboardingStep {
-    target: string // CSS selector for element to highlight
+    target: string
     title: string
     description: string
     placement: "top" | "bottom" | "left" | "right"
+    mobileOnly?: boolean
+    desktopOnly?: boolean
 }
 
 const steps: OnboardingStep[] = [
@@ -17,76 +20,90 @@ const steps: OnboardingStep[] = [
         target: "[data-onboarding='welcome']",
         title: "Welcome to AFCrashpad CRM",
         description:
-            "Let us give you a quick tour of your new workspace. We will walk you through the key areas so you can get started right away.",
+            "Let us give you a quick tour. We'll show you how to manage military crashpad operations efficiently — from tracking leads to managing stays and automating follow-ups.",
         placement: "bottom",
     },
     {
         target: "[aria-label='Main navigation']",
         title: "Sidebar Navigation",
         description:
-            "Use the sidebar to navigate between different sections of the CRM. It includes your Dashboard, Pipeline, Contacts, Calendar, and more.",
+            "This is your command center. Every section of the CRM lives here — pipeline, contacts, calendar, communications, and more. You'll spend most of your time navigating from this sidebar.",
         placement: "right",
+        desktopOnly: true,
     },
     {
         target: "[data-onboarding='dashboard']",
         title: "Dashboard Overview",
         description:
-            "Your Dashboard shows key performance indicators, charts, forecasts, and a leaderboard at a glance. It is your command center.",
+            "See how your business is performing at a glance. Track occupancy rates, revenue trends, conversion rates, and pipeline value — all updated in real time so you can make informed decisions.",
         placement: "bottom",
     },
     {
         target: "[data-onboarding='pipeline']",
         title: "Pipeline Management",
         description:
-            "Track your deals through every stage with the Kanban board or list view. Drag and drop to update deal stages instantly.",
+            "This is where deals move through your sales process. Drag and drop between stages like Inquiry, Tour Scheduled, and Booked. Automations can trigger emails and tasks as deals progress.",
         placement: "bottom",
     },
     {
         target: "[data-onboarding='contacts']",
         title: "Contacts",
         description:
-            "Manage all your leads, tenants, and past guests. Add notes, track documents, and view full communication history.",
+            "Your contact hub holds everyone — leads, active tenants, and past guests. Each contact has a full timeline of communications, documents, and stay history for complete context.",
         placement: "bottom",
     },
     {
         target: "[data-onboarding='settings']",
-        title: "Settings",
+        title: "Settings & Automations",
         description:
-            "Customize your workspace, manage users, configure automations, and set up email templates. You are all set to go!",
+            "Set up email templates, configure stage automations, manage team members, and connect integrations like Google Calendar. The more you automate here, the less manual work you'll do daily.",
         placement: "bottom",
     },
 ]
-
-const STORAGE_KEY = "onboarding-completed"
 
 export function OnboardingWizard() {
     const [isActive, setIsActive] = useState(false)
     const [currentStep, setCurrentStep] = useState(0)
     const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({})
     const [highlightStyle, setHighlightStyle] = useState<React.CSSProperties>({})
+    const [isMobile, setIsMobile] = useState(false)
     const tooltipRef = useRef<HTMLDivElement>(null)
 
-    // Check if onboarding should show
+    // Filter steps based on device
+    const activeSteps = steps.filter(s => {
+        if (isMobile && s.desktopOnly) return false
+        if (!isMobile && s.mobileOnly) return false
+        return true
+    })
+
+    // Check if onboarding should show — Firestore first, localStorage fallback
     useEffect(() => {
-        const completed = localStorage.getItem(STORAGE_KEY)
-        if (completed === "true") return
+        setIsMobile(window.innerWidth < 768)
 
-        // Small delay to let the page render
-        const timer = setTimeout(() => {
-            setIsActive(true)
-        }, 1500)
+        // Check localStorage first for instant decision (avoid flash)
+        const localCompleted = localStorage.getItem("onboarding-completed")
+        if (localCompleted === "true") return
 
-        return () => clearTimeout(timer)
+        // Then check Firestore
+        getOnboardingCompleted().then(completed => {
+            if (completed) {
+                // Sync to localStorage so we don't check Firestore again
+                localStorage.setItem("onboarding-completed", "true")
+                return
+            }
+            // Show onboarding after a short delay to let the page render
+            const timer = setTimeout(() => setIsActive(true), 1500)
+            return () => clearTimeout(timer)
+        })
     }, [])
 
     const positionTooltip = useCallback(() => {
-        const step = steps[currentStep]
+        const step = activeSteps[currentStep]
         if (!step) return
 
         const targetEl = document.querySelector(step.target)
 
         if (!targetEl) {
-            // If target not found (e.g., on a different page), center the tooltip
             setHighlightStyle({ display: "none" })
             setTooltipStyle({
                 position: "fixed",
@@ -100,7 +117,6 @@ export function OnboardingWizard() {
         const rect = targetEl.getBoundingClientRect()
         const padding = 8
 
-        // Highlight position
         setHighlightStyle({
             position: "fixed",
             top: rect.top - padding,
@@ -110,7 +126,6 @@ export function OnboardingWizard() {
             borderRadius: "12px",
         })
 
-        // Tooltip position
         const style: React.CSSProperties = { position: "fixed" }
 
         switch (step.placement) {
@@ -137,7 +152,7 @@ export function OnboardingWizard() {
         }
 
         setTooltipStyle(style)
-    }, [currentStep])
+    }, [currentStep, activeSteps])
 
     useEffect(() => {
         if (!isActive) return
@@ -153,18 +168,19 @@ export function OnboardingWizard() {
         }
     }, [isActive, currentStep, positionTooltip])
 
-    const completeOnboarding = useCallback(() => {
+    const finishOnboarding = useCallback(() => {
         setIsActive(false)
-        localStorage.setItem(STORAGE_KEY, "true")
+        localStorage.setItem("onboarding-completed", "true")
+        markOnboardingComplete()
     }, [])
 
     const handleNext = useCallback(() => {
-        if (currentStep < steps.length - 1) {
+        if (currentStep < activeSteps.length - 1) {
             setCurrentStep((prev) => prev + 1)
         } else {
-            completeOnboarding()
+            finishOnboarding()
         }
-    }, [currentStep, completeOnboarding])
+    }, [currentStep, activeSteps.length, finishOnboarding])
 
     const handlePrev = useCallback(() => {
         if (currentStep > 0) {
@@ -173,12 +189,12 @@ export function OnboardingWizard() {
     }, [currentStep])
 
     const handleSkip = useCallback(() => {
-        completeOnboarding()
-    }, [completeOnboarding])
+        finishOnboarding()
+    }, [finishOnboarding])
 
     if (!isActive) return null
 
-    const step = steps[currentStep]
+    const step = activeSteps[currentStep]
 
     return (
         <>
@@ -204,7 +220,7 @@ export function OnboardingWizard() {
             <div
                 ref={tooltipRef}
                 role="dialog"
-                aria-label={`Onboarding step ${currentStep + 1} of ${steps.length}`}
+                aria-label={`Onboarding step ${currentStep + 1} of ${activeSteps.length}`}
                 className="fixed z-[10000] w-[340px] max-w-[90vw] animate-in fade-in zoom-in-95 duration-200"
                 style={tooltipStyle}
             >
@@ -214,7 +230,7 @@ export function OnboardingWizard() {
                         <div className="flex items-center gap-2">
                             <Sparkles className="h-4 w-4 text-primary" />
                             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                Step {currentStep + 1} of {steps.length}
+                                Step {currentStep + 1} of {activeSteps.length}
                             </span>
                         </div>
                         <Button
@@ -229,7 +245,7 @@ export function OnboardingWizard() {
 
                     {/* Progress bar */}
                     <div className="flex gap-1 mb-4">
-                        {steps.map((_, i) => (
+                        {activeSteps.map((_, i) => (
                             <div
                                 key={i}
                                 className={cn(
@@ -264,7 +280,7 @@ export function OnboardingWizard() {
                                 </Button>
                             )}
                             <Button size="sm" onClick={handleNext}>
-                                {currentStep < steps.length - 1 ? (
+                                {currentStep < activeSteps.length - 1 ? (
                                     <>
                                         Next
                                         <ChevronRight className="h-3.5 w-3.5 ml-1" />

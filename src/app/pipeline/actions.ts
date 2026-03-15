@@ -10,6 +10,7 @@ import { logAudit, diffChanges } from "@/lib/audit";
 import { recordCommission } from "@/app/dashboard/commissions/actions";
 import { advanceReferralForStage, checkReferralConversion } from "@/app/dashboard/referrals/actions";
 import { executeStageAutomations } from "@/lib/stage-automations";
+import { triggerWorkflows } from "@/lib/workflow-engine";
 import { softDelete, restoreItem, permanentlyDelete } from "@/lib/soft-delete";
 import { captureError } from "@/lib/error-tracking";
 import { getCurrentUserRole } from "@/app/settings/users/actions";
@@ -729,6 +730,21 @@ export async function createNewDeal(data: any, pipelineId?: string) {
             linkUrl: `/pipeline?deal=${oppRef.id}`
         });
 
+        // Trigger workflow automations for new deal
+        triggerWorkflows({
+            type: "deal_created",
+            data: {
+                opportunityId: oppRef.id,
+                contactId,
+                contactName: data.name || "New Lead",
+                contactEmail: data.email || "",
+                dealName: `${data.name || "New Lead"} - Deal`,
+                opportunityValue: Number(data.value) || 0,
+                militaryBase: data.base || "",
+                userId: (session.user as any).id || "",
+            },
+        }).catch(() => {});
+
         if (data.notes) {
             await adminDb.collection('contacts').doc(contactId).collection('notes').add({
                 content: data.notes,
@@ -903,6 +919,23 @@ export async function updateOpportunity(id: string, data: {
                 const automationUserId = currentUserId || beforeData.claimedBy || beforeData.assigneeId || "";
                 executeStageAutomations(oppId, data.pipelineStageId, automationUserId).catch(() => {});
             } catch { /* ignore stage automation errors */ }
+
+            // Trigger workflow automations for stage change
+            triggerWorkflows({
+                type: "stage_changed",
+                data: {
+                    opportunityId: oppId,
+                    contactId: beforeData.contactId || data.contactId || "",
+                    contactName: beforeData.name || "",
+                    contactEmail: beforeData.email || "",
+                    dealName: beforeData.name || "",
+                    opportunityValue: Number(updateData.opportunityValue ?? beforeData.opportunityValue) || 0,
+                    militaryBase: beforeData.militaryBase || "",
+                    previousStageId: beforeData.pipelineStageId || "",
+                    newStageId: data.pipelineStageId,
+                    userId: currentUserId || "",
+                },
+            }).catch(() => {});
         }
 
         // Audit log

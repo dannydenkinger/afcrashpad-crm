@@ -15,6 +15,8 @@ type Notification = {
     type: string
     linkUrl: string | null
     isRead: boolean
+    groupCount?: number
+    groupItems?: string[] | null
     createdAt: string | null
 }
 
@@ -201,7 +203,11 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps) {
                                                         {typeLabel(notif.type)}
                                                     </Badge>
                                                 </div>
-                                                <p className="text-xs text-muted-foreground line-clamp-2">{notif.message}</p>
+                                                <p className="text-xs text-muted-foreground line-clamp-2">
+                                                    {notif.groupCount && notif.groupCount > 1
+                                                        ? `${notif.message} (+${notif.groupCount - 1} similar)`
+                                                        : notif.message}
+                                                </p>
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
                                                 <span className="text-[10px] text-muted-foreground whitespace-nowrap">

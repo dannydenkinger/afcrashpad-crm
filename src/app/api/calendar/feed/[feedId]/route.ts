@@ -37,22 +37,49 @@ export async function GET(
         // Fetch Tasks assigned to this user
         const tasksSnap = await adminDb.collection('tasks').where('assigneeId', '==', user.id).get()
 
-        // Map Opportunities to Events
+        // Map Opportunities to Events — use stay dates if available, otherwise skip
         oppsSnap.forEach(doc => {
             const opp = doc.data();
-            // Treat the created date or an arbitrary expected date as the event.
-            // Opportunities ideally should have a concrete "dueDate" or "closeDate" in a full CRM.
-            // For now, let's map it as an all-day event for the day it was created as a placeholder.
-            const createdAtDate = opp.createdAt?.toDate ? opp.createdAt.toDate() : new Date();
-            const dtStart = createdAtDate.toISOString().replace(/[-:]/g, '').split('T')[0]
 
+            // Use stayStartDate/stayEndDate for date range events
+            const startStr = opp.stayStartDate || null
+            const endStr = opp.stayEndDate || null
+
+            if (!startStr) return // Skip opportunities without dates
+
+            const startDate = new Date(startStr)
+            if (isNaN(startDate.getTime())) return
+
+            const dtStart = startDate.toISOString().replace(/[-:]/g, '').split('T')[0]
+
+            if (endStr) {
+                const endDate = new Date(endStr)
+                if (!isNaN(endDate.getTime())) {
+                    // Add 1 day to end date for all-day event (iCal DTEND is exclusive)
+                    const endPlusOne = new Date(endDate.getTime() + 86400000)
+                    const dtEnd = endPlusOne.toISOString().replace(/[-:]/g, '').split('T')[0]
+                    lines.push(
+                        "BEGIN:VEVENT",
+                        `UID:opp-${doc.id}@afcrashpad.com`,
+                        `DTSTAMP:${nowUtc}`,
+                        `DTSTART;VALUE=DATE:${dtStart}`,
+                        `DTEND;VALUE=DATE:${dtEnd}`,
+                        `SUMMARY:[Stay] ${opp.name}`,
+                        `DESCRIPTION:Value: $${opp.opportunityValue || 0}\\nBase: ${opp.militaryBase || 'N/A'}\\nPriority: ${opp.priority || 'N/A'}`,
+                        "END:VEVENT"
+                    )
+                    return
+                }
+            }
+
+            // Single-day event if no end date
             lines.push(
                 "BEGIN:VEVENT",
                 `UID:opp-${doc.id}@afcrashpad.com`,
                 `DTSTAMP:${nowUtc}`,
                 `DTSTART;VALUE=DATE:${dtStart}`,
-                `SUMMARY:[Deal] ${opp.name}`,
-                `DESCRIPTION:Value: $${opp.opportunityValue}\\nPriority: ${opp.priority}\\n`,
+                `SUMMARY:[Stay] ${opp.name}`,
+                `DESCRIPTION:Value: $${opp.opportunityValue || 0}\\nBase: ${opp.militaryBase || 'N/A'}\\nPriority: ${opp.priority || 'N/A'}`,
                 "END:VEVENT"
             )
         });

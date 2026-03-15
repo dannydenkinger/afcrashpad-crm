@@ -38,7 +38,7 @@ const snippetSchema = z.object({
 
 // ── Conversations ────────────────────────────────────────────────────────────
 
-export async function getConversations() {
+export async function getConversations(channel?: "all" | "email" | "sms") {
     try {
         // Fetch all contacts
         const contactsSnap = await adminDb.collection('contacts').get();
@@ -48,10 +48,15 @@ export async function getConversations() {
             const contactId = contactDoc.id;
             const contactData = contactDoc.data();
 
-            const latestSnap = await adminDb.collection('contacts').doc(contactId).collection('messages')
-                .orderBy('createdAt', 'desc')
-                .limit(1)
-                .get();
+            let query = adminDb.collection('contacts').doc(contactId).collection('messages')
+                .orderBy('createdAt', 'desc') as FirebaseFirestore.Query;
+
+            // Filter by channel type if specified
+            if (channel && channel !== "all") {
+                query = query.where('type', '==', channel)
+            }
+
+            const latestSnap = await query.limit(1).get();
 
             if (latestSnap.empty) return null;
 
@@ -84,7 +89,7 @@ export async function getConversations() {
     }
 }
 
-export async function getMessages(contactId: string) {
+export async function getMessages(contactId: string, channel?: "all" | "email" | "sms") {
     const parsed = getMessagesSchema.safeParse({ contactId });
     if (!parsed.success) return { success: false, messages: [], contact: null };
     contactId = parsed.data.contactId;
@@ -97,7 +102,7 @@ export async function getMessages(contactId: string) {
             .orderBy('createdAt', 'asc')
             .get();
 
-        const messages = messagesSnap.docs.map(doc => {
+        let messages = messagesSnap.docs.map(doc => {
             const m = doc.data();
             return {
                 id: doc.id,
@@ -106,6 +111,42 @@ export async function getMessages(contactId: string) {
                 scheduledAt: m.scheduledAt?.toDate ? m.scheduledAt.toDate().toISOString() : m.scheduledAt || null,
             };
         });
+
+        // Channel filter
+        if (channel && channel !== "all") {
+            messages = messages.filter((m: any) => m.type === channel)
+        }
+
+        // Enrich outbound emails with tracking data (opens, clicks)
+        const trackingIds = messages
+            .filter((m: any) => m.trackingId && m.direction === "OUTBOUND")
+            .map((m: any) => m.trackingId as string)
+
+        if (trackingIds.length > 0) {
+            // Firestore 'in' queries support max 30 items
+            const trackingMap: Record<string, { opens: number; clicks: number; lastOpenedAt: string | null }> = {}
+            for (let i = 0; i < trackingIds.length; i += 30) {
+                const batch = trackingIds.slice(i, i + 30)
+                const trackingSnap = await adminDb.collection('email_tracking')
+                    .where('__name__', 'in', batch)
+                    .get()
+                for (const tDoc of trackingSnap.docs) {
+                    const td = tDoc.data()
+                    trackingMap[tDoc.id] = {
+                        opens: td.openCount || 0,
+                        clicks: td.totalClicks || 0,
+                        lastOpenedAt: td.openedAt?.toDate ? td.openedAt.toDate().toISOString() : td.openedAt || null,
+                    }
+                }
+            }
+
+            messages = messages.map((m: any) => {
+                if (m.trackingId && trackingMap[m.trackingId]) {
+                    return { ...m, tracking: trackingMap[m.trackingId] }
+                }
+                return m
+            })
+        }
 
         return {
             success: true,

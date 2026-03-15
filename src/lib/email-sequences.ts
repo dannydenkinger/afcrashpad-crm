@@ -44,37 +44,43 @@ export async function triggerSequence(
             const seq = seqDoc.data();
             const steps: SequenceStep[] = seq.steps || [];
 
-            // Deduplicate: check if this sequence was already triggered for this contact
-            const dedupeCheck = await adminDb
-                .collection("email_sequence_log")
-                .where("sequenceId", "==", seqDoc.id)
-                .where("contactId", "==", contactId)
-                .where("stepIndex", "==", 0)
-                .limit(1)
-                .get();
+            // Deduplicate using a deterministic doc ID to prevent race conditions
+            const dedupeDocId = `${seqDoc.id}_${contactId}_step0`
+            const dedupeRef = adminDb.collection("email_sequence_log").doc(dedupeDocId)
 
-            if (!dedupeCheck.empty) continue;
+            try {
+                await adminDb.runTransaction(async (transaction) => {
+                    const existing = await transaction.get(dedupeRef)
+                    if (existing.exists) return // Already triggered
 
-            // Create log entries for each step
-            for (let i = 0; i < steps.length; i++) {
-                const step = steps[i];
-                const scheduledFor = new Date(now.getTime() + step.delayDays * 86400000);
+                    // Create log entries for each step
+                    for (let i = 0; i < steps.length; i++) {
+                        const step = steps[i];
+                        const scheduledFor = new Date(now.getTime() + step.delayDays * 86400000);
+                        const docRef = i === 0
+                            ? dedupeRef
+                            : adminDb.collection("email_sequence_log").doc(`${seqDoc.id}_${contactId}_step${i}`)
 
-                await adminDb.collection("email_sequence_log").add({
-                    sequenceId: seqDoc.id,
-                    sequenceName: seq.name || "",
-                    contactId,
-                    contactEmail: email,
-                    contactName: name,
-                    stepIndex: i,
-                    templateId: step.templateId,
-                    status: "scheduled",
-                    scheduledFor,
-                    sentAt: null,
-                    error: null,
-                    extraVars: extraVars || null,
-                    createdAt: now,
-                });
+                        transaction.set(docRef, {
+                            sequenceId: seqDoc.id,
+                            sequenceName: seq.name || "",
+                            contactId,
+                            contactEmail: email,
+                            contactName: name,
+                            stepIndex: i,
+                            templateId: step.templateId,
+                            status: "scheduled",
+                            scheduledFor,
+                            sentAt: null,
+                            error: null,
+                            extraVars: extraVars || null,
+                            createdAt: now,
+                        })
+                    }
+                })
+            } catch (txErr) {
+                // Transaction conflict means another call already triggered — safe to skip
+                console.log(`Sequence ${seqDoc.id} already triggered for contact ${contactId}`)
             }
         }
     } catch (err) {

@@ -2,6 +2,7 @@
 
 import { adminDb } from "@/lib/firebase-admin"
 import { auth } from "@/auth"
+import { revalidatePath } from "next/cache"
 import type { LeaderboardAgent, LeaderboardData, DashboardData, ActivityItem } from "./types"
 
 const STAGE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4']
@@ -208,7 +209,8 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 .map(([, info]) => info.name)
 
             const stageCounts: Record<string, { count: number; value: number }> = {}
-            for (const opp of pipelineOpps) {
+            const openPipelineOpps = pipelineOpps.filter(o => o.status === "open")
+            for (const opp of openPipelineOpps) {
                 if (!stageCounts[opp.stageName]) stageCounts[opp.stageName] = { count: 0, value: 0 }
                 stageCounts[opp.stageName].count++
                 stageCounts[opp.stageName].value += opp.value
@@ -347,6 +349,11 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
         console.error("Dashboard data error:", error)
         return { success: false, error: "Failed to fetch dashboard data" }
     }
+}
+
+/** Call this to invalidate dashboard caches after deal mutations */
+export async function invalidateDashboardCache() {
+    revalidatePath("/dashboard")
 }
 
 // ── Activity Feed ─────────────────────────────────────────────────────────────

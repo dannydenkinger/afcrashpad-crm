@@ -25,15 +25,28 @@ async function requireAuth() {
 function parseHaroDeadline(deadline: string): string | null {
     if (!deadline) return null
     try {
-        // Remove timezone abbreviations and normalize
+        // Remove the dash separator and timezone abbreviations
         const cleaned = deadline
             .replace(/\s*-\s*/, " ")
             .replace(/\s+(ET|EST|EDT|CT|CST|CDT|PT|PST|PDT|MT|MST|MDT)\s*$/i, "")
             .trim()
-        const d = new Date(cleaned)
-        if (isNaN(d.getTime())) return null
-        // Assume ET (UTC-5) if no timezone info
-        return new Date(d.getTime() + 5 * 60 * 60 * 1000).toISOString()
+        // Parse as America/New_York to handle EST/EDT automatically
+        const localDate = new Date(cleaned)
+        if (isNaN(localDate.getTime())) return null
+        // Format in Eastern time then convert to UTC properly
+        const eastern = new Intl.DateTimeFormat("en-US", {
+            timeZone: "America/New_York",
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+        }).formatToParts(localDate)
+        const parts: Record<string, string> = {}
+        for (const p of eastern) if (p.type !== "literal") parts[p.type] = p.value
+        // Build an ISO string that represents this Eastern time, then compute UTC offset
+        const etString = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`
+        const etAsLocal = new Date(etString)
+        const offsetMs = localDate.getTime() - etAsLocal.getTime()
+        // The actual UTC time is the parsed date adjusted by the difference
+        return new Date(localDate.getTime() - offsetMs).toISOString()
     } catch {
         return null
     }
@@ -181,16 +194,60 @@ function buildResponsePrompt(
     settings: HaroSettings,
     query: { title: string; reporterName: string; mediaOutlet: string; description: string }
 ): string {
+    // Dynamic tone guidance based on slider (0=casual, 100=professional)
+    const tone = settings.responseTone
+    let toneInstruction: string
+    if (tone <= 30) {
+        toneInstruction = `- Very casual and conversational. Use contractions freely, first-person stories, and a relaxed voice.
+- Think "texting a smart friend" — warm, approachable, zero corporate-speak.
+- Short sentences. Personality over polish.`
+    } else if (tone <= 70) {
+        toneInstruction = `- Professional but warm. Think "friendly expert", not "formal essay" and not "texting a buddy".
+- Use contractions naturally (I'm, don't, we've) but don't force slang or overly casual language.
+- Sound like a knowledgeable professional writing a quick, genuine email.`
+    } else {
+        toneInstruction = `- Polished and authoritative. Minimal contractions, confident language.
+- Think "expert opinion piece" — credible, precise, well-structured.
+- Maintain warmth but lean formal. No slang or overly casual phrasing.`
+    }
+
+    // Dynamic length
+    let lengthInstruction: string
+    if (settings.responseLength === "short") {
+        lengthInstruction = "1-2 brief paragraphs, under 100 words. Get straight to the point."
+    } else if (settings.responseLength === "long") {
+        lengthInstruction = "3-4 detailed paragraphs with examples. Give the reporter plenty to work with."
+    } else {
+        lengthInstruction = "2-3 short paragraphs for the response body. Reporters are busy."
+    }
+
+    // Dynamic writing style
+    const styleMap: Record<string, string> = {
+        friendly_expert: "Write as a friendly expert — knowledgeable but approachable, sharing insights from real experience.",
+        thought_leader: "Write as an authoritative thought leader — confident, forward-thinking, sharing industry perspective.",
+        storyteller: "Write as a relatable storyteller — lead with real anecdotes and personal experiences to make your point.",
+        data_driven: "Write as a data-driven analyst — support points with specific numbers, metrics, and concrete results.",
+    }
+    const styleInstruction = styleMap[settings.responseStyle] || styleMap.friendly_expert
+
+    // Optional directives
+    const anecdoteInstruction = settings.includeAnecdotes
+        ? "- Share a specific example or anecdote from your real experience — this is what makes a response stand out."
+        : ""
+    const ctaInstruction = settings.includeCallToAction
+        ? "- End with a brief note about your availability for follow-up (e.g. 'Happy to hop on a call if you need more detail.')."
+        : ""
+
     return `You are ${settings.name}. Write an email to a journalist. You run ${settings.businessName}, ${settings.businessIntro}. You're also a former Air Force pilot.
 
 TONE — this is critical:
-- Professional but warm. Think "friendly expert", not "formal essay" and not "texting a buddy".
-- Use contractions naturally (I'm, don't, we've) but don't force slang or overly casual language.
+${toneInstruction}
 - Avoid stiff AI phrases: "I'd be happy to", "furthermore", "it's worth noting", "in addition", "I believe that".
-- Keep it concise — 2-3 short paragraphs for the response body. Reporters are busy.
-- Share a specific example or anecdote from your real experience when possible — this is what makes a response stand out.
+- ${lengthInstruction}
+${anecdoteInstruction}
+${ctaInstruction}
 - No bullet points or numbered lists. Write in natural paragraphs.
-- Sound like a knowledgeable professional writing a quick, genuine email.
+- ${styleInstruction}
 
 The journalist's query:
 Title: ${query.title}
@@ -204,7 +261,7 @@ Hi ${query.reporterName || "[Reporter Name]"},
 
 [1 sentence intro — who you are and why you're relevant.]
 
-[Your response — 2-3 short paragraphs. Be specific, give them something quotable.]
+[Your response — ${settings.responseLength === "short" ? "1-2 brief paragraphs" : settings.responseLength === "long" ? "3-4 detailed paragraphs" : "2-3 short paragraphs"}. Be specific, give them something quotable.]
 
 Here's my info if you need it:
 ${settings.name}, Founder/CEO
@@ -728,6 +785,12 @@ async function processHaroEmailInternal(emailContent: string, emailSubject?: str
 My business: ${settings.businessName} — ${settings.businessIntro}.
 
 IMPORTANT: I am NOT a licensed professional (not a CPA, attorney, doctor, therapist, financial advisor, etc.) unless one of my expertise topics explicitly states otherwise. If a query requires specific professional credentials or licenses (e.g. "looking for a CPA", "must be a licensed therapist", "input from an MD", "certified financial planner"), and my expertise does not include that credential, score it 20-40 at most — it is low relevance because I cannot credibly respond.
+
+${settings.relevancyStrictness <= 30
+    ? "SCORING GUIDANCE: Be generous. Consider tangential connections and adjacent expertise. Score 60+ if there's any reasonable angle I could speak to."
+    : settings.relevancyStrictness >= 71
+        ? "SCORING GUIDANCE: Be very strict. Only score above 60 for direct, exact topic matches. Tangential or loosely related connections should score below 40."
+        : ""}
 
 Below are queries from reporters. For each query, read both the title AND details to determine relevance to my expertise. Return a JSON object with this exact format:
 

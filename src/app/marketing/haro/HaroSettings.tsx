@@ -9,6 +9,13 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import { Save, Plus, X, ArrowLeft } from "lucide-react"
 import type { HaroSettings as HaroSettingsType } from "./types"
 import { DEFAULT_HARO_SETTINGS } from "./types"
@@ -169,6 +176,113 @@ export function HaroSettings({ settings: initial, onBack, onSaved }: Props) {
                                     <Plus className="h-3 w-3" />
                                 </Button>
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Response Style */}
+                    <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
+                        <CardHeader className="pb-4">
+                            <CardTitle className="text-sm font-semibold">Response Style</CardTitle>
+                            <CardDescription className="text-xs">Customize how AI-generated responses sound</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-5">
+                            <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <Label className="text-xs">Tone</Label>
+                                    <span className="text-xs font-bold text-primary">
+                                        {settings.responseTone <= 30 ? "Casual" : settings.responseTone <= 70 ? "Balanced" : "Professional"}
+                                    </span>
+                                </div>
+                                <Slider
+                                    value={[settings.responseTone]}
+                                    onValueChange={([v]) => update("responseTone", v)}
+                                    min={0}
+                                    max={100}
+                                    step={5}
+                                    className="w-full"
+                                />
+                                <div className="flex justify-between text-[10px] text-muted-foreground">
+                                    <span>Casual</span>
+                                    <span>Professional</span>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <Label className="text-xs">Response Length</Label>
+                                    <Select value={settings.responseLength} onValueChange={v => update("responseLength", v as any)}>
+                                        <SelectTrigger className="h-9 text-sm">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="short">Short</SelectItem>
+                                            <SelectItem value="medium">Medium</SelectItem>
+                                            <SelectItem value="long">Long</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-xs">Writing Style</Label>
+                                    <Select value={settings.responseStyle} onValueChange={v => update("responseStyle", v as any)}>
+                                        <SelectTrigger className="h-9 text-sm">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="friendly_expert">Friendly Expert</SelectItem>
+                                            <SelectItem value="thought_leader">Thought Leader</SelectItem>
+                                            <SelectItem value="storyteller">Storyteller</SelectItem>
+                                            <SelectItem value="data_driven">Data-Driven</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-medium">Include Anecdotes</p>
+                                    <p className="text-[10px] text-muted-foreground">Encourage real examples and stories</p>
+                                </div>
+                                <Switch checked={settings.includeAnecdotes} onCheckedChange={v => update("includeAnecdotes", v)} />
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-medium">Include Call-to-Action</p>
+                                    <p className="text-[10px] text-muted-foreground">Add availability note at the end</p>
+                                </div>
+                                <Switch checked={settings.includeCallToAction} onCheckedChange={v => update("includeCallToAction", v)} />
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Relevancy Tuning */}
+                    <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
+                        <CardHeader className="pb-4">
+                            <CardTitle className="text-sm font-semibold">Relevancy Tuning</CardTitle>
+                            <CardDescription className="text-xs">Control how strictly queries are matched to your expertise</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+                            <div className="flex justify-between">
+                                <Label className="text-xs">Strictness</Label>
+                                <span className="text-xs font-bold text-primary">
+                                    {settings.relevancyStrictness <= 30 ? "Loose" : settings.relevancyStrictness <= 70 ? "Balanced" : "Strict"}
+                                </span>
+                            </div>
+                            <Slider
+                                value={[settings.relevancyStrictness]}
+                                onValueChange={([v]) => update("relevancyStrictness", v)}
+                                min={0}
+                                max={100}
+                                step={5}
+                                className="w-full"
+                            />
+                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                                <span>Loose — wide net</span>
+                                <span>Strict — exact matches</span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground pt-1">
+                                Loose catches more opportunities but may include tangential matches. Strict only surfaces queries directly related to your expertise topics.
+                            </p>
                         </CardContent>
                     </Card>
 

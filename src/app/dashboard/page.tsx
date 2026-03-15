@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { SetupChecklist } from "@/components/SetupChecklist"
 import {
     Calendar,
     CheckCircle2,
@@ -124,6 +125,7 @@ function MobileDashboard({
             )}
 
             <div className="px-4 pt-3 pb-28 space-y-5" style={{ transform: `translateY(${pullDistance}px)` }}>
+                <SetupChecklist />
                 {/* 2x2 KPI Grid */}
                 <div className="grid grid-cols-2 gap-3">
                     {kpiCards.map((card) => {
@@ -503,6 +505,8 @@ export default function DashboardPage() {
                         </Button>
                     </div>
                 </div>
+
+                <SetupChecklist />
 
                 <Tabs defaultValue="overview" className="space-y-6">
                     <TabsList className="bg-muted/30 border border-white/5 flex-wrap h-auto gap-0.5 p-1">

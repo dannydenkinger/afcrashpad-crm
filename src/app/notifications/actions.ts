@@ -21,6 +21,7 @@ const createNotificationSchema = z.object({
     linkUrl: z.string().max(500).optional(),
     taskId: z.string().optional(),
     dedupeKey: z.string().max(200).optional(),
+    groupKey: z.string().max(200).optional(),
     skipEmail: z.boolean().optional(),
 });
 
@@ -54,6 +55,8 @@ export async function getNotifications(limit: number = 20) {
                 linkUrl: d.linkUrl ?? null,
                 taskId: d.taskId ?? null,
                 isRead: d.isRead === true,
+                groupCount: d.groupCount ?? 1,
+                groupItems: d.groupItems ?? null,
                 createdAt: toISO(d.createdAt),
             };
         });
@@ -117,6 +120,7 @@ export async function createNotification(data: {
     linkUrl?: string;
     taskId?: string;
     dedupeKey?: string;
+    groupKey?: string;
     skipEmail?: boolean;
 }) {
     const parsed = createNotificationSchema.safeParse(data);
@@ -136,6 +140,34 @@ export async function createNotification(data: {
             }
         }
 
+        // Grouping: if a groupKey is provided, check for a recent unread notification
+        // with the same key and increment its count instead of creating a new one
+        if (data.groupKey) {
+            const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000)
+            const groupMatch = await adminDb.collection('notifications')
+                .where('groupKey', '==', data.groupKey)
+                .where('isRead', '==', false)
+                .where('createdAt', '>=', thirtyMinAgo)
+                .limit(1)
+                .get()
+
+            if (!groupMatch.empty) {
+                const existingDoc = groupMatch.docs[0]
+                const existingData = existingDoc.data()
+                const groupCount = (existingData.groupCount || 1) + 1
+                const groupItems = existingData.groupItems || [existingData.message]
+                groupItems.push(data.message)
+
+                await existingDoc.ref.update({
+                    groupCount,
+                    groupItems,
+                    message: `${data.title} (${groupCount} items)`,
+                    updatedAt: new Date(),
+                })
+                return { success: true, grouped: true }
+            }
+        }
+
         await adminDb.collection('notifications').add({
             title: data.title,
             message: data.message,
@@ -143,6 +175,9 @@ export async function createNotification(data: {
             linkUrl: data.linkUrl || null,
             taskId: data.taskId || null,
             dedupeKey: data.dedupeKey || null,
+            groupKey: data.groupKey || null,
+            groupCount: 1,
+            groupItems: null,
             isRead: false,
             createdAt: new Date()
         });

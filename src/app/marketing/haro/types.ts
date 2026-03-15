@@ -13,6 +13,16 @@ export interface HaroSettings {
     // Expertise topics (configurable)
     expertiseTopics: string[]
 
+    // Response customization
+    responseTone: number // 0-100, 0=very casual, 100=very professional
+    responseLength: "short" | "medium" | "long"
+    responseStyle: "friendly_expert" | "thought_leader" | "storyteller" | "data_driven"
+    includeAnecdotes: boolean
+    includeCallToAction: boolean
+
+    // Relevancy tuning
+    relevancyStrictness: number // 0-100, 0=very loose, 100=very strict
+
     // Send mode
     sendMode: "draft" | "auto" | "auto_with_threshold"
     confidenceThreshold: number // 0-100, used when sendMode is "auto_with_threshold"
@@ -123,6 +133,12 @@ export const DEFAULT_HARO_SETTINGS: HaroSettings = {
         "veteran",
         "Air Force",
     ],
+    responseTone: 65,
+    responseLength: "medium",
+    responseStyle: "friendly_expert",
+    includeAnecdotes: true,
+    includeCallToAction: false,
+    relevancyStrictness: 50,
     sendMode: "draft",
     confidenceThreshold: 75,
     sendFromEmail: "",
