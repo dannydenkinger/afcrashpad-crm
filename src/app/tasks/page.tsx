@@ -1144,7 +1144,7 @@ export default function TasksPage() {
 
             {/* Comments Sheet */}
             <Sheet open={!!commentSheetTaskId} onOpenChange={(open) => { if (!open) { setCommentSheetTaskId(null); setComments([]); setNewComment(""); } }}>
-                <SheetContent className="sm:max-w-[420px] flex flex-col">
+                <SheetContent className="lg:max-w-[420px] flex flex-col">
                     <SheetHeader>
                         <SheetTitle className="text-left">
                             <div className="flex items-center gap-2">

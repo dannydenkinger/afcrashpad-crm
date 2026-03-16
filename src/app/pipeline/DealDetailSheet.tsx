@@ -379,7 +379,7 @@ export function DealDetailSheet({
                     }
                 }}
             >
-                <SheetContent className="sm:max-w-xl w-full max-w-[100vw] p-0 flex flex-col gap-0 border-l border-border/50 shadow-2xl">
+                <SheetContent className="lg:max-w-xl p-0 flex flex-col gap-0 border-l border-border/50 shadow-2xl">
                     {selectedDeal && (
                         <>
                             <div className="p-4 sm:p-6 bg-muted/30 border-b">

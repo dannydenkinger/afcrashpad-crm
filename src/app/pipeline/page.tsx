@@ -1118,7 +1118,7 @@ function PipelineContent() {
 
             {/* Analytics Sheet */}
             <Sheet open={isAnalyticsOpen} onOpenChange={setIsAnalyticsOpen}>
-                <SheetContent className="w-full max-w-[100vw] sm:max-w-lg overflow-y-auto">
+                <SheetContent className="w-full max-w-[100vw] lg:max-w-lg overflow-y-auto">
                     <SheetTitle className="text-lg font-semibold mb-1">Pipeline Analytics</SheetTitle>
                     <SheetDescription className="text-sm text-muted-foreground mb-4">
                         Conversion funnel, win rate, and deal cycle metrics.
