@@ -233,10 +233,10 @@ export default function AnalyticsDashboard() {
                         </div>
                     </div>
                 </CardHeader>
-                <CardContent className="h-[300px]">
+                <CardContent className="h-[250px] sm:h-[300px] px-2 sm:px-6">
                     {traffic.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={traffic}>
+                            <AreaChart data={traffic} margin={{ left: -15, right: 5 }}>
                                 <defs>
                                     <linearGradient id="colorActive" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -247,7 +247,7 @@ export default function AnalyticsDashboard() {
                                         <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.08} />
                                 <XAxis
                                     dataKey="name"
                                     axisLine={false}

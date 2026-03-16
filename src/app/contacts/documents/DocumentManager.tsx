@@ -21,6 +21,7 @@ import {
     FolderOpen,
     MoveRight,
     LayoutTemplate,
+    MoreVertical,
 } from "lucide-react"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { getContactDocuments, addDocument, deleteDocument, updateDocumentStatus, moveToFolder, createFolder } from "./actions"
@@ -191,25 +192,27 @@ export function DocumentManager({ contactId }: { contactId: string }) {
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Documents</h3>
-                <div className="flex items-center gap-1">
+            <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground shrink-0">Documents</h3>
+                <div className="flex items-center gap-1 shrink-0">
                     <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs text-purple-600 hover:text-purple-700 hover:bg-purple-50/50"
+                        size="icon"
+                        className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-50/50 sm:w-auto sm:px-2"
                         onClick={() => setTemplateDialogOpen(true)}
+                        title="Templates"
                     >
-                        <LayoutTemplate className="h-3.5 w-3.5 mr-1" />
-                        Templates
+                        <LayoutTemplate className="h-3.5 w-3.5 sm:mr-1" />
+                        <span className="hidden sm:inline text-xs">Templates</span>
                     </Button>
                     <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50/50"
+                        size="icon"
+                        className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50/50 sm:w-auto sm:px-2"
                         onClick={() => { setIsAdding(!isAdding); setUploadError(null) }}
+                        title="Add link"
                     >
-                        {isAdding ? "Cancel" : <><Plus className="h-3.5 w-3.5 mr-1" /> Add link</>}
+                        {isAdding ? <span className="text-xs">Cancel</span> : <><Plus className="h-3.5 w-3.5 sm:mr-1" /><span className="hidden sm:inline text-xs">Add link</span></>}
                     </Button>
                 </div>
             </div>
@@ -378,21 +381,28 @@ export function DocumentManager({ contactId }: { contactId: string }) {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setPreviewDoc(doc)}>
-                                    <Eye className="h-3.5 w-3.5" />
-                                </Button>
-
-                                {/* Move to folder dropdown */}
+                            <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                         <Button variant="ghost" size="icon" className="h-8 w-8">
-                                            <MoveRight className="h-3.5 w-3.5" />
+                                            <MoreVertical className="h-3.5 w-3.5" />
                                         </Button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="min-w-[140px]">
-                                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Move to folder</div>
+                                    <DropdownMenuContent align="end" className="min-w-[160px]">
+                                        <DropdownMenuItem className="text-xs" onClick={() => setPreviewDoc(doc)}>
+                                            <Eye className="h-3.5 w-3.5 mr-2" />
+                                            Preview
+                                        </DropdownMenuItem>
+                                        {doc.url && (
+                                            <DropdownMenuItem className="text-xs" asChild>
+                                                <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                                                    <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                                                    Open in new tab
+                                                </a>
+                                            </DropdownMenuItem>
+                                        )}
                                         <DropdownMenuSeparator />
+                                        <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Move to folder</div>
                                         {folders.map(folder => (
                                             <DropdownMenuItem
                                                 key={folder}
@@ -404,19 +414,13 @@ export function DocumentManager({ contactId }: { contactId: string }) {
                                                 {folder}
                                             </DropdownMenuItem>
                                         ))}
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem className="text-xs text-red-500" onClick={() => setDeleteTarget(doc.id)}>
+                                            <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                            Delete
+                                        </DropdownMenuItem>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
-
-                                {doc.url && (
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                                        <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                                            <ExternalLink className="h-3.5 w-3.5" />
-                                        </a>
-                                    </Button>
-                                )}
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-500/10" onClick={() => setDeleteTarget(doc.id)}>
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
                             </div>
                         </div>
                     ))

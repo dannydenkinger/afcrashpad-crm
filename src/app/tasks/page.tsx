@@ -307,7 +307,7 @@ function MobileTasksView({
 
             {/* FAB for new task */}
             <button
-                className="fixed bottom-24 right-4 z-40 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 flex items-center justify-center touch-manipulation active:scale-95 transition-transform"
+                className="fixed bottom-28 right-4 z-40 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 flex items-center justify-center touch-manipulation active:scale-95 transition-transform"
                 onClick={onCreateTask}
             >
                 <Plus className="h-6 w-6" />

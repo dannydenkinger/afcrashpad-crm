@@ -307,7 +307,7 @@ export default function CalendarPage() {
 
                         {/* Filter button */}
                         <button
-                            className="fixed bottom-24 left-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full bg-card border border-border text-xs font-medium text-foreground shadow-lg touch-manipulation"
+                            className="fixed bottom-28 left-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full bg-card border border-border text-xs font-medium text-foreground shadow-lg touch-manipulation"
                             onClick={() => setFilterSheetOpen(true)}
                         >
                             <Filter className="h-3.5 w-3.5" />

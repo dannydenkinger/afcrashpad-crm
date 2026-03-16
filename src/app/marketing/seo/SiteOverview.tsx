@@ -42,7 +42,7 @@ function ScoreRing({ score, label, color }: { score: number; label: string; colo
         <div className="flex flex-col items-center gap-1">
             <div className="relative w-20 h-20">
                 <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
-                    <circle cx="40" cy="40" r="36" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="6" />
+                    <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeOpacity={0.08} strokeWidth="6" />
                     <circle
                         cx="40"
                         cy="40"
@@ -155,14 +155,14 @@ export default function SiteOverview({
                             <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20">GSC</Badge>
                         </div>
                     </CardHeader>
-                    <CardContent className="h-[300px]">
+                    <CardContent className="h-[250px] sm:h-[300px] px-2 sm:px-6">
                         {isLoadingGSC ? (
                             <div className="h-full flex items-center justify-center">
                                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                             </div>
                         ) : chartData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={chartData}>
+                                <AreaChart data={chartData} margin={{ left: -15, right: 5 }}>
                                     <defs>
                                         <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -173,7 +173,7 @@ export default function SiteOverview({
                                             <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
                                         </linearGradient>
                                     </defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.08} />
                                     <XAxis
                                         dataKey="date"
                                         axisLine={false}

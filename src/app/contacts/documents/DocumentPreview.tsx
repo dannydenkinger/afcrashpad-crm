@@ -240,9 +240,9 @@ export function DocumentPreview({ document, open, onOpenChange, contactId, onRef
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0 border-none shadow-md bg-card/95 backdrop-blur-md">
-                <DialogHeader className="px-5 py-4 border-b border-border/40 shrink-0">
-                    <div className="flex items-center justify-between pr-8">
+            <DialogContent className="sm:max-w-4xl max-h-[90vh] max-w-[100vw] flex flex-col gap-0 p-0 border-none shadow-md bg-card/95 backdrop-blur-md">
+                <DialogHeader className="px-4 sm:px-5 py-3 sm:py-4 border-b border-border/40 shrink-0">
+                    <div className="flex flex-col gap-2 pr-8">
                         <div className="flex flex-col gap-0.5 min-w-0">
                             <DialogTitle className="text-sm font-semibold truncate">
                                 {document.name}
@@ -257,7 +257,7 @@ export function DocumentPreview({ document, open, onOpenChange, contactId, onRef
                                 )}
                             </DialogDescription>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-2">
                             {/* E-Signature button */}
                             {contactId && document.status !== "SIGNED" && (
                                 <Button
@@ -272,7 +272,7 @@ export function DocumentPreview({ document, open, onOpenChange, contactId, onRef
                                     ) : (
                                         <PenLine className="h-3.5 w-3.5" />
                                     )}
-                                    Request Signature
+                                    <span className="hidden sm:inline">Request</span> Signature
                                 </Button>
                             )}
                             {document.url && (
@@ -362,7 +362,7 @@ export function DocumentPreview({ document, open, onOpenChange, contactId, onRef
                                     </Button>
                                 </div>
                             ) : (
-                                <div className="relative w-full max-h-[70vh] min-h-[200px]" style={{ aspectRatio: "16/9" }}>
+                                <div className="relative w-full max-h-[65vh] sm:max-h-[70vh] min-h-[200px]" style={{ aspectRatio: "16/9" }}>
                                     <Image
                                         src={document.url}
                                         alt={document.name}

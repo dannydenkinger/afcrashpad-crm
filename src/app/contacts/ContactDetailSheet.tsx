@@ -327,7 +327,7 @@ export function ContactDetailSheet({
     return (
         <Sheet open={!!selectedContact} onOpenChange={() => onClose()}>
             <SheetContent
-                className="sm:max-w-xl w-full max-w-[100vw] p-0 flex flex-col gap-0 border-l border-border/50 shadow-2xl relative"
+                className="sm:max-w-xl w-full max-w-[100vw] p-0 flex flex-col gap-0 border-l border-border/50 shadow-2xl relative safe-top safe-bottom"
                 onDragEnter={handleSheetDragEnter}
                 onDragLeave={handleSheetDragLeave}
                 onDragOver={handleSheetDragOver}
