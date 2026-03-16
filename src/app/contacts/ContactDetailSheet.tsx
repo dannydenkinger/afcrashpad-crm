@@ -359,7 +359,9 @@ export function ContactDetailSheet({
                     if (!contact) return null
                     return (
                         <>
-                            <div className="p-4 sm:p-6 bg-muted/30 border-b safe-top">
+                            {/* Safe area fill — matches header background */}
+                            <div className="bg-muted/30 safe-top shrink-0" />
+                            <div className="p-4 sm:p-6 bg-muted/30 border-b">
                                 <div className="flex items-start justify-between mb-4">
                                     <div className="flex items-center gap-3 sm:gap-4">
                                         <Avatar className="h-12 w-12 sm:h-16 sm:w-16 border-2 border-background shadow-sm">

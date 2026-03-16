@@ -257,7 +257,21 @@ export function DocumentPreview({ document, open, onOpenChange, contactId, onRef
                                 )}
                             </DialogDescription>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Open in new tab — best mobile experience */}
+                            {document.url && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 text-xs gap-1.5"
+                                    asChild
+                                >
+                                    <a href={document.url} target="_blank" rel="noopener noreferrer">
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                        Open in new tab
+                                    </a>
+                                </Button>
+                            )}
                             {/* E-Signature button */}
                             {contactId && document.status !== "SIGNED" && (
                                 <Button
@@ -380,11 +394,13 @@ export function DocumentPreview({ document, open, onOpenChange, contactId, onRef
 
                     {/* PDF preview */}
                     {fileType === "pdf" && (
-                        <iframe
-                            src={`${document.url}#zoom=page-fit`}
-                            title={document.name}
-                            className="w-full flex-1 min-h-[60vh] sm:h-[70vh] border-none"
-                        />
+                        <div className="flex-1 flex flex-col min-h-0">
+                            <iframe
+                                src={`${document.url}#view=FitH`}
+                                title={document.name}
+                                className="w-full flex-1 min-h-[60vh] border-none"
+                            />
+                        </div>
                     )}
 
                     {/* CSV preview with table */}
