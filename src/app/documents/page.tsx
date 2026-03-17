@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import {
     Search, Plus, Upload, FileText, FilePen, FileCheck2, FileClock, File,
     Trash2, ArrowLeft, Send, X, CheckSquare, Square, Loader2,
-    Eye, Pencil, Save, MoreHorizontal, ChevronDown, PanelLeftClose, PanelLeft, FileSignature,
+    Eye, Pencil, Save, MoreHorizontal, ChevronDown, PanelLeftClose, PanelLeft, FileSignature, ExternalLink,
 } from "lucide-react"
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
@@ -482,12 +482,12 @@ export default function DocumentsPage() {
                                 </>
                             ) : (
                                 <>
-                                    {canEdit && (
+                                    {!isMobile && canEdit && (
                                         <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="h-8 text-xs">
                                             <Pencil className="h-3 w-3 mr-1" /> Edit
                                         </Button>
                                     )}
-                                    {docIsPdf && canSign && (
+                                    {!isMobile && docIsPdf && canSign && (
                                         <Button
                                             variant="outline"
                                             size="sm"
@@ -501,7 +501,7 @@ export default function DocumentsPage() {
                                             <FileSignature className="h-3 w-3 mr-1" /> Prepare Signature
                                         </Button>
                                     )}
-                                    {canSign && (
+                                    {!isMobile && canSign && (
                                         <Button variant="outline" size="sm" onClick={() => setShowSignForm(!showSignForm)} className="h-8 text-xs">
                                             <Send className="h-3 w-3 mr-1" /> Quick Send
                                         </Button>
@@ -513,6 +513,26 @@ export default function DocumentsPage() {
                                             </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
+                                            {isMobile && canEdit && (
+                                                <DropdownMenuItem onClick={() => setEditing(true)}>
+                                                    <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                                </DropdownMenuItem>
+                                            )}
+                                            {isMobile && docIsPdf && canSign && (
+                                                <DropdownMenuItem onClick={() => {
+                                                    const params = new URLSearchParams()
+                                                    if (selectedDoc.contactId) params.set("contactId", selectedDoc.contactId)
+                                                    router.push(`/documents/${selectedDoc.id}/prepare?${params.toString()}`)
+                                                }}>
+                                                    <FileSignature className="h-3.5 w-3.5 mr-2" /> Prepare Signature
+                                                </DropdownMenuItem>
+                                            )}
+                                            {isMobile && canSign && (
+                                                <DropdownMenuItem onClick={() => setShowSignForm(!showSignForm)}>
+                                                    <Send className="h-3.5 w-3.5 mr-2" /> Quick Send
+                                                </DropdownMenuItem>
+                                            )}
+                                            {isMobile && (canEdit || (docIsPdf && canSign) || canSign) && <DropdownMenuSeparator />}
                                             {selectedDoc.url && (
                                                 <DropdownMenuItem onClick={() => window.open(selectedDoc.url, "_blank")}>
                                                     <Eye className="h-3.5 w-3.5 mr-2" /> Open in New Tab
@@ -632,6 +652,20 @@ export default function DocumentsPage() {
                                 )
                             }
                             if (isDocPdf) {
+                                if (isMobile) {
+                                    return (
+                                        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+                                            <FileText className="h-16 w-16 text-muted-foreground/30" />
+                                            <p className="text-sm text-muted-foreground text-center">PDF previews open in a new tab on mobile for the best viewing experience.</p>
+                                            <Button asChild className="gap-2">
+                                                <a href={selectedDoc.url} target="_blank" rel="noopener noreferrer">
+                                                    <ExternalLink className="h-4 w-4" />
+                                                    Open PDF
+                                                </a>
+                                            </Button>
+                                        </div>
+                                    )
+                                }
                                 return <iframe src={selectedDoc.url} className="w-full h-full border-0" title={selectedDoc.name} />
                             }
                             if (["doc", "docx", "xls", "xlsx", "ppt", "pptx"].includes(ext)) {
