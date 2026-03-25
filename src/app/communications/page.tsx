@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useDebounce } from "@/hooks/useDebounce"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import SchedulePicker from "./SchedulePicker"
 import SnippetsManager from "./SnippetsManager"
 import AttachmentPicker, { type AttachmentFile } from "./AttachmentPicker"
 import AnalyticsPanel from "./AnalyticsPanel"
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh"
 
 export default function CommunicationsPage() {
     const isMobile = useIsMobile()
@@ -79,6 +80,32 @@ export default function CommunicationsPage() {
     }
 
     useEffect(() => { fetchConversations() }, [])
+
+    // Auto-refresh conversations on push notification or tab focus
+    const refreshAll = useCallback(() => {
+        fetchConversations()
+        if (selectedContactId) {
+            const filterChannel = typeFilter === "all" ? undefined : typeFilter as "email" | "sms"
+            getMessages(selectedContactId, filterChannel).then(res => {
+                if (res.success) setMessages(res.messages || [])
+            })
+        }
+    }, [selectedContactId, typeFilter])
+
+    useRealtimeRefresh(refreshAll)
+
+    // Poll active thread every 15s for new messages
+    useEffect(() => {
+        if (!selectedContactId) return
+        const interval = setInterval(() => {
+            const filterChannel = typeFilter === "all" ? undefined : typeFilter as "email" | "sms"
+            getMessages(selectedContactId, filterChannel).then(res => {
+                if (res.success) setMessages(res.messages || [])
+            })
+            fetchConversations()
+        }, 15000)
+        return () => clearInterval(interval)
+    }, [selectedContactId, typeFilter])
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
