@@ -757,7 +757,8 @@ export async function threadIncomingReply({
         return { success: true, contactId, parentMessageId, threadId };
     } catch (error) {
         console.error("Failed to thread incoming reply:", error);
-        return { success: false, error: "Failed to thread incoming reply" };
+        const errMsg = error instanceof Error ? error.message : String(error);
+        return { success: false, error: "Failed to thread incoming reply: " + errMsg };
     }
 }
 
