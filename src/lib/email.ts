@@ -73,10 +73,8 @@ export async function sendTrackedEmail({
 
     // Auto-generate a reply-to address that routes through Postmark inbound
     // so replies are captured and threaded back to the conversation.
-    // Format: reply+{trackingId}@inbound.afcrashpad.com
-    // Postmark extracts the part after "+" as MailboxHash in the webhook payload.
     const inboundDomain = process.env.POSTMARK_INBOUND_DOMAIN;
-    const effectiveReplyTo = replyTo || (inboundDomain ? `reply+${trackingId}@${inboundDomain}` : undefined);
+    const effectiveReplyTo = replyTo || (inboundDomain ? `reply@${inboundDomain}` : undefined);
 
     const { data, error } = await getResend().emails.send({
         from,
