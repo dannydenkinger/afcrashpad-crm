@@ -11,7 +11,7 @@ import {
     Search, Send, Mail, MessageSquare, Phone, Filter,
     ArrowLeft, Plus, User, Clock, ChevronDown, Eye, MousePointerClick,
     Zap, Paperclip, BarChart3, CalendarDays, X, FileText, Reply, CornerDownRight,
-    Bold, Italic, Link2, List, Trash2
+    Bold, Italic, Link2, List, Trash2, RefreshCw
 } from "lucide-react"
 import { getConversations, getMessages, sendMessage, getAllContacts, getEmailTracking, scheduleMessage, cancelScheduledMessage, deleteMessage, deleteConversation } from "./actions"
 import { useIsMobile } from "@/hooks/useIsMobile"
@@ -60,6 +60,7 @@ export default function CommunicationsPage() {
     const [showAnalytics, setShowAnalytics] = useState(false)
     const [threadSearch, setThreadSearch] = useState("")
     const [replyToMessage, setReplyToMessage] = useState<any>(null)
+    const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
 
     // Draft auto-save
     const draftKey = selectedContactId ? `comms-draft-${selectedContactId}` : null
@@ -72,18 +73,32 @@ export default function CommunicationsPage() {
         }
     }, [newMessage, draftKey])
 
-    const fetchConversations = async () => {
-        setIsLoading(true)
+    const fetchConversations = async (silent = false) => {
+        if (!silent) setIsLoading(true)
         const res = await getConversations()
-        if (res.success) setConversations(res.conversations || [])
-        setIsLoading(false)
+        if (res.success) {
+            const incoming = res.conversations || []
+            // Only update state if data actually changed to avoid re-render flash
+            setConversations(prev => {
+                if (prev.length !== incoming.length) return incoming
+                const changed = incoming.some((c: any, i: number) =>
+                    c.contactId !== prev[i]?.contactId ||
+                    c.lastMessageTime !== prev[i]?.lastMessageTime ||
+                    c.lastMessage !== prev[i]?.lastMessage ||
+                    c.lastMessageDirection !== prev[i]?.lastMessageDirection
+                )
+                return changed ? incoming : prev
+            })
+            setLastUpdated(new Date())
+        }
+        if (!silent) setIsLoading(false)
     }
 
     useEffect(() => { fetchConversations() }, [])
 
     // Auto-refresh conversations on push notification or tab focus
     const refreshAll = useCallback(() => {
-        fetchConversations()
+        fetchConversations(true)
         if (selectedContactId) {
             const filterChannel = typeFilter === "all" ? undefined : typeFilter as "email" | "sms"
             getMessages(selectedContactId, filterChannel).then(res => {
@@ -100,9 +115,18 @@ export default function CommunicationsPage() {
         const interval = setInterval(() => {
             const filterChannel = typeFilter === "all" ? undefined : typeFilter as "email" | "sms"
             getMessages(selectedContactId, filterChannel).then(res => {
-                if (res.success) setMessages(res.messages || [])
+                if (res.success) {
+                    const incoming = res.messages || []
+                    setMessages(prev => {
+                        if (prev.length !== incoming.length) return incoming
+                        const changed = incoming.some((m: any, i: number) =>
+                            m.id !== prev[i]?.id || m.status !== prev[i]?.status
+                        )
+                        return changed ? incoming : prev
+                    })
+                }
             })
-            fetchConversations()
+            fetchConversations(true)
         }, 15000)
         return () => clearInterval(interval)
     }, [selectedContactId, typeFilter])
@@ -153,7 +177,7 @@ export default function CommunicationsPage() {
             // Refresh thread
             const threadRes = await getMessages(selectedContactId)
             if (threadRes.success) setMessages(threadRes.messages || [])
-            fetchConversations()
+            fetchConversations(true)
         } else {
             toast.error("Failed to send message")
         }
@@ -179,7 +203,7 @@ export default function CommunicationsPage() {
             // Refresh thread
             const threadRes = await getMessages(selectedContactId)
             if (threadRes.success) setMessages(threadRes.messages || [])
-            fetchConversations()
+            fetchConversations(true)
         } else {
             toast.error(res.error || "Failed to schedule message")
         }
@@ -208,7 +232,7 @@ export default function CommunicationsPage() {
         if (res.success) {
             toast.success("Message deleted")
             setMessages(prev => prev.filter(m => m.id !== messageId))
-            fetchConversations()
+            fetchConversations(true)
         } else {
             toast.error(res.error || "Failed to delete")
         }
@@ -284,6 +308,23 @@ export default function CommunicationsPage() {
         return d.toLocaleDateString()
     }
 
+    const formatLastUpdated = (date: Date) => {
+        const now = new Date()
+        const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000)
+        if (diffSec < 10) return "Just now"
+        if (diffSec < 60) return `${diffSec}s ago`
+        const diffMin = Math.floor(diffSec / 60)
+        if (diffMin < 60) return `${diffMin}m ago`
+        return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    }
+
+    // Force re-render of "last updated" every 10s
+    const [, setTick] = useState(0)
+    useEffect(() => {
+        const interval = setInterval(() => setTick(t => t + 1), 10000)
+        return () => clearInterval(interval)
+    }, [])
+
     const formatScheduledDate = (dateStr: string) => {
         const d = new Date(dateStr)
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -305,6 +346,59 @@ export default function CommunicationsPage() {
             case "phone": return "bg-amber-500/10 text-amber-600 border-amber-500/20"
             default: return "bg-slate-500/10 text-slate-600 border-slate-500/20"
         }
+    }
+
+    const formatDateSeparator = (dateStr: string) => {
+        const d = new Date(dateStr)
+        const now = new Date()
+        const isToday = d.toDateString() === now.toDateString()
+        const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1)
+        const isYesterday = d.toDateString() === yesterday.toDateString()
+        if (isToday) return "Today"
+        if (isYesterday) return "Yesterday"
+        return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    }
+
+    const shouldShowDateSeparator = (messages: any[], index: number) => {
+        if (index === 0) return true
+        const current = new Date(messages[index].createdAt).toDateString()
+        const prev = new Date(messages[index - 1].createdAt).toDateString()
+        return current !== prev
+    }
+
+    // iMessage-style grouping: show timestamp when gap > 5 min or direction changes
+    const shouldShowTimestamp = (msgs: any[], index: number) => {
+        if (index === 0) return true
+        const curr = msgs[index]
+        const prev = msgs[index - 1]
+        const currDir = curr.direction === "outbound" || curr.direction === "OUTBOUND" ? "out" : "in"
+        const prevDir = prev.direction === "outbound" || prev.direction === "OUTBOUND" ? "out" : "in"
+        if (currDir !== prevDir) return true
+        const gap = new Date(curr.createdAt).getTime() - new Date(prev.createdAt).getTime()
+        return gap > 5 * 60 * 1000 // 5 minutes
+    }
+
+    // Is this the last message in a consecutive group from same direction?
+    const isLastInGroup = (msgs: any[], index: number) => {
+        if (index === msgs.length - 1) return true
+        const curr = msgs[index]
+        const next = msgs[index + 1]
+        const currDir = curr.direction === "outbound" || curr.direction === "OUTBOUND" ? "out" : "in"
+        const nextDir = next.direction === "outbound" || next.direction === "OUTBOUND" ? "out" : "in"
+        if (currDir !== nextDir) return true
+        const gap = new Date(next.createdAt).getTime() - new Date(curr.createdAt).getTime()
+        return gap > 5 * 60 * 1000
+    }
+
+    const isFirstInGroup = (msgs: any[], index: number) => {
+        if (index === 0) return true
+        const curr = msgs[index]
+        const prev = msgs[index - 1]
+        const currDir = curr.direction === "outbound" || curr.direction === "OUTBOUND" ? "out" : "in"
+        const prevDir = prev.direction === "outbound" || prev.direction === "OUTBOUND" ? "out" : "in"
+        if (currDir !== prevDir) return true
+        const gap = new Date(curr.createdAt).getTime() - new Date(prev.createdAt).getTime()
+        return gap > 5 * 60 * 1000
     }
 
     // ─── Mobile Layout ──────────────────────────────────────────────
@@ -334,7 +428,7 @@ export default function CommunicationsPage() {
                     </div>
 
                     {/* Messages */}
-                    <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
+                    <div className="flex-1 overflow-y-auto px-3 py-3 min-h-0">
                         {isLoadingThread ? (
                             <div className="flex items-center justify-center py-12">
                                 <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -347,51 +441,66 @@ export default function CommunicationsPage() {
                                     Send the first message to start this conversation.
                                 </p>
                             </div>
-                        ) : filteredMessages.map((msg: any) => {
+                        ) : filteredMessages.map((msg: any, idx: number) => {
                             const isOutbound = msg.direction === "outbound" || msg.direction === "OUTBOUND"
                             const isScheduled = msg.status === "scheduled"
                             const isCancelled = msg.status === "cancelled"
+                            const showDate = shouldShowDateSeparator(filteredMessages, idx)
+                            const showTime = shouldShowTimestamp(filteredMessages, idx)
+                            const lastInGroup = isLastInGroup(filteredMessages, idx)
+                            const firstInGrp = isFirstInGroup(filteredMessages, idx)
                             return (
-                                <div key={msg.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                                    <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 space-y-1 ${
-                                        isCancelled ? "bg-muted/50 opacity-60" :
-                                        isScheduled ? "bg-amber-500/10 border border-amber-500/20" :
-                                        isOutbound ? "bg-primary text-primary-foreground rounded-br-md" :
-                                        "bg-muted rounded-bl-md"
-                                    }`}>
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                            <Badge variant="outline" className={`text-[10px] px-1 py-0 gap-0.5 border-border ${isOutbound && !isScheduled && !isCancelled ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                                                {typeIcon(msg.type)}
-                                                {msg.type}
-                                            </Badge>
-                                            {isScheduled && msg.scheduledAt && (
-                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-500/30 text-amber-500">
-                                                    Scheduled
-                                                </Badge>
-                                            )}
+                                <div key={msg.id}>
+                                    {showDate && (
+                                        <div className="text-center py-2.5">
+                                            <span className="text-[11px] font-medium text-muted-foreground/60">
+                                                {formatDateSeparator(msg.createdAt)}
+                                            </span>
                                         </div>
-                                        <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isCancelled ? "line-through" : ""}`}>{msg.content}</p>
-                                        <div className="flex items-center justify-between">
-                                            <p className={`text-xs ${isOutbound && !isScheduled && !isCancelled ? "text-primary-foreground/50" : "text-muted-foreground"}`}>
-                                                {formatTime(msg.createdAt)}
-                                            </p>
-                                            <div className="flex items-center gap-2">
-                                                {isScheduled && (
-                                                    <button onClick={() => handleCancelScheduled(msg.id)} className="text-xs text-amber-500 font-medium">Cancel</button>
-                                                )}
-                                                <button
-                                                    onClick={() => handleDeleteMessage(msg.id)}
-                                                    className={`text-xs transition-colors ${
-                                                        isOutbound && !isScheduled && !isCancelled
-                                                            ? "text-primary-foreground/40 hover:text-red-300"
-                                                            : "text-muted-foreground/40 hover:text-red-500"
-                                                    }`}
-                                                >
-                                                    <Trash2 className="h-3 w-3" />
-                                                </button>
-                                            </div>
+                                    )}
+                                    {showTime && !showDate && (
+                                        <div className="text-center py-2">
+                                            <span className="text-[11px] text-muted-foreground/50">
+                                                {new Date(msg.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div className={`flex ${isOutbound ? "justify-end" : "justify-start"} ${lastInGroup ? "mb-2" : "mb-0.5"}`}>
+                                        <div className={`max-w-[80%] px-3.5 py-2 ${
+                                            isCancelled ? "bg-muted/50 opacity-60 rounded-2xl" :
+                                            isScheduled ? "bg-amber-500/10 border border-amber-500/20 rounded-2xl" :
+                                            isOutbound
+                                                ? `bg-primary text-primary-foreground ${
+                                                    lastInGroup && firstInGrp ? "rounded-2xl" :
+                                                    firstInGrp ? "rounded-2xl rounded-br-md" :
+                                                    lastInGroup ? "rounded-2xl rounded-tr-md" :
+                                                    "rounded-2xl rounded-r-md"
+                                                }`
+                                                : `bg-muted ${
+                                                    lastInGroup && firstInGrp ? "rounded-2xl" :
+                                                    firstInGrp ? "rounded-2xl rounded-bl-md" :
+                                                    lastInGroup ? "rounded-2xl rounded-tl-md" :
+                                                    "rounded-2xl rounded-l-md"
+                                                }`
+                                        }`}>
+                                            {isScheduled && msg.scheduledAt && (
+                                                <div className="flex items-center gap-1 mb-1">
+                                                    <Clock className="h-3 w-3 text-amber-500" />
+                                                    <span className="text-[11px] text-amber-500 font-medium">Scheduled</span>
+                                                    <button onClick={() => handleCancelScheduled(msg.id)} className="text-[11px] text-amber-500 hover:text-red-500 font-medium ml-1">Cancel</button>
+                                                </div>
+                                            )}
+                                            <p className={`text-[15px] leading-relaxed whitespace-pre-wrap ${isCancelled ? "line-through" : ""}`}>{msg.content}</p>
                                         </div>
                                     </div>
+                                    {/* Delivery status */}
+                                    {isOutbound && lastInGroup && !isScheduled && !isCancelled && (
+                                        <div className="flex justify-end pr-1 -mt-1 mb-1">
+                                            <span className="text-[11px] text-muted-foreground/50">
+                                                {msg.type === "email" ? "Delivered" : "Sent"}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                             )
                         })}
@@ -399,42 +508,41 @@ export default function CommunicationsPage() {
                     </div>
 
                     {/* Compose */}
-                    <div className="px-3 py-2.5 pb-4 border-t border-border bg-background/95 backdrop-blur-sm shrink-0">
+                    <div className="px-3 py-2 pb-4 border-t border-border bg-background shrink-0">
                         {replyToMessage && (
-                            <div className="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-primary/5 border border-primary/10">
-                                <Reply className="h-3 w-3 text-primary shrink-0" />
-                                <p className="text-xs text-muted-foreground truncate flex-1">Replying to: {replyToMessage.content?.substring(0, 60)}</p>
+                            <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-xl bg-muted/50">
+                                <div className="w-0.5 h-4 bg-primary rounded-full shrink-0" />
+                                <p className="text-xs text-muted-foreground truncate flex-1">{replyToMessage.content?.substring(0, 60)}</p>
                                 <button onClick={() => setReplyToMessage(null)}><X className="h-3 w-3 text-muted-foreground" /></button>
                             </div>
                         )}
-                        <div className="flex items-center gap-1.5 mb-2">
-                            {["email", "text"].map(t => (
-                                <button
-                                    key={t}
-                                    onClick={() => setMessageType(t)}
-                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors border touch-manipulation ${messageType === t ? `${typeColor(t)} border-current` : "text-muted-foreground border-transparent"}`}
-                                >
-                                    {t}
-                                </button>
-                            ))}
-                        </div>
                         <div className="flex items-end gap-2">
+                            <button
+                                onClick={() => setMessageType(messageType === "email" ? "text" : "email")}
+                                className={`p-2 rounded-full shrink-0 touch-manipulation ${messageType === "email" ? "text-blue-500" : "text-emerald-500"}`}
+                            >
+                                {messageType === "email" ? <Mail className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
+                            </button>
                             <textarea
                                 ref={textareaRef}
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                                placeholder="Type your message..."
+                                placeholder={messageType === "email" ? "Email..." : "Text..."}
                                 rows={1}
-                                className="flex-1 min-w-0 resize-none rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary min-h-[44px]"
+                                className="flex-1 min-w-0 resize-none rounded-2xl border border-border bg-muted/30 px-4 py-2.5 text-[15px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary min-h-[44px] max-h-32"
                             />
-                            <Button
+                            <button
                                 onClick={handleSend}
                                 disabled={isSending || !newMessage.trim()}
-                                className="h-11 px-4 rounded-xl touch-manipulation shrink-0"
+                                className={`p-2.5 rounded-full shrink-0 touch-manipulation transition-all ${
+                                    newMessage.trim()
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-muted text-muted-foreground/30"
+                                }`}
                             >
-                                <Send className="h-4 w-4" />
-                            </Button>
+                                <Send className="h-5 w-5" />
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -708,60 +816,76 @@ export default function CommunicationsPage() {
                             </div>
                         ) : filteredConversations.map(convo => {
                             const needsAttention = convo.lastMessageDirection === "inbound" && selectedContactId !== convo.contactId
+                            const isSelected = selectedContactId === convo.contactId
                             return (
                             <div
                                 key={convo.contactId}
                                 onClick={() => openThread(convo.contactId)}
-                                className={`flex items-start gap-3 px-4 py-3 min-h-[56px] cursor-pointer transition-colors border-b border-border/30 touch-manipulation group/convo ${selectedContactId === convo.contactId
-                                        ? "bg-primary/5 border-l-2 border-l-primary"
+                                className={`flex items-center gap-3 px-3 py-3 cursor-pointer transition-all border-b border-border/20 touch-manipulation group/convo ${
+                                    isSelected
+                                        ? "bg-primary/8 border-l-2 border-l-primary"
                                         : needsAttention
-                                        ? "bg-blue-500/5 hover:bg-blue-500/10 active:bg-blue-500/15"
-                                        : "hover:bg-muted/30 active:bg-muted/40"
-                                    }`}
+                                        ? "bg-blue-500/5 hover:bg-blue-500/8"
+                                        : "hover:bg-muted/40"
+                                }`}
                             >
-                                {needsAttention && (
-                                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0 mt-4" />
-                                )}
-                                <Avatar className={`h-10 w-10 shrink-0 mt-0.5 ${needsAttention ? "-ml-1" : ""}`}>
-                                    <AvatarFallback className="bg-gradient-to-br from-slate-700 to-slate-900 text-foreground text-xs font-medium">
-                                        {convo.contactName?.charAt(0)}
-                                    </AvatarFallback>
-                                </Avatar>
+                                <div className="relative shrink-0">
+                                    <Avatar className="h-10 w-10">
+                                        <AvatarFallback className="bg-gradient-to-br from-slate-700 to-slate-900 text-foreground text-xs font-medium">
+                                            {convo.contactName?.charAt(0)}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    {needsAttention && (
+                                        <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-blue-500 border-2 border-background" />
+                                    )}
+                                </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between mb-0.5">
-                                        <span className={`text-sm truncate ${needsAttention ? "font-bold text-foreground" : "font-semibold"}`}>{convo.contactName}</span>
-                                        <div className="flex items-center gap-2 shrink-0 ml-2">
-                                            <span className="text-xs text-muted-foreground">{formatTime(convo.lastMessageTime)}</span>
-                                            <button
-                                                onClick={(e) => handleDeleteConversation(convo.contactId, e)}
-                                                className="text-muted-foreground/30 hover:text-red-500 transition-colors opacity-0 group-hover/convo:opacity-100"
-                                            >
-                                                <Trash2 className="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
+                                        <span className={`text-sm truncate ${needsAttention ? "font-bold text-foreground" : "font-medium text-foreground"}`}>{convo.contactName}</span>
+                                        <span className="text-[11px] text-muted-foreground shrink-0 ml-2">{formatTime(convo.lastMessageTime)}</span>
                                     </div>
-                                    <div className="flex items-center gap-1.5 mb-1">
-                                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 gap-0.5 ${typeColor(convo.lastMessageType)}`}>
-                                            {typeIcon(convo.lastMessageType)}
-                                            {convo.lastMessageType}
-                                        </Badge>
-                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                            {convo.lastMessageDirection === "inbound" ? "↓ In" : "↑ Out"}
-                                        </Badge>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className={`text-xs shrink-0 ${
+                                            convo.lastMessageDirection === "inbound" ? "text-blue-500" : "text-muted-foreground/60"
+                                        }`}>
+                                            {convo.lastMessageDirection === "inbound" ? "↓" : "↑"}
+                                        </span>
+                                        <p className={`text-xs truncate ${needsAttention ? "text-foreground/70 font-medium" : "text-muted-foreground"}`}>
+                                            {convo.lastMessage}
+                                        </p>
                                     </div>
-                                    <p className="text-xs text-muted-foreground truncate">{convo.lastMessage}</p>
                                 </div>
+                                <button
+                                    onClick={(e) => handleDeleteConversation(convo.contactId, e)}
+                                    className="text-muted-foreground/20 hover:text-red-500 transition-colors opacity-0 group-hover/convo:opacity-100 shrink-0"
+                                >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                </button>
                             </div>
                         )})}
                     </div>
 
                     {/* Stats Footer */}
-                    <div className="p-3 border-t text-xs text-muted-foreground text-center">
-                        {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
-                        {(() => {
-                            const attentionCount = conversations.filter(c => c.lastMessageDirection === "inbound").length
-                            return attentionCount > 0 ? ` · ${attentionCount} need${attentionCount === 1 ? "s" : ""} attention` : ""
-                        })()}
+                    <div className="p-2.5 border-t flex items-center justify-between text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1.5">
+                            <span>{conversations.length} conversation{conversations.length !== 1 ? "s" : ""}</span>
+                            {(() => {
+                                const attentionCount = conversations.filter(c => c.lastMessageDirection === "inbound").length
+                                return attentionCount > 0 ? (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-500 border-blue-500/20">
+                                        {attentionCount} new
+                                    </Badge>
+                                ) : null
+                            })()}
+                        </div>
+                        <button
+                            onClick={() => { fetchConversations(true); if (selectedContactId) openThread(selectedContactId) }}
+                            className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+                            title="Refresh"
+                        >
+                            <RefreshCw className="h-3 w-3" />
+                            <span>{formatLastUpdated(lastUpdated)}</span>
+                        </button>
                     </div>
                 </div>
 
@@ -782,39 +906,42 @@ export default function CommunicationsPage() {
                     ) : (
                         <>
                             {/* Thread Header */}
-                            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b flex items-center justify-between bg-muted/20 shrink-0">
-                                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                                    <Button variant="ghost" size="icon" className="sm:hidden h-8 w-8 shrink-0 -ml-2" onClick={() => setSelectedContactId(null)}>
-                                        <ArrowLeft className="h-4 w-4" />
-                                    </Button>
-                                    <Avatar className="h-8 w-8 sm:h-10 sm:w-10 shrink-0">
-                                        <AvatarFallback className="bg-gradient-to-br from-slate-700 to-slate-900 text-foreground text-xs sm:text-sm font-medium">
-                                            {contact?.name?.charAt(0)}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                    <div className="min-w-0">
+                            <div className="px-4 sm:px-5 py-3 border-b flex items-center gap-3 bg-muted/10 shrink-0">
+                                <Button variant="ghost" size="icon" className="sm:hidden h-8 w-8 shrink-0 -ml-2" onClick={() => setSelectedContactId(null)}>
+                                    <ArrowLeft className="h-4 w-4" />
+                                </Button>
+                                <Avatar className="h-9 w-9 shrink-0">
+                                    <AvatarFallback className="bg-gradient-to-br from-slate-700 to-slate-900 text-foreground text-xs font-medium">
+                                        {contact?.name?.charAt(0)}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
                                         <h3 className="text-sm font-semibold truncate">{contact?.name}</h3>
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground truncate">
-                                            {contact?.email && <span className="truncate">{contact.email}</span>}
-                                            {contact?.phone && <><span className="hidden sm:inline">·</span><span className="truncate">{contact.phone}</span></>}
-                                        </div>
+                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal shrink-0 hidden sm:inline-flex">{contact?.status || "Lead"}</Badge>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        {contact?.email && <span className="truncate">{contact.email}</span>}
+                                        <span className="hidden sm:inline">·</span>
+                                        <span className="hidden sm:inline text-[11px]">{messages.length} message{messages.length !== 1 ? "s" : ""}</span>
                                     </div>
                                 </div>
-                                <Badge variant="outline" className="font-normal shrink-0 hidden sm:inline-flex">{contact?.status || "Lead"}</Badge>
-                                <div className="relative hidden sm:block">
-                                    <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
-                                    <input
-                                        type="text"
-                                        placeholder="Search messages..."
-                                        value={threadSearch}
-                                        onChange={(e) => setThreadSearch(e.target.value)}
-                                        className="h-7 w-40 pl-7 pr-2 text-xs rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                                    />
-                                    {threadSearch && (
-                                        <button onClick={() => setThreadSearch("")} className="absolute right-1.5 top-1.5 text-muted-foreground hover:text-foreground">
-                                            <X className="h-3.5 w-3.5" />
-                                        </button>
-                                    )}
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <div className="relative hidden sm:block">
+                                        <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search..."
+                                            value={threadSearch}
+                                            onChange={(e) => setThreadSearch(e.target.value)}
+                                            className="h-7 w-32 pl-7 pr-2 text-xs rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                                        />
+                                        {threadSearch && (
+                                            <button onClick={() => setThreadSearch("")} className="absolute right-1.5 top-1.5 text-muted-foreground hover:text-foreground">
+                                                <X className="h-3.5 w-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
@@ -836,7 +963,7 @@ export default function CommunicationsPage() {
                             )}
 
                             {/* Messages */}
-                            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4">
+                            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
                                 {messages.length === 0 && !threadSearch ? (
                                     <div className="flex flex-col items-center justify-center h-full text-center">
                                         <Send className="h-12 w-12 text-muted-foreground/50 mb-4" />
@@ -849,179 +976,157 @@ export default function CommunicationsPage() {
                                         <p className="text-sm">No messages match &ldquo;{threadSearch}&rdquo;</p>
                                         <button onClick={() => setThreadSearch("")} className="text-xs text-primary hover:underline">Clear search</button>
                                     </div>
-                                ) : messages.filter(m => !threadSearch || m.content?.toLowerCase().includes(threadSearch.toLowerCase())).map((msg: any) => {
+                                ) : (() => {
+                                    const filtered = messages.filter(m => !threadSearch || m.content?.toLowerCase().includes(threadSearch.toLowerCase()))
+                                    return filtered.map((msg: any, idx: number) => {
                                     const isScheduled = msg.status === "scheduled"
                                     const isCancelled = msg.status === "cancelled"
                                     const isOutbound = msg.direction === "outbound" || msg.direction === "OUTBOUND"
+                                    const showDate = shouldShowDateSeparator(filtered, idx)
+                                    const showTime = shouldShowTimestamp(filtered, idx)
+                                    const lastInGroup = isLastInGroup(filtered, idx)
+                                    const firstInGroup = isFirstInGroup(filtered, idx)
+
+                                    // Find tracking data for outbound emails
+                                    const tracking = isOutbound && msg.type === "email" && !isScheduled && !isCancelled
+                                        ? trackingData.find((t: any) => {
+                                            if (msg.content?.includes(`Subject: ${t.subject}`)) return true
+                                            const msgTime = new Date(msg.createdAt).getTime()
+                                            const trackTime = new Date(t.sentAt).getTime()
+                                            return Math.abs(msgTime - trackTime) < 60000
+                                        })
+                                        : null
 
                                     return (
-                                        <div
-                                            key={msg.id}
-                                            className={`flex ${isOutbound ? "justify-end" : "justify-start"} ${msg.parentMessageId ? "ml-6 sm:ml-10" : ""}`}
-                                        >
-                                            {msg.parentMessageId && (
-                                                <CornerDownRight className="h-4 w-4 text-muted-foreground/40 mr-1.5 mt-3 shrink-0" />
-                                            )}
-                                            <div className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 space-y-1 group ${
-                                                isCancelled
-                                                    ? "bg-muted/50 opacity-60 rounded-br-md"
-                                                    : isScheduled
-                                                    ? "bg-amber-500/10 border border-amber-500/20 rounded-br-md"
-                                                    : isOutbound
-                                                    ? "bg-primary text-primary-foreground rounded-br-md"
-                                                    : "bg-muted rounded-bl-md"
-                                            }`}>
-                                                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                    <Badge variant="outline" className={`text-[10px] px-1 py-0 gap-0.5 border-border ${isOutbound && !isScheduled && !isCancelled ? "text-primary-foreground/70" : ""
-                                                        }`}>
-                                                        {typeIcon(msg.type)}
-                                                        {msg.type}
-                                                    </Badge>
-
-                                                    {/* Thread indicator */}
-                                                    {msg.parentMessageId && (
-                                                        <Badge variant="outline" className="text-[10px] px-1 py-0 gap-0.5 bg-indigo-500/10 text-indigo-600 border-indigo-500/20">
-                                                            Reply
-                                                        </Badge>
-                                                    )}
-
-                                                    {/* Scheduled badge */}
-                                                    {isScheduled && msg.scheduledAt && (
-                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5 border-amber-500/30 text-amber-600 bg-amber-500/10">
-                                                            <CalendarDays className="h-2.5 w-2.5" />
-                                                            Scheduled for {formatScheduledDate(msg.scheduledAt)}
-                                                        </Badge>
-                                                    )}
-
-                                                    {/* Cancelled badge */}
-                                                    {isCancelled && (
-                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5 border-red-500/30 text-red-500 bg-red-500/10">
-                                                            <X className="h-2.5 w-2.5" />
-                                                            Cancelled
-                                                        </Badge>
-                                                    )}
-
-                                                    {/* Email tracking indicators for outbound emails */}
-                                                    {isOutbound && msg.type === "email" && !isScheduled && !isCancelled && (() => {
-                                                        const tracking = trackingData.find((t: any) => {
-                                                            if (msg.content?.includes(`Subject: ${t.subject}`)) return true;
-                                                            const msgTime = new Date(msg.createdAt).getTime();
-                                                            const trackTime = new Date(t.sentAt).getTime();
-                                                            return Math.abs(msgTime - trackTime) < 60000;
-                                                        });
-                                                        if (!tracking) return null;
-                                                        return (
-                                                            <div className="flex items-center gap-1.5">
-                                                                {tracking.opened ? (
-                                                                    <Badge variant="outline" className="text-[10px] px-1 py-0 gap-0.5 border-emerald-400/40 text-emerald-300 bg-emerald-500/10">
-                                                                        <Eye className="h-2.5 w-2.5" />
-                                                                        Opened{tracking.openCount > 1 ? ` (${tracking.openCount})` : ""}
-                                                                    </Badge>
-                                                                ) : (
-                                                                    <Badge variant="outline" className="text-[10px] px-1 py-0 gap-0.5 border-border text-primary-foreground/40">
-                                                                        <Eye className="h-2.5 w-2.5" />
-                                                                        Not opened
-                                                                    </Badge>
-                                                                )}
-                                                                {tracking.totalClicks > 0 && (
-                                                                    <Badge variant="outline" className="text-[10px] px-1 py-0 gap-0.5 border-blue-400/40 text-blue-300 bg-blue-500/10">
-                                                                        <MousePointerClick className="h-2.5 w-2.5" />
-                                                                        {tracking.totalClicks} click{tracking.totalClicks !== 1 ? "s" : ""}
-                                                                    </Badge>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })()}
+                                        <div key={msg.id} className="group/msg">
+                                            {/* Date separator */}
+                                            {showDate && (
+                                                <div className="text-center py-3">
+                                                    <span className="text-[11px] font-medium text-muted-foreground/60 px-3 py-1">
+                                                        {formatDateSeparator(msg.createdAt)}
+                                                    </span>
                                                 </div>
+                                            )}
 
-                                                <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isCancelled ? "line-through" : ""}`}>{msg.content}</p>
+                                            {/* Timestamp between groups */}
+                                            {showTime && !showDate && (
+                                                <div className="text-center py-2">
+                                                    <span className="text-[11px] text-muted-foreground/50">
+                                                        {new Date(msg.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                                    </span>
+                                                </div>
+                                            )}
 
-                                                {/* Attachment chips in messages */}
-                                                {msg.attachments?.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1.5 mt-2">
-                                                        {msg.attachments.map((att: any, i: number) => (
-                                                            <a
-                                                                key={i}
-                                                                href={att.url}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border bg-background/80 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/30 border-blue-200 dark:border-blue-800 transition-colors underline-offset-2 hover:underline"
+                                            <div className={`flex ${isOutbound ? "justify-end" : "justify-start"} ${lastInGroup ? "mb-2" : "mb-0.5"}`}>
+                                                <div className={`max-w-[75%] sm:max-w-[60%] px-3.5 py-2 group relative ${
+                                                    isCancelled
+                                                        ? "bg-muted/50 opacity-60 rounded-2xl"
+                                                        : isScheduled
+                                                        ? "bg-amber-500/10 border border-amber-500/20 rounded-2xl"
+                                                        : isOutbound
+                                                        ? `bg-primary text-primary-foreground ${
+                                                            lastInGroup && firstInGroup ? "rounded-2xl" :
+                                                            firstInGroup ? "rounded-2xl rounded-br-md" :
+                                                            lastInGroup ? "rounded-2xl rounded-tr-md" :
+                                                            "rounded-2xl rounded-r-md"
+                                                        }`
+                                                        : `bg-muted ${
+                                                            lastInGroup && firstInGroup ? "rounded-2xl" :
+                                                            firstInGroup ? "rounded-2xl rounded-bl-md" :
+                                                            lastInGroup ? "rounded-2xl rounded-tl-md" :
+                                                            "rounded-2xl rounded-l-md"
+                                                        }`
+                                                }`}>
+                                                    {/* Scheduled/cancelled indicator */}
+                                                    {isScheduled && msg.scheduledAt && (
+                                                        <div className="flex items-center gap-1 mb-1">
+                                                            <Clock className="h-3 w-3 text-amber-500" />
+                                                            <span className="text-[11px] text-amber-500 font-medium">
+                                                                Scheduled for {formatScheduledDate(msg.scheduledAt)}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => handleCancelScheduled(msg.id)}
+                                                                className="text-[11px] text-amber-500 hover:text-red-500 font-medium ml-1"
                                                             >
-                                                                <FileText className="h-3 w-3 shrink-0" />
-                                                                {att.filename}
-                                                            </a>
-                                                        ))}
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    )}
+
+                                                    <p className={`text-[15px] leading-relaxed whitespace-pre-wrap ${isCancelled ? "line-through" : ""}`}>{msg.content}</p>
+
+                                                    {/* Attachment chips */}
+                                                    {msg.attachments?.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                            {msg.attachments.map((att: any, i: number) => (
+                                                                <a
+                                                                    key={i}
+                                                                    href={att.url}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium transition-colors ${
+                                                                        isOutbound
+                                                                            ? "bg-primary-foreground/10 text-primary-foreground/80 hover:text-primary-foreground"
+                                                                            : "bg-background/60 text-foreground/70 hover:text-foreground"
+                                                                    }`}
+                                                                >
+                                                                    <Paperclip className="h-3 w-3 shrink-0" />
+                                                                    {att.filename}
+                                                                </a>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Hover actions */}
+                                                    <div className={`absolute top-1 ${isOutbound ? "-left-16" : "-right-16"} flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity`}>
+                                                        {!isScheduled && !isCancelled && (
+                                                            <button
+                                                                onClick={() => { setReplyToMessage(msg); textareaRef.current?.focus() }}
+                                                                className="p-1 rounded-full text-muted-foreground/40 hover:text-foreground hover:bg-muted/50 transition-colors"
+                                                            >
+                                                                <Reply className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={() => handleDeleteMessage(msg.id)}
+                                                            className="p-1 rounded-full text-muted-foreground/40 hover:text-red-500 hover:bg-muted/50 transition-colors"
+                                                        >
+                                                            <Trash2 className="h-3.5 w-3.5" />
+                                                        </button>
                                                     </div>
-                                                )}
-
-                                                <div className="flex items-center justify-between">
-                                                    <p className={`text-xs ${
-                                                        isOutbound && !isScheduled && !isCancelled
-                                                            ? "text-primary-foreground/50"
-                                                            : "text-muted-foreground"
-                                                    }`}>
-                                                        {formatTime(msg.createdAt)}
-                                                    </p>
-
-                                                    {/* Cancel button for scheduled messages */}
-                                                    {isScheduled && (
-                                                        <button
-                                                            onClick={() => handleCancelScheduled(msg.id)}
-                                                            className="text-xs text-amber-600 hover:text-red-500 font-medium transition-colors"
-                                                        >
-                                                            Cancel
-                                                        </button>
-                                                    )}
-                                                    {/* Reply button */}
-                                                    {!isScheduled && !isCancelled && (
-                                                        <button
-                                                            onClick={() => {
-                                                                setReplyToMessage(msg)
-                                                                textareaRef.current?.focus()
-                                                            }}
-                                                            className={`text-xs font-medium transition-colors flex items-center gap-0.5 opacity-0 group-hover:opacity-100 ${
-                                                                isOutbound && !isScheduled && !isCancelled
-                                                                    ? "text-primary-foreground/50 hover:text-primary-foreground/80"
-                                                                    : "text-muted-foreground hover:text-foreground"
-                                                            }`}
-                                                        >
-                                                            <Reply className="h-3 w-3" />
-                                                            Reply
-                                                        </button>
-                                                    )}
-                                                    {/* Delete button */}
-                                                    <button
-                                                        onClick={() => handleDeleteMessage(msg.id)}
-                                                        className={`text-xs font-medium transition-colors flex items-center gap-0.5 opacity-0 group-hover:opacity-100 ${
-                                                            isOutbound && !isScheduled && !isCancelled
-                                                                ? "text-primary-foreground/50 hover:text-red-300"
-                                                                : "text-muted-foreground hover:text-red-500"
-                                                        }`}
-                                                    >
-                                                        <Trash2 className="h-3 w-3" />
-                                                    </button>
                                                 </div>
                                             </div>
+
+                                            {/* Delivery status below last outbound message in group */}
+                                            {isOutbound && lastInGroup && !isScheduled && !isCancelled && (
+                                                <div className="flex justify-end pr-1 -mt-1 mb-1">
+                                                    <span className="text-[11px] text-muted-foreground/50">
+                                                        {tracking?.opened
+                                                            ? `Read${tracking.openCount > 1 ? ` ${tracking.openCount}x` : ""}`
+                                                            : msg.type === "email" ? "Delivered" : "Sent"
+                                                        }
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
                                     )
-                                })}
+                                })})()}
                                 <div ref={messagesEndRef} />
                             </div>
 
                             {/* Compose */}
-                            <div className="p-3 sm:p-4 border-t bg-muted/10 shrink-0 relative">
+                            <div className="px-3 sm:px-4 py-2.5 border-t bg-background shrink-0 relative">
                                 {/* Reply indicator */}
                                 {replyToMessage && (
-                                    <div className="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-primary/5 border border-primary/10">
-                                        <Reply className="h-3.5 w-3.5 text-primary shrink-0" />
-                                        <p className="text-xs text-muted-foreground truncate flex-1">
-                                            Replying to: <span className="font-medium text-foreground">{replyToMessage.content?.substring(0, 80)}{replyToMessage.content?.length > 80 ? "..." : ""}</span>
-                                        </p>
-                                        <button onClick={() => setReplyToMessage(null)} className="text-muted-foreground hover:text-foreground shrink-0">
+                                    <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-xl bg-muted/50 border border-border/50">
+                                        <div className="w-0.5 h-4 bg-primary rounded-full shrink-0" />
+                                        <p className="text-xs text-muted-foreground truncate flex-1">{replyToMessage.content?.substring(0, 80)}</p>
+                                        <button onClick={() => setReplyToMessage(null)} className="text-muted-foreground/50 hover:text-foreground shrink-0">
                                             <X className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
                                 )}
+
                                 {/* Schedule Picker */}
                                 {showSchedulePicker && (
                                     <SchedulePicker
@@ -1039,36 +1144,14 @@ export default function CommunicationsPage() {
                                     />
                                 )}
 
-                                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                    <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Send as:</span>
-                                    {["email", "text"].map(t => (
-                                        <button
-                                            key={t}
-                                            onClick={() => setMessageType(t)}
-                                            className={`px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors border touch-manipulation ${messageType === t
-                                                    ? `${typeColor(t)} border-current`
-                                                    : "text-muted-foreground border-transparent hover:bg-muted"
-                                                }`}
-                                        >
-                                            {t}
-                                        </button>
-                                    ))}
-                                </div>
-
                                 {/* Attachment chips */}
                                 {attachments.length > 0 && (
                                     <div className="flex flex-wrap gap-1.5 mb-2">
                                         {attachments.map((att, idx) => (
-                                            <div
-                                                key={idx}
-                                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/50 border text-xs"
-                                            >
-                                                <FileText className="h-3 w-3 text-muted-foreground" />
+                                            <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/50 border text-xs">
+                                                <Paperclip className="h-3 w-3 text-muted-foreground" />
                                                 <span className="truncate max-w-[120px]">{att.filename}</span>
-                                                <button
-                                                    onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
-                                                    className="text-muted-foreground hover:text-destructive shrink-0"
-                                                >
+                                                <button onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))} className="text-muted-foreground hover:text-destructive shrink-0">
                                                     <X className="h-3 w-3" />
                                                 </button>
                                             </div>
@@ -1076,55 +1159,17 @@ export default function CommunicationsPage() {
                                     </div>
                                 )}
 
-                                {/* Rich text formatting toolbar */}
-                                {messageType === "email" && (
-                                    <div className="flex items-center gap-0.5 mb-2 px-1">
-                                        {[
-                                            { icon: Bold, label: "Bold", prefix: "**", suffix: "**" },
-                                            { icon: Italic, label: "Italic", prefix: "_", suffix: "_" },
-                                            { icon: Link2, label: "Link", prefix: "[", suffix: "](url)" },
-                                            { icon: List, label: "List", prefix: "\n- ", suffix: "" },
-                                        ].map(({ icon: Icon, label, prefix, suffix }) => (
-                                            <button
-                                                key={label}
-                                                type="button"
-                                                title={label}
-                                                onClick={() => {
-                                                    const ta = textareaRef.current
-                                                    if (!ta) return
-                                                    const start = ta.selectionStart
-                                                    const end = ta.selectionEnd
-                                                    const selected = newMessage.substring(start, end) || label.toLowerCase()
-                                                    const before = newMessage.substring(0, start)
-                                                    const after = newMessage.substring(end)
-                                                    setNewMessage(before + prefix + selected + suffix + after)
-                                                    setTimeout(() => {
-                                                        ta.focus()
-                                                        ta.selectionStart = start + prefix.length
-                                                        ta.selectionEnd = start + prefix.length + selected.length
-                                                    }, 0)
-                                                }}
-                                                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                                            >
-                                                <Icon className="h-3.5 w-3.5" />
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-
                                 <div className="flex items-end gap-2">
-                                    {/* Compose toolbar */}
-                                    <div className="flex flex-col gap-1">
-                                        {/* Snippets button */}
+                                    {/* Left toolbar */}
+                                    <div className="flex items-center gap-0.5 shrink-0 pb-1">
+                                        {/* Channel toggle */}
                                         <button
-                                            onClick={() => { setShowSnippets(!showSnippets); setShowSchedulePicker(false) }}
-                                            className={`p-1.5 rounded-md transition-colors ${showSnippets ? "bg-amber-500/10 text-amber-500" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                                            title="Quick snippets"
+                                            onClick={() => setMessageType(messageType === "email" ? "text" : "email")}
+                                            className={`p-1.5 rounded-full transition-colors ${messageType === "email" ? "text-blue-500" : "text-emerald-500"}`}
+                                            title={`Sending as ${messageType}`}
                                         >
-                                            <Zap className="h-4 w-4" />
+                                            {messageType === "email" ? <Mail className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
                                         </button>
-
-                                        {/* Attachment button (only for email) */}
                                         {messageType === "email" && (
                                             <AttachmentPicker
                                                 contactId={selectedContactId}
@@ -1133,45 +1178,55 @@ export default function CommunicationsPage() {
                                                 onRemove={(idx) => setAttachments(prev => prev.filter((_, i) => i !== idx))}
                                             />
                                         )}
+                                        <button
+                                            onClick={() => { setShowSnippets(!showSnippets); setShowSchedulePicker(false) }}
+                                            className={`p-1.5 rounded-full transition-colors ${showSnippets ? "text-amber-500" : "text-muted-foreground/50 hover:text-foreground"}`}
+                                            title="Quick snippets"
+                                        >
+                                            <Zap className="h-4.5 w-4.5" />
+                                        </button>
                                     </div>
 
-                                    <textarea
-                                        ref={textareaRef}
-                                        value={newMessage}
-                                        onChange={(e) => setNewMessage(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter" && !e.shiftKey) {
-                                                e.preventDefault()
-                                                handleSend()
-                                            }
-                                        }}
-                                        placeholder="Type your message..."
-                                        rows={2}
-                                        className="flex-1 min-w-0 resize-none rounded-xl border border-input bg-background px-3 sm:px-4 py-2.5 text-base sm:text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[44px]"
-                                    />
-
-                                    <div className="flex flex-col gap-1 shrink-0">
-                                        <Button
-                                            onClick={handleSend}
-                                            disabled={isSending || !newMessage.trim()}
-                                            className="h-10 min-h-[44px] px-4 rounded-xl touch-manipulation"
-                                        >
-                                            <Send className="h-4 w-4 mr-1" />
-                                            {isSending ? "..." : "Send"}
-                                        </Button>
-                                        {messageType === "email" && (
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
+                                    {/* Input */}
+                                    <div className="flex-1 min-w-0 relative">
+                                        <textarea
+                                            ref={textareaRef}
+                                            value={newMessage}
+                                            onChange={(e) => setNewMessage(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter" && !e.shiftKey) {
+                                                    e.preventDefault()
+                                                    handleSend()
+                                                }
+                                            }}
+                                            placeholder={messageType === "email" ? "Email message..." : "Text message..."}
+                                            rows={1}
+                                            className="w-full resize-none rounded-2xl border border-input bg-muted/30 px-4 py-2.5 pr-10 text-[15px] shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[44px] max-h-32"
+                                        />
+                                        {/* Schedule button inside input */}
+                                        {messageType === "email" && newMessage.trim() && (
+                                            <button
                                                 onClick={() => { setShowSchedulePicker(!showSchedulePicker); setShowSnippets(false) }}
-                                                disabled={!newMessage.trim()}
-                                                className={`h-7 text-xs rounded-lg ${showSchedulePicker ? "border-primary text-primary" : ""}`}
+                                                className={`absolute right-3 top-2.5 p-1 rounded-full transition-colors ${showSchedulePicker ? "text-primary" : "text-muted-foreground/40 hover:text-foreground"}`}
+                                                title="Schedule send"
                                             >
-                                                <Clock className="h-3 w-3 mr-1" />
-                                                Schedule
-                                            </Button>
+                                                <Clock className="h-4 w-4" />
+                                            </button>
                                         )}
                                     </div>
+
+                                    {/* Send button */}
+                                    <button
+                                        onClick={handleSend}
+                                        disabled={isSending || !newMessage.trim()}
+                                        className={`p-2.5 rounded-full shrink-0 transition-all touch-manipulation ${
+                                            newMessage.trim()
+                                                ? "bg-primary text-primary-foreground shadow-sm hover:opacity-90"
+                                                : "bg-muted text-muted-foreground/30"
+                                        }`}
+                                    >
+                                        <Send className="h-5 w-5" />
+                                    </button>
                                 </div>
                             </div>
                         </>
