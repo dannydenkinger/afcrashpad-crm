@@ -41,43 +41,50 @@ export default function AttachmentPicker({ contactId, attachments, onAdd, onRemo
     }, [showPicker, contactId])
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (!file) return
-
-        if (file.size > 25 * 1024 * 1024) {
-            toast.error("File too large (max 25 MB)")
-            return
-        }
+        const files = e.target.files
+        if (!files || files.length === 0) return
 
         if (!contactId) {
             toast.error("Select a contact first")
             return
         }
 
-        try {
-            const formData = new FormData()
-            formData.append("file", file)
-            formData.append("name", file.name)
-
-            const response = await fetch(`/api/contacts/${contactId}/documents/upload`, {
-                method: "POST",
-                body: formData,
-            })
-
-            const result = await response.json()
-            if (result.success && result.document) {
-                onAdd({
-                    filename: file.name,
-                    url: result.document.url,
-                    contentType: file.type,
-                    isNew: true,
-                })
-                toast.success("File attached")
-            } else {
-                toast.error(result.error || "Upload failed")
+        let successCount = 0
+        for (const file of Array.from(files)) {
+            if (file.size > 25 * 1024 * 1024) {
+                toast.error(`${file.name} is too large (max 25 MB)`)
+                continue
             }
-        } catch {
-            toast.error("Upload failed")
+
+            try {
+                const formData = new FormData()
+                formData.append("file", file)
+                formData.append("name", file.name)
+
+                const response = await fetch(`/api/contacts/${contactId}/documents/upload`, {
+                    method: "POST",
+                    body: formData,
+                })
+
+                const result = await response.json()
+                if (result.success && result.document) {
+                    onAdd({
+                        filename: file.name,
+                        url: result.document.url,
+                        contentType: file.type,
+                        isNew: true,
+                    })
+                    successCount++
+                } else {
+                    toast.error(result.error || `Failed to upload ${file.name}`)
+                }
+            } catch {
+                toast.error(`Failed to upload ${file.name}`)
+            }
+        }
+
+        if (successCount > 0) {
+            toast.success(`${successCount} file${successCount > 1 ? "s" : ""} attached`)
         }
 
         // Reset file input
@@ -171,7 +178,7 @@ export default function AttachmentPicker({ contactId, attachments, onAdd, onRemo
                         type="file"
                         className="hidden"
                         onChange={handleFileUpload}
-                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.txt,.csv"
+                        multiple
                     />
 
                     {/* Existing documents */}

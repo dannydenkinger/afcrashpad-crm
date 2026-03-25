@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Plus, Search, Edit2, Trash2, UserCircle, X, Check } from "lucide-react"
 import { getContactStatuses, createContactStatus, updateContactStatus, deleteContactStatus } from "./actions"
+import { toast } from "sonner"
 
 interface StatusItem {
     id: string;
@@ -41,11 +42,12 @@ export function StatusManager() {
         if (!newName.trim()) return
         const res = await createContactStatus(newName.trim())
         if (res.success) {
+            toast.success("Status created")
             setNewName("")
             setIsAdding(false)
             fetchItems()
         } else {
-            alert(res.error)
+            toast.error(res.error || "Failed to create status")
         }
     }
 
@@ -53,18 +55,24 @@ export function StatusManager() {
         if (!editName.trim()) return
         const res = await updateContactStatus(id, editName.trim())
         if (res.success) {
+            toast.success("Status updated")
             setEditingId(null)
             setEditName("")
             fetchItems()
         } else {
-            alert(res.error)
+            toast.error(res.error || "Failed to update status")
         }
     }
 
     const handleDelete = async (id: string) => {
         const res = await deleteContactStatus(id)
         setDeleteTarget(null)
-        if (res.success) fetchItems()
+        if (res.success) {
+            toast.success("Status deleted")
+            fetchItems()
+        } else {
+            toast.error("Failed to delete status")
+        }
     }
 
     return (

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { FileDropZone } from "@/components/ui/FileDropZone"
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2 } from "lucide-react"
-import Papa from "papaparse"
+// papaparse is dynamically imported in handlers to reduce initial bundle size
 
 interface CSVImportDialogProps {
     isOpen: boolean
@@ -49,12 +49,13 @@ export function CSVImportDialog({
         }
     }
 
-    const handleImport = () => {
+    const handleImport = async () => {
         if (!file) return
 
         setIsUploading(true)
         setError(null)
 
+        const Papa = (await import("papaparse")).default
         Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
@@ -84,7 +85,8 @@ export function CSVImportDialog({
         })
     }
 
-    const downloadTemplate = () => {
+    const downloadTemplate = async () => {
+        const Papa = (await import("papaparse")).default
         const csv = Papa.unparse([
             templateFields.reduce((acc, field) => ({ ...acc, [field]: "" }), {})
         ])

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label"
 import { CalendarClock, Save, Loader2 } from "lucide-react"
 import { getPipelinePrioritySettings, updatePipelinePrioritySettings } from "./actions"
+import { toast } from "sonner"
 
 export function PipelinePrioritySettings() {
     const [urgentDays, setUrgentDays] = useState(14)
@@ -35,7 +36,12 @@ export function PipelinePrioritySettings() {
         const res = await updatePipelinePrioritySettings({ urgentDays: u, soonDays: s })
         setIsSaving(false)
         setMessage(res.success ? "success" : "error")
-        if (res.success) setTimeout(() => setMessage(null), 3000)
+        if (res.success) {
+            toast.success("Priority settings saved")
+            setTimeout(() => setMessage(null), 3000)
+        } else {
+            toast.error("Failed to save priority settings")
+        }
     }
 
     if (isLoading) {

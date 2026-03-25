@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Plus, Search, Edit2, Trash2, MapPin, X, Check } from "lucide-react"
 import { getBases, createBase, updateBase, deleteBase } from "./actions"
+import { toast } from "sonner"
 
 interface Base {
     id: string;
@@ -38,24 +39,40 @@ export function BasesManager() {
 
     const handleAdd = async () => {
         if (!newName.trim()) return
-        await createBase({ name: newName.trim(), zipCode: "", periods: [] })
-        setNewName("")
-        setIsAdding(false)
-        fetchBases()
+        try {
+            await createBase({ name: newName.trim(), zipCode: "", periods: [] })
+            toast.success("Base added")
+            setNewName("")
+            setIsAdding(false)
+            fetchBases()
+        } catch {
+            toast.error("Failed to add base")
+        }
     }
 
     const handleUpdate = async (id: string) => {
         if (!editName.trim()) return
-        await updateBase(id, { name: editName.trim(), zipCode: "", periods: [] })
-        setEditingId(null)
-        setEditName("")
-        fetchBases()
+        try {
+            await updateBase(id, { name: editName.trim(), zipCode: "", periods: [] })
+            toast.success("Base updated")
+            setEditingId(null)
+            setEditName("")
+            fetchBases()
+        } catch {
+            toast.error("Failed to update base")
+        }
     }
 
     const handleDelete = async (id: string) => {
-        await deleteBase(id)
-        setDeleteTarget(null)
-        fetchBases()
+        try {
+            await deleteBase(id)
+            toast.success("Base deleted")
+            setDeleteTarget(null)
+            fetchBases()
+        } catch {
+            toast.error("Failed to delete base")
+            setDeleteTarget(null)
+        }
     }
 
     const startEdit = (base: Base) => {

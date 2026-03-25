@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Plus, Search, Edit2, Trash2, Home, X, Check } from "lucide-react"
 import { getSpecialAccommodations, createSpecialAccommodation, updateSpecialAccommodation, deleteSpecialAccommodation } from "./actions"
+import { toast } from "sonner"
 
 interface AccommodationItem {
     id: string;
@@ -41,11 +42,12 @@ export function SpecialAccommodationsManager() {
         if (!newName.trim()) return
         const res = await createSpecialAccommodation(newName.trim())
         if (res.success) {
+            toast.success("Accommodation added")
             setNewName("")
             setIsAdding(false)
             fetchItems()
         } else {
-            alert(res.error)
+            toast.error(res.error || "Failed to add accommodation")
         }
     }
 
@@ -53,18 +55,24 @@ export function SpecialAccommodationsManager() {
         if (!editName.trim()) return
         const res = await updateSpecialAccommodation(id, editName.trim())
         if (res.success) {
+            toast.success("Accommodation updated")
             setEditingId(null)
             setEditName("")
             fetchItems()
         } else {
-            alert(res.error)
+            toast.error(res.error || "Failed to update accommodation")
         }
     }
 
     const handleDelete = async (id: string) => {
         const res = await deleteSpecialAccommodation(id)
         setDeleteTarget(null)
-        if (res.success) fetchItems()
+        if (res.success) {
+            toast.success("Accommodation deleted")
+            fetchItems()
+        } else {
+            toast.error("Failed to delete accommodation")
+        }
     }
 
     return (

@@ -6,18 +6,11 @@ import { revalidatePath } from "next/cache";
 import { rateLimit } from "@/lib/rate-limit";
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
-const ALLOWED_TYPES = [
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/plain",
-    "text/csv",
+const BLOCKED_TYPES = [
+    "application/x-msdownload",  // .exe
+    "application/x-msdos-program",
+    "application/x-sh",
+    "application/x-bat",
 ];
 
 function sanitizeFileName(name: string): string {
@@ -61,9 +54,10 @@ export async function POST(
         }
 
         const type = file.type || "application/octet-stream";
-        if (!ALLOWED_TYPES.includes(type) && !type.startsWith("image/")) {
+        const fileExt = (file.name || "").split(".").pop()?.toLowerCase() || "";
+        if (BLOCKED_TYPES.includes(type) || ["exe", "bat", "cmd", "sh", "msi"].includes(fileExt)) {
             return NextResponse.json(
-                { success: false, error: "File type not allowed" },
+                { success: false, error: "Executable files are not allowed" },
                 { status: 400 }
             );
         }

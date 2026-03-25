@@ -122,7 +122,7 @@ export default function AnalyticsPanel({ onClose }: AnalyticsPanelProps) {
                             </div>
                         </div>
                         <p className="text-2xl font-bold">{analytics.totalEmailsThisMonth}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Emails This Month</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Emails This Month</p>
                         <p className="text-xs text-muted-foreground mt-1">{analytics.totalEmailsAllTime} all time</p>
                     </div>
 
@@ -133,7 +133,7 @@ export default function AnalyticsPanel({ onClose }: AnalyticsPanelProps) {
                             </div>
                         </div>
                         <p className="text-2xl font-bold">{analytics.openRate}%</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Open Rate</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Open Rate</p>
                         <p className="text-xs text-muted-foreground mt-1">{analytics.openRateThisMonth}% this month</p>
                     </div>
 
@@ -144,7 +144,7 @@ export default function AnalyticsPanel({ onClose }: AnalyticsPanelProps) {
                             </div>
                         </div>
                         <p className="text-2xl font-bold">{analytics.clickRate}%</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Click Rate</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Click Rate</p>
                     </div>
 
                     <div className="rounded-xl border bg-card p-4">
@@ -154,7 +154,7 @@ export default function AnalyticsPanel({ onClose }: AnalyticsPanelProps) {
                             </div>
                         </div>
                         <p className="text-2xl font-bold">{analytics.responseRate}%</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Response Rate</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider">Response Rate</p>
                         <p className="text-xs text-muted-foreground mt-1">{analytics.repliesReceived} / {analytics.contactsEmailed} contacts</p>
                     </div>
                 </div>
@@ -164,7 +164,7 @@ export default function AnalyticsPanel({ onClose }: AnalyticsPanelProps) {
                     <div className="flex items-center gap-2 mb-4">
                         <Clock className="h-4 w-4 text-primary" />
                         <h4 className="text-sm font-semibold">Best Send Times</h4>
-                        <span className="text-[10px] text-muted-foreground">(based on opens)</span>
+                        <span className="text-xs text-muted-foreground">(based on opens)</span>
                     </div>
 
                     {analytics.bestHours.length === 0 ? (
@@ -196,7 +196,7 @@ export default function AnalyticsPanel({ onClose }: AnalyticsPanelProps) {
 
                     {/* Hour histogram */}
                     <div className="mt-4 pt-4 border-t">
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Opens by Hour of Day</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Opens by Hour of Day</p>
                         <div className="flex items-end gap-0.5 h-16">
                             {analytics.hourHistogram.map((count, hour) => {
                                 const maxH = Math.max(...analytics.hourHistogram, 1)
@@ -235,15 +235,15 @@ export default function AnalyticsPanel({ onClose }: AnalyticsPanelProps) {
                     <div className="flex items-center gap-3 mb-3">
                         <div className="flex items-center gap-1.5">
                             <div className="h-2 w-2 rounded-full bg-blue-500" />
-                            <span className="text-[10px] text-muted-foreground">Sent</span>
+                            <span className="text-xs text-muted-foreground">Sent</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                             <div className="h-2 w-2 rounded-full bg-emerald-500" />
-                            <span className="text-[10px] text-muted-foreground">Opened</span>
+                            <span className="text-xs text-muted-foreground">Opened</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                             <div className="h-2 w-2 rounded-full bg-purple-500" />
-                            <span className="text-[10px] text-muted-foreground">Clicked</span>
+                            <span className="text-xs text-muted-foreground">Clicked</span>
                         </div>
                     </div>
 

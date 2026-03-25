@@ -43,7 +43,7 @@ export default function RootLayout({
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
-      <body className={`${inter.className} h-screen bg-background antialiased overflow-hidden flex`}>
+      <body className={`${inter.className} h-screen bg-background antialiased overflow-hidden flex`} suppressHydrationWarning>
         <a href="#main-content" className="skip-to-content">Skip to content</a>
         <Providers>
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>

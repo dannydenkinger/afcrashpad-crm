@@ -115,7 +115,7 @@ export function MobileBottomNav() {
                                     onClick={() => handleNav(item.href)}
                                 >
                                     <Icon className="h-5 w-5" />
-                                    <span className="text-[10px] font-medium">{item.label}</span>
+                                    <span className="text-xs font-medium">{item.label}</span>
                                 </button>
                             )
                         })}
@@ -130,7 +130,7 @@ export function MobileBottomNav() {
                                 {theme === "dark" ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-blue-400" />}
                                 {theme === "dark" ? "Light Mode" : "Dark Mode"}
                             </span>
-                            <span className="text-[10px] text-muted-foreground">Switch</span>
+                            <span className="text-xs text-muted-foreground">Switch</span>
                         </button>
                     </div>
                 </div>
@@ -177,7 +177,7 @@ export function MobileBottomNav() {
                                 onClick={() => handleNav(tab.href)}
                             >
                                 <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 1.5} />
-                                <span className="text-[10px] font-medium">{tab.label}</span>
+                                <span className="text-xs font-medium">{tab.label}</span>
                             </button>
                         )
                     })}
@@ -205,7 +205,7 @@ export function MobileBottomNav() {
                                 onClick={() => handleNav(tab.href)}
                             >
                                 <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 1.5} />
-                                <span className="text-[10px] font-medium">{tab.label}</span>
+                                <span className="text-xs font-medium">{tab.label}</span>
                             </button>
                         )
                     })}

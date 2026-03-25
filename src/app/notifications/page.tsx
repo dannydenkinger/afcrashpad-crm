@@ -190,7 +190,7 @@ export default function NotificationsPage() {
                         <button
                             key={t}
                             onClick={() => setTypeFilter(t)}
-                            className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider transition-colors border touch-manipulation ${
+                            className={`px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors border touch-manipulation ${
                                 typeFilter === t
                                     ? "bg-primary text-primary-foreground border-primary"
                                     : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
@@ -217,7 +217,7 @@ export default function NotificationsPage() {
                     <div className="space-y-6">
                         {groupedNotifications.map(group => (
                             <div key={group.key}>
-                                <h3 className="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground mb-2 px-1">
+                                <h3 className="text-xs font-black uppercase tracking-[0.15em] text-muted-foreground mb-2 px-1">
                                     {group.label}
                                     <span className="ml-1.5 text-muted-foreground/50">{group.items.length}</span>
                                 </h3>
@@ -237,14 +237,14 @@ export default function NotificationsPage() {
                                                                 <span className={`text-sm font-medium ${notif.isRead ? "text-muted-foreground" : "text-foreground"}`}>
                                                                     {notif.title}
                                                                 </span>
-                                                                <Badge variant="outline" className="text-[10px] h-4 px-1.5 shrink-0">
+                                                                <Badge variant="outline" className="text-xs h-4 px-1.5 shrink-0">
                                                                     {typeLabel(notif.type)}
                                                                 </Badge>
                                                             </div>
                                                             <p className="text-xs text-muted-foreground line-clamp-2">{notif.message}</p>
                                                         </div>
                                                         <div className="flex items-center gap-2 shrink-0">
-                                                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                                            <span className="text-xs text-muted-foreground whitespace-nowrap">
                                                                 {formatTime(notif.createdAt)}
                                                             </span>
                                                             {notif.linkUrl && (

@@ -25,7 +25,7 @@ export async function sendEmail({
     subject: string;
     html: string;
 }) {
-    const from = process.env.RESEND_FROM_EMAIL || "AFCrashpad CRM <noreply@afcrashpad.com>";
+    const from = process.env.RESEND_FROM_EMAIL || "AFCrashpad CRM <support@afcrashpad.com>";
 
     const { data, error } = await getResend().emails.send({
         from,
@@ -53,12 +53,14 @@ export async function sendTrackedEmail({
     html,
     contactId,
     attachments,
+    replyTo,
 }: {
     to: string;
     subject: string;
     html: string;
     contactId: string;
-    attachments?: { filename: string; content: Buffer }[];
+    attachments?: { filename: string; content?: Buffer; path?: string; contentType?: string }[];
+    replyTo?: string;
 }): Promise<{ data: any; trackingId: string }> {
     const { trackingId, trackedHtml } = await createTrackedEmail({
         contactId,
@@ -67,7 +69,14 @@ export async function sendTrackedEmail({
         html,
     });
 
-    const from = process.env.RESEND_FROM_EMAIL || "AFCrashpad CRM <noreply@afcrashpad.com>";
+    const from = process.env.RESEND_FROM_EMAIL || "AFCrashpad CRM <support@afcrashpad.com>";
+
+    // Auto-generate a reply-to address that routes through Postmark inbound
+    // so replies are captured and threaded back to the conversation.
+    // Format: reply+{trackingId}@inbound.afcrashpad.com
+    // Postmark extracts the part after "+" as MailboxHash in the webhook payload.
+    const inboundDomain = process.env.POSTMARK_INBOUND_DOMAIN;
+    const effectiveReplyTo = replyTo || (inboundDomain ? `reply+${trackingId}@${inboundDomain}` : undefined);
 
     const { data, error } = await getResend().emails.send({
         from,
@@ -75,6 +84,7 @@ export async function sendTrackedEmail({
         subject,
         html: trackedHtml,
         ...(attachments?.length && { attachments }),
+        ...(effectiveReplyTo && { replyTo: effectiveReplyTo }),
     });
 
     if (error) {

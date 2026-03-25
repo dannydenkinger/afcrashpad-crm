@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
+import { useDebounce } from "@/hooks/useDebounce"
 import { Button } from "@/components/ui/button"
 import {
     Plus,
@@ -233,8 +234,18 @@ function MobileTasksView({
                             ))}
                         </div>
                     ) : groupedTasks.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-40 text-muted-foreground text-sm">
-                            {filter === "active" ? "No active tasks" : "No tasks found"}
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <CheckSquare className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                            <h3 className="text-lg font-medium text-foreground mb-1">
+                                {filter === "active" ? "No active tasks" : "No tasks found"}
+                            </h3>
+                            <p className="text-sm text-muted-foreground mb-4 max-w-sm">
+                                {filter === "active" ? "All caught up! Create a new task to stay organized." : "Try adjusting your filters or create a new task."}
+                            </p>
+                            <Button size="sm" onClick={() => { setEditingTask(null); setIsCreateDialogOpen(true); }}>
+                                <Plus className="h-4 w-4 mr-1" />
+                                Create a task
+                            </Button>
                         </div>
                     ) : (
                         groupedTasks.map(group => (
@@ -334,6 +345,7 @@ export default function TasksPage() {
     const [tasks, setTasks] = useState<any[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [searchQuery, setSearchQuery] = useState("")
+    const debouncedSearchQuery = useDebounce(searchQuery, 300)
     const [filter, setFilter] = useState<"all" | "active" | "completed">("active")
     const [sortBy, setSortBy] = useState<"dueDate" | "priority" | "created">("dueDate")
     const [quickFilters, setQuickFilters] = useState<Set<string>>(new Set())
@@ -532,7 +544,10 @@ export default function TasksPage() {
     // ── Subtasks ──────────────────────────────────────────────────────────
 
     const handleAddSubtask = async (taskId: string) => {
-        if (!newSubtaskTitle.trim()) return
+        if (!newSubtaskTitle.trim()) {
+            toast.error("Subtask title is required")
+            return
+        }
         const res = await addSubtask(taskId, newSubtaskTitle)
         if (res.success && res.subtask) {
             setTasks(prev => prev.map(t => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), res.subtask] } : t))
@@ -571,7 +586,11 @@ export default function TasksPage() {
     }, [])
 
     const handleAddComment = useCallback(async () => {
-        if (!commentSheetTaskId || !newComment.trim()) return
+        if (!commentSheetTaskId) return
+        if (!newComment.trim()) {
+            toast.error("Comment cannot be empty")
+            return
+        }
         const text = newComment.trim()
         setNewComment("")
         try {
@@ -627,8 +646,8 @@ export default function TasksPage() {
         const priorityOrder: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
 
         const filtered = tasks.filter(task => {
-            const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                task.description?.toLowerCase().includes(searchQuery.toLowerCase())
+            const matchesSearch = task.title.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+                task.description?.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
             const matchesFilter = filter === "all" ||
                 (filter === "active" && !task.completed) ||
                 (filter === "completed" && task.completed)
@@ -663,7 +682,7 @@ export default function TasksPage() {
         })
 
         return filtered
-    }, [tasks, searchQuery, filter, sortBy, quickFilters])
+    }, [tasks, debouncedSearchQuery, filter, sortBy, quickFilters])
 
     const groupedTasks = useMemo(() => {
         const groups: { key: string; label: string; tasks: any[] }[] = [
@@ -912,24 +931,24 @@ export default function TasksPage() {
                                                                 "text-sm font-black leading-none",
                                                                 task.completed && "line-through text-muted-foreground"
                                                             )}>{task.title}</h3>
-                                                            <Badge className={cn("text-[9px] font-black px-2 py-0 border leading-none uppercase tracking-tighter", getPriorityColor(task.priority))}>
+                                                            <Badge className={cn("text-[10px] font-black px-2 py-0 border leading-none uppercase tracking-tighter", getPriorityColor(task.priority))}>
                                                                 {task.priority}
                                                             </Badge>
                                                             {task.recurrence && task.recurrence.type !== "none" && (
-                                                                <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 border-primary/30 text-primary bg-primary/5 leading-none gap-0.5">
+                                                                <Badge variant="outline" className="text-[10px] font-bold px-1.5 py-0 border-primary/30 text-primary bg-primary/5 leading-none gap-0.5">
                                                                     <Repeat className="h-2.5 w-2.5" />
                                                                     {task.recurrence.interval > 1 ? `${task.recurrence.interval} ` : ""}
                                                                     {task.recurrence.type === "daily" ? "Daily" : task.recurrence.type === "weekly" ? "Weekly" : "Monthly"}
                                                                 </Badge>
                                                             )}
                                                             {isBlocked && (
-                                                                <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 border-amber-500/30 text-amber-500 bg-amber-500/5 leading-none gap-0.5">
+                                                                <Badge variant="outline" className="text-[10px] font-bold px-1.5 py-0 border-amber-500/30 text-amber-500 bg-amber-500/5 leading-none gap-0.5">
                                                                     <Lock className="h-2.5 w-2.5" />
                                                                     Blocked by: {task.blockedByTaskTitle || "task"}
                                                                 </Badge>
                                                             )}
                                                             {wasBlocked && (
-                                                                <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 border-emerald-500/30 text-emerald-500 bg-emerald-500/5 leading-none gap-0.5">
+                                                                <Badge variant="outline" className="text-[10px] font-bold px-1.5 py-0 border-emerald-500/30 text-emerald-500 bg-emerald-500/5 leading-none gap-0.5">
                                                                     <Unlock className="h-2.5 w-2.5" />
                                                                     Unblocked
                                                                 </Badge>
@@ -1046,7 +1065,7 @@ export default function TasksPage() {
                                                     <div className="h-1 w-full bg-muted/30 rounded-full overflow-hidden">
                                                         <div className="h-full bg-primary/60 rounded-full transition-all" style={{ width: `${Math.round((task.subtasks.filter((s: any) => s.completed).length / task.subtasks.length) * 100)}%` }} />
                                                     </div>
-                                                    <span className="text-[9px] text-muted-foreground">{task.subtasks.filter((s: any) => s.completed).length}/{task.subtasks.length} done</span>
+                                                    <span className="text-[10px] text-muted-foreground">{task.subtasks.filter((s: any) => s.completed).length}/{task.subtasks.length} done</span>
                                                 </div>
                                             )}
                                         </CardContent>

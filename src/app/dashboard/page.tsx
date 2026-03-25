@@ -30,19 +30,7 @@ import {
     Eye,
     EyeOff,
 } from "lucide-react"
-import {
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    AreaChart,
-    Area,
-    PieChart,
-    Pie,
-    Cell,
-    Legend
-} from 'recharts'
+import { LazyAreaChartWrapper, LazyPieChartWrapper } from '@/components/charts/LazyCharts'
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -56,6 +44,7 @@ import { getDashboardData } from "./actions"
 import type { DashboardData } from "./types"
 import { toggleTaskComplete, deleteTask } from "@/app/calendar/actions"
 import { CreateTaskDialog } from "@/components/ui/CreateTaskDialog"
+import { toast } from "sonner"
 import { exportToPDF } from "@/lib/export"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh"
@@ -137,12 +126,12 @@ function MobileDashboard({
                                 onClick={() => router.push(card.href)}
                             >
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</span>
+                                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</span>
                                     <Icon className={`h-3.5 w-3.5 ${card.color} opacity-60`} />
                                 </div>
                                 <div className="text-xl font-bold text-foreground">{card.value}</div>
                                 {card.trend != null && (
-                                    <div className={`flex items-center gap-1 mt-1 text-[10px] font-medium ${card.trend >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                    <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${card.trend >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                                         {card.trend >= 0 ? <TrendingUp className="h-2.5 w-2.5" /> : <TrendingDown className="h-2.5 w-2.5" />}
                                         {card.trend > 0 ? "+" : ""}{card.trend}%
                                     </div>
@@ -161,7 +150,7 @@ function MobileDashboard({
                         { label: "Open", value: kpi.openInquiries.toString(), color: "bg-rose-500/10 text-rose-400" },
                     ].map(stat => (
                         <div key={stat.label} className={`flex-shrink-0 rounded-xl px-3.5 py-2 ${stat.color}`}>
-                            <span className="text-[10px] font-medium opacity-70">{stat.label}</span>
+                            <span className="text-xs font-medium opacity-70">{stat.label}</span>
                             <span className="ml-1.5 text-xs font-bold">{stat.value}</span>
                         </div>
                     ))}
@@ -178,7 +167,7 @@ function MobileDashboard({
                                         <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
                                         <span className="text-xs font-medium text-foreground flex-1 truncate">{stage.name}</span>
                                         <span className="text-xs font-bold text-foreground">{stage.count}</span>
-                                        <span className="text-[10px] text-muted-foreground w-14 text-right">{formatCurrency(stage.value)}</span>
+                                        <span className="text-xs text-muted-foreground w-14 text-right">{formatCurrency(stage.value)}</span>
                                     </div>
                                 ))}
                             </div>
@@ -207,7 +196,7 @@ function MobileDashboard({
                                     <div className="flex-1 min-w-0">
                                         <span className="text-sm font-medium text-foreground block truncate">{task.title}</span>
                                         {task.dueDate && (
-                                            <span className="text-[10px] text-muted-foreground">{task.dueDate.split('-').slice(1).join('/')}</span>
+                                            <span className="text-xs text-muted-foreground">{task.dueDate.split('-').slice(1).join('/')}</span>
                                         )}
                                     </div>
                                     <div className={`w-2 h-2 rounded-full shrink-0 ${
@@ -334,17 +323,29 @@ export default function DashboardPage() {
 
     const handleToggleTask = useCallback(async (taskId: string, currentStatus: string) => {
         const newCompleted = currentStatus !== "Completed"
+        const previousTasks = tasks
         setTasks(prev => prev.map(t =>
             t.id === taskId ? { ...t, status: newCompleted ? "Completed" : "Pending" } : t
         ))
-        await toggleTaskComplete(taskId, newCompleted)
-    }, [])
+        try {
+            await toggleTaskComplete(taskId, newCompleted)
+        } catch {
+            setTasks(previousTasks)
+            toast.error("Failed to update task")
+        }
+    }, [tasks])
 
     const handleDeleteTask = useCallback(async (taskId: string, e: React.MouseEvent) => {
         e.stopPropagation()
+        const previousTasks = tasks
         setTasks(prev => prev.filter(t => t.id !== taskId))
-        await deleteTask(taskId)
-    }, [])
+        try {
+            await deleteTask(taskId)
+        } catch {
+            setTasks(previousTasks)
+            toast.error("Failed to delete task")
+        }
+    }, [tasks])
 
     const handleEditTask = useCallback((task: any, e: React.MouseEvent) => {
         e.stopPropagation()
@@ -377,7 +378,7 @@ export default function DashboardPage() {
                         </h2>
                         <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Loading analytics...</p>
                     </div>
-                    <div className="grid gap-4 sm:gap-5 grid-cols-2 lg:grid-cols-4">
+                    <div className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                         {[...Array(8)].map((_, i) => (
                             <Card key={i} className="border-none shadow-sm bg-card/40 backdrop-blur-md">
                                 <CardContent className="pt-6">
@@ -408,10 +409,16 @@ export default function DashboardPage() {
                         <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Operations overview & real-time analytics.</p>
                     </div>
                     <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
-                        <CardContent className="py-16 flex flex-col items-center justify-center text-muted-foreground">
-                            <AlertCircle className="h-12 w-12 mb-4 opacity-20" />
-                            <p className="text-lg font-medium">No pipeline data yet</p>
-                            <p className="text-sm mt-1">Create a pipeline and add opportunities to see your dashboard analytics.</p>
+                        <CardContent className="py-16 flex flex-col items-center justify-center text-center">
+                            <BarChart3 className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                            <h3 className="text-lg font-medium text-foreground mb-1">No pipeline data yet</h3>
+                            <p className="text-sm text-muted-foreground mb-4 max-w-sm">
+                                Create a pipeline and add opportunities to see your dashboard analytics.
+                            </p>
+                            <Button size="sm" onClick={() => router.push("/pipeline")}>
+                                <Plus className="h-4 w-4 mr-1" />
+                                Go to Pipeline
+                            </Button>
                         </CardContent>
                     </Card>
                 </div>
@@ -470,7 +477,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-2">
                         {lastRefreshed && (
-                            <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                            <span className="text-xs text-muted-foreground hidden sm:inline">
                                 Updated {lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                         )}
@@ -526,7 +533,7 @@ export default function DashboardPage() {
                         <CardContent className="pt-4 pb-3">
                             <div className="flex items-center justify-between mb-3">
                                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Customize Layout</p>
-                                <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => {
+                                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => {
                                     setWidgetOrder(defaultWidgetOrder)
                                     setHiddenWidgets([])
                                     localStorage.removeItem('dashboard-widget-order')
@@ -558,7 +565,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* KPI Row */}
-                <div className="grid gap-4 sm:gap-5 grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                     <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md overflow-hidden cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/contacts?status=Active+Stay')} role="link">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Tenants</CardTitle>
@@ -566,7 +573,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{kpi.activeStayCount}</div>
-                            <p className="text-xs sm:text-[10px] text-muted-foreground mt-1 font-medium">
+                            <p className="text-xs sm:text-xs text-muted-foreground mt-1 font-medium">
                                 {kpi.totalContacts} total contacts
                             </p>
                         </CardContent>
@@ -578,7 +585,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{kpi.conversionRate}%</div>
-                            <p className="text-xs sm:text-[10px] text-muted-foreground mt-1 font-medium">
+                            <p className="text-xs sm:text-xs text-muted-foreground mt-1 font-medium">
                                 Opportunities → Booked
                             </p>
                         </CardContent>
@@ -590,7 +597,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{formatCurrency(kpi.monthlyRevenue)}</div>
-                            <p className="text-xs sm:text-[10px] mt-1 font-medium flex items-center gap-1">
+                            <p className="text-xs sm:text-xs mt-1 font-medium flex items-center gap-1">
                                 {kpi.revenueTrend != null ? (
                                     <>
                                         {kpi.revenueTrend >= 0 ? (
@@ -617,20 +624,16 @@ export default function DashboardPage() {
                             <div className="text-2xl font-bold">{formatCurrency(kpi.totalPipelineValue)}</div>
                             {valueData.length > 1 && (
                                 <div className="h-8 mt-1 -mx-1">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={valueData}>
-                                            <defs>
-                                                <linearGradient id="sparkPipeline" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                                                    <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                                                </linearGradient>
-                                            </defs>
-                                            <Area type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={1.5} fill="url(#sparkPipeline)" isAnimationActive={false} />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
+                                    <LazyAreaChartWrapper
+                                        variant="sparkline"
+                                        data={valueData}
+                                        dataKey="value"
+                                        gradientId="sparkPipeline"
+                                        strokeColor="hsl(var(--primary))"
+                                    />
                                 </div>
                             )}
-                            {valueData.length <= 1 && <p className="text-xs sm:text-[10px] text-muted-foreground mt-1 font-medium">Total opportunity value</p>}
+                            {valueData.length <= 1 && <p className="text-xs sm:text-xs text-muted-foreground mt-1 font-medium">Total opportunity value</p>}
                         </CardContent>
                     </Card>
                     <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/finance')} role="link">
@@ -640,7 +643,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold text-emerald-600">{formatCurrency(kpi.totalClosedProfit)}</div>
-                            <p className="text-xs sm:text-[10px] text-muted-foreground mt-1 font-medium">
+                            <p className="text-xs sm:text-xs text-muted-foreground mt-1 font-medium">
                                 {kpi.avgProfitPerDeal > 0 ? `Avg ${formatCurrency(kpi.avgProfitPerDeal)}/deal` : "Across signed deals"}
                             </p>
                         </CardContent>
@@ -652,7 +655,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{formatCurrency(kpi.weightedForecast)}</div>
-                            <p className="text-xs sm:text-[10px] text-muted-foreground mt-1 font-medium">Probability-adjusted</p>
+                            <p className="text-xs sm:text-xs text-muted-foreground mt-1 font-medium">Probability-adjusted</p>
                         </CardContent>
                     </Card>
                     <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md cursor-pointer hover:ring-1 hover:ring-primary/20 transition-all" onClick={() => router.push('/contacts')} role="link">
@@ -662,7 +665,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{kpi.leadVelocity}</div>
-                            <p className="text-xs sm:text-[10px] mt-1 font-medium flex items-center gap-1">
+                            <p className="text-xs sm:text-xs mt-1 font-medium flex items-center gap-1">
                                 {kpi.leadVelocityTrend != null ? (
                                     <>
                                         {kpi.leadVelocityTrend >= 0 ? (
@@ -687,7 +690,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{kpi.openInquiries}</div>
-                            <p className="text-xs sm:text-[10px] text-muted-foreground mt-1 font-medium">
+                            <p className="text-xs sm:text-xs text-muted-foreground mt-1 font-medium">
                                 {kpi.avgDealValue > 0 ? `Avg ${formatCurrency(kpi.avgDealValue)}/deal` : "Active opportunities"}
                             </p>
                         </CardContent>
@@ -707,7 +710,7 @@ export default function DashboardPage() {
                                     <button
                                         key={tab.key}
                                         onClick={() => setChartView(tab.key)}
-                                        className={`px-3 py-2 sm:px-2.5 sm:py-1 text-xs sm:text-[10px] font-bold rounded-sm transition-all min-h-[36px] sm:min-h-0 touch-manipulation ${chartView === tab.key ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                                        className={`px-3 py-2 sm:px-2.5 sm:py-1 text-xs sm:text-xs font-bold rounded-sm transition-all min-h-[36px] sm:min-h-0 touch-manipulation ${chartView === tab.key ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                                     >
                                         {tab.label}
                                     </button>
@@ -721,7 +724,7 @@ export default function DashboardPage() {
                                         <button
                                             key={t}
                                             onClick={() => setTimeframe(t)}
-                                            className={`px-3 py-2 sm:px-2 sm:py-1 text-xs sm:text-[10px] font-bold rounded-sm transition-all min-h-[36px] sm:min-h-0 touch-manipulation ${timeframe === t ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                                            className={`px-3 py-2 sm:px-2 sm:py-1 text-xs sm:text-xs font-bold rounded-sm transition-all min-h-[36px] sm:min-h-0 touch-manipulation ${timeframe === t ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                                         >
                                             {t.toUpperCase()}
                                         </button>
@@ -744,32 +747,17 @@ export default function DashboardPage() {
                                 </p>
                                 <div className="h-[240px] sm:h-[280px] w-full min-h-0">
                                     {valueData.some(d => d.value > 0) ? (
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={valueData} margin={{ left: -10, right: 5 }}>
-                                                <defs>
-                                                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                                    </linearGradient>
-                                                </defs>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.08} />
-                                                <XAxis
-                                                    dataKey="name"
-                                                    axisLine={false}
-                                                    tickLine={false}
-                                                    tick={{ fontSize: 10, fill: '#666' }}
-                                                    dy={10}
-                                                    interval={timeframe === "1m" ? 4 : timeframe === "6m" ? 3 : 1}
-                                                />
-                                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#666' }} width={45} tickFormatter={(value) => value >= 1000000 ? `$${(value / 1000000).toFixed(1)}M` : `$${Math.round(value / 1000)}K`} />
-                                                <Tooltip
-                                                    contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-                                                    itemStyle={{ color: '#10b981', padding: '0' }}
-                                                    formatter={(value: number | undefined) => [`$${(value ?? 0).toLocaleString()}`, 'Value']}
-                                                />
-                                                <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" animationDuration={1500} />
-                                            </AreaChart>
-                                        </ResponsiveContainer>
+                                        <LazyAreaChartWrapper
+                                            variant="full"
+                                            data={valueData}
+                                            dataKey="value"
+                                            gradientId="colorValue"
+                                            strokeColor="#10b981"
+                                            gradientStopColor="#10b981"
+                                            xAxisInterval={timeframe === "1m" ? 4 : timeframe === "6m" ? 3 : 1}
+                                            yAxisFormatter={(value) => value >= 1000000 ? `$${(value / 1000000).toFixed(1)}M` : `$${Math.round(value / 1000)}K`}
+                                            tooltipFormatter={(value: any) => [`$${(Number(value) || 0).toLocaleString()}`, 'Value']}
+                                        />
                                     ) : (
                                         <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                                             No opportunity data for this period
@@ -825,11 +813,11 @@ export default function DashboardPage() {
                                                 <div className="flex items-center gap-2">
                                                     <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: stage.color }} />
                                                     <span className="font-semibold text-foreground/90">{stage.name}</span>
-                                                    <span className="text-[10px] text-muted-foreground font-medium">({stage.count})</span>
+                                                    <span className="text-xs text-muted-foreground font-medium">({stage.count})</span>
                                                 </div>
                                                 <div className="text-right">
                                                     <span className="font-bold text-foreground">${stage.value.toLocaleString()}</span>
-                                                    <span className="ml-2 text-[10px] text-muted-foreground font-medium">
+                                                    <span className="ml-2 text-xs text-muted-foreground font-medium">
                                                         {totalCount > 0 ? ((stage.count / totalCount) * 100).toFixed(0) : 0}%
                                                     </span>
                                                 </div>
@@ -876,7 +864,7 @@ export default function DashboardPage() {
                                                 </div>
                                                 <div className="text-right">
                                                     <span className="font-bold text-foreground">{base.deals} {base.deals === 1 ? 'deal' : 'deals'}</span>
-                                                    <span className="ml-2 text-[10px] text-muted-foreground font-medium">
+                                                    <span className="ml-2 text-xs text-muted-foreground font-medium">
                                                         {totalDeals > 0 ? ((base.deals / totalDeals) * 100).toFixed(0) : 0}%
                                                     </span>
                                                 </div>
@@ -915,36 +903,7 @@ export default function DashboardPage() {
                         <CardContent className="pt-0 px-4 sm:px-6">
                             <div className="h-[220px] w-full min-h-0">
                                 {donutData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie
-                                                data={donutData}
-                                                cx="50%"
-                                                cy="45%"
-                                                innerRadius={55}
-                                                outerRadius={70}
-                                                paddingAngle={4}
-                                                dataKey="value"
-                                                animationDuration={1500}
-                                                stroke="none"
-                                            >
-                                                {donutData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                                ))}
-                                            </Pie>
-                                            <Tooltip
-                                                contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#18181b', fontSize: '11px' }}
-                                                itemStyle={{ color: '#18181b' }}
-                                                formatter={(value: any, name: any) => [`${value} deals`, name]}
-                                            />
-                                            <Legend
-                                                verticalAlign="bottom"
-                                                height={36}
-                                                iconSize={6}
-                                                formatter={(value) => <span className="text-[9px] text-muted-foreground font-medium uppercase tracking-tight">{value}</span>}
-                                            />
-                                        </PieChart>
-                                    </ResponsiveContainer>
+                                    <LazyPieChartWrapper data={donutData} />
                                 ) : (
                                     <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                                         No deals in this pipeline
@@ -977,7 +936,7 @@ export default function DashboardPage() {
                                             <span className="text-sm sm:text-xs font-medium truncate max-w-[200px]">{task.title}</span>
                                         </div>
                                         <div className="flex items-center gap-1 shrink-0">
-                                            {task.dueDate && <Badge variant="outline" className="text-xs sm:text-[9px] h-7 sm:h-5">{task.dueDate.split('-').slice(1).join('/')}</Badge>}
+                                            {task.dueDate && <Badge variant="outline" className="text-xs sm:text-[10px] h-7 sm:h-5">{task.dueDate.split('-').slice(1).join('/')}</Badge>}
                                             <Button variant="ghost" size="icon" className="h-6 w-6 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={(e) => handleEditTask(task, e)}>
                                                 <Pencil className="h-3 w-3" />
                                             </Button>

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Plus, Search, Edit2, Trash2, Megaphone, X, Check } from "lucide-react"
 import { getLeadSources, createLeadSource, updateLeadSource, deleteLeadSource } from "./actions"
+import { toast } from "sonner"
 
 interface LeadSource {
     id: string;
@@ -40,11 +41,12 @@ export function LeadSourceManager() {
         if (!newName.trim()) return
         const res = await createLeadSource(newName.trim())
         if (res.success) {
+            toast.success("Lead source created")
             setNewName("")
             setIsAdding(false)
             fetchSources()
         } else {
-            alert(res.error)
+            toast.error(res.error || "Failed to create lead source")
         }
     }
 
@@ -52,17 +54,23 @@ export function LeadSourceManager() {
         if (!editName.trim()) return
         const res = await updateLeadSource(id, editName.trim())
         if (res.success) {
+            toast.success("Lead source updated")
             setEditingId(null)
             setEditName("")
             fetchSources()
         } else {
-            alert(res.error)
+            toast.error(res.error || "Failed to update lead source")
         }
     }
 
     const handleDelete = async (id: string) => {
-        await deleteLeadSource(id)
+        const res = await deleteLeadSource(id)
         setDeleteTarget(null)
+        if (res.success) {
+            toast.success("Lead source deleted")
+        } else {
+            toast.error("Failed to delete lead source")
+        }
         fetchSources()
     }
 

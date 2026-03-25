@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Plus, Search, Edit2, Trash2, Tag as TagIcon, X, Check } from "lucide-react"
 import { getTags, createTag, updateTag, deleteTag } from "./actions"
+import { toast } from "sonner"
 
 interface Tag {
     id: string;
@@ -53,12 +54,13 @@ export function TagManager() {
         if (!newName.trim()) return
         const res = await createTag(newName.trim(), newColor)
         if (res.success) {
+            toast.success("Tag created")
             setNewName("")
             setNewColor("#3b82f6")
             setIsAdding(false)
             fetchTags()
         } else {
-            alert(res.error)
+            toast.error(res.error || "Failed to create tag")
         }
     }
 
@@ -66,17 +68,23 @@ export function TagManager() {
         if (!editName.trim()) return
         const res = await updateTag(id, editName.trim(), editColor)
         if (res.success) {
+            toast.success("Tag updated")
             setEditingId(null)
             setEditName("")
             fetchTags()
         } else {
-            alert(res.error)
+            toast.error(res.error || "Failed to update tag")
         }
     }
 
     const handleDelete = async (id: string) => {
-        await deleteTag(id)
+        const res = await deleteTag(id)
         setDeleteTarget(null)
+        if (res.success) {
+            toast.success("Tag deleted")
+        } else {
+            toast.error("Failed to delete tag")
+        }
         fetchTags()
     }
 

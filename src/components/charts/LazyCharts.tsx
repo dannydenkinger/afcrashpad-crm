@@ -1,39 +1,38 @@
 "use client"
 
+/**
+ * Lazy-loaded recharts wrapper components.
+ *
+ * Recharts sub-components (XAxis, Cell, Pie, etc.) cannot be individually
+ * wrapped with next/dynamic because recharts uses React.Children to inspect
+ * them — a dynamic wrapper breaks that introspection.
+ *
+ * Instead, we provide pre-built chart wrapper components that are themselves
+ * dynamically loaded. Each wrapper accepts data + config props and renders
+ * the full recharts tree internally, keeping all recharts imports in one
+ * code-split chunk.
+ */
+
 import dynamic from "next/dynamic"
 import { Skeleton } from "@/components/ui/skeleton"
 
-/**
- * Lazy-loaded recharts components to reduce initial bundle size.
- * Import these instead of directly importing from "recharts" in page-level components.
- */
-
 const ChartSkeleton = () => <Skeleton className="h-full w-full rounded-xl" />
 
-export const LazyAreaChart = dynamic(
-    () => import("recharts").then((mod) => mod.AreaChart),
-    { loading: ChartSkeleton, ssr: false }
-)
-
-export const LazyPieChart = dynamic(
-    () => import("recharts").then((mod) => mod.PieChart),
-    { loading: ChartSkeleton, ssr: false }
-)
+// ── Container components (safe to dynamic-wrap individually) ──────────────
 
 export const LazyResponsiveContainer = dynamic(
     () => import("recharts").then((mod) => mod.ResponsiveContainer),
     { loading: ChartSkeleton, ssr: false }
 )
 
-// Re-export lightweight components that don't need lazy loading
-// (they're sub-components used inside charts and have negligible size)
-export {
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Area,
-    Pie,
-    Cell,
-    Legend,
-} from "recharts"
+// ── Full chart wrappers (recharts loaded in a single code-split chunk) ────
+
+export const LazyAreaChartWrapper = dynamic(
+    () => import("./RechartsAreaChart"),
+    { loading: ChartSkeleton, ssr: false }
+)
+
+export const LazyPieChartWrapper = dynamic(
+    () => import("./RechartsPieChart"),
+    { loading: ChartSkeleton, ssr: false }
+)

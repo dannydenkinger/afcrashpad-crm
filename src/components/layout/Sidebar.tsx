@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useCallback, useRef } from "react"
+import React, { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import NextImage from "next/image"
@@ -8,10 +8,8 @@ import { LayoutDashboard, Users, Calendar, Settings, Plane, ChevronLeft, Chevron
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useSession, signOut } from "next-auth/react"
-import { getCurrentUserRole, getSidebarProfile } from "@/app/settings/users/actions"
 import { getVisibleNavItems, type UserRole } from "@/lib/role-permissions"
-import { getBrandingSettings } from "@/app/settings/branding/actions"
-import { getOverdueTaskCount } from "@/app/calendar/actions"
+import { getSidebarData } from "@/app/sidebar/actions"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
@@ -41,7 +39,7 @@ interface SidebarProps {
     mobileCollapsed?: boolean
 }
 
-export function Sidebar({ onNavigate, className, mobileCollapsed }: SidebarProps) {
+function SidebarInner({ onNavigate, className, mobileCollapsed }: SidebarProps) {
     const pathname = usePathname()
     const router = useRouter()
     const { data: session } = useSession()
@@ -94,36 +92,14 @@ export function Sidebar({ onNavigate, className, mobileCollapsed }: SidebarProps
             }
         }, 0)
 
-        async function fetchRole() {
-            if (session?.user?.id) {
-                const role = await getCurrentUserRole()
-                setRealRole(role as UserRole)
-            }
-        }
-        fetchRole()
-
-        async function fetchProfile() {
-            const profile = await getSidebarProfile()
-            if (profile.imageUrl) setProfileImageUrl(profile.imageUrl)
-            if (profile.name) setDisplayName(profile.name)
-        }
-        fetchProfile()
-
-        async function fetchBranding() {
-            try {
-                const b = await getBrandingSettings()
-                if (b) setBranding(b)
-            } catch { }
-        }
-        fetchBranding()
-
-        async function fetchOverdueCount() {
-            try {
-                const count = await getOverdueTaskCount()
-                setOverdueCount(count)
-            } catch { }
-        }
-        fetchOverdueCount()
+        // Single consolidated fetch for all sidebar data (1 round trip instead of 4)
+        getSidebarData().then(data => {
+            setRealRole(data.role as UserRole)
+            if (data.name) setDisplayName(data.name)
+            if (data.imageUrl) setProfileImageUrl(data.imageUrl)
+            if (data.branding) setBranding(data.branding)
+            setOverdueCount(data.overdueTaskCount)
+        }).catch(() => {})
 
         return () => clearTimeout(timer)
     }, [session])
@@ -184,7 +160,7 @@ export function Sidebar({ onNavigate, className, mobileCollapsed }: SidebarProps
                         }
                         return (
                             <div key={`sep-${idx}`} className="pt-4 pb-1 px-3">
-                                <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">{item.separator}</span>
+                                <span className="text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">{item.separator}</span>
                             </div>
                         )
                     }
@@ -229,7 +205,7 @@ export function Sidebar({ onNavigate, className, mobileCollapsed }: SidebarProps
                             <Icon className={cn("shrink-0", showCollapsed ? "h-5 w-5" : "h-4 w-4")} />
                             {!showCollapsed && <span>{item.name}</span>}
                             {!showCollapsed && item.name === "Tasks" && overdueCount > 0 && (
-                                <span className="ml-auto text-[10px] font-bold bg-rose-500 text-white rounded-full h-5 min-w-[20px] flex items-center justify-center px-1.5">
+                                <span className="ml-auto text-xs font-bold bg-rose-500 text-white rounded-full h-5 min-w-[20px] flex items-center justify-center px-1.5">
                                     {overdueCount}
                                 </span>
                             )}
@@ -275,3 +251,5 @@ export function Sidebar({ onNavigate, className, mobileCollapsed }: SidebarProps
         </div>
     )
 }
+
+export const Sidebar = React.memo(SidebarInner)

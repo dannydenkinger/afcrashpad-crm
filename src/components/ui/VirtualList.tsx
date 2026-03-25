@@ -1,6 +1,7 @@
 "use client"
 
-import React from "react"
+import React, { useRef } from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "@/lib/utils"
 
 interface VirtualListProps<T> {
@@ -13,16 +14,46 @@ interface VirtualListProps<T> {
 
 export function VirtualList<T>({
     items,
+    estimateSize,
     renderItem,
     className,
+    overscan = 5,
 }: VirtualListProps<T>) {
+    const parentRef = useRef<HTMLDivElement>(null)
+
+    const virtualizer = useVirtualizer({
+        count: items.length,
+        getScrollElement: () => parentRef.current,
+        estimateSize: () => estimateSize,
+        overscan,
+    })
+
     return (
-        <div className={cn("overflow-auto", className)}>
-            {items.map((item, index) => (
-                <React.Fragment key={index}>
-                    {renderItem(item, index)}
-                </React.Fragment>
-            ))}
+        <div ref={parentRef} className={cn("overflow-auto", className)}>
+            <div
+                style={{
+                    height: `${virtualizer.getTotalSize()}px`,
+                    width: "100%",
+                    position: "relative",
+                }}
+            >
+                {virtualizer.getVirtualItems().map((virtualItem) => (
+                    <div
+                        key={virtualItem.key}
+                        style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: "100%",
+                            transform: `translateY(${virtualItem.start}px)`,
+                        }}
+                        data-index={virtualItem.index}
+                        ref={virtualizer.measureElement}
+                    >
+                        {renderItem(items[virtualItem.index], virtualItem.index)}
+                    </div>
+                ))}
+            </div>
         </div>
     )
 }

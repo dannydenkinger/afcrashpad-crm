@@ -6,3 +6,13 @@
   NODE_OPTIONS = "--max-old-space-size=4096"
   # Disable secrets scan: NEXT_PUBLIC_* vars are baked into client bundle by design; secrets are in Netlify env vars only
   SECRETS_SCAN_ENABLED = "false"
+
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, immutable, max-age=31536000"
+
+[[headers]]
+  for = "/icons/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

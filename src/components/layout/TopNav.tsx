@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { Bell, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ModeToggle } from "@/components/theme-toggle"
@@ -8,21 +8,21 @@ import { getNotifications } from "@/app/notifications/actions"
 import { CommandPalette } from "@/components/CommandPalette"
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh"
 
-export function TopNav({ onMenuClick, onNotificationsClick }: { onMenuClick?: () => void; onNotificationsClick?: () => void }) {
+function TopNavInner({ onMenuClick, onNotificationsClick }: { onMenuClick?: () => void; onNotificationsClick?: () => void }) {
     const [unreadCount, setUnreadCount] = useState(0)
 
-    const fetchNotifications = async () => {
+    const fetchNotifications = useCallback(async () => {
         const res = await getNotifications()
         if (res.success) {
             setUnreadCount(res.unreadCount || 0)
         }
-    }
+    }, [])
 
     useEffect(() => {
         fetchNotifications()
         const interval = setInterval(fetchNotifications, 30000)
         return () => clearInterval(interval)
-    }, [])
+    }, [fetchNotifications])
 
     useRealtimeRefresh(fetchNotifications)
 
@@ -63,3 +63,5 @@ export function TopNav({ onMenuClick, onNotificationsClick }: { onMenuClick?: ()
         </header>
     )
 }
+
+export const TopNav = React.memo(TopNavInner)

@@ -17,6 +17,16 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { toast } from "sonner"
 import {
     getCustomFields,
@@ -71,6 +81,7 @@ export function CustomFieldsManager() {
     const [saving, setSaving] = useState(false)
     const [newOption, setNewOption] = useState("")
     const [activeTab, setActiveTab] = useState<"contact" | "deal">("contact")
+    const [deleteTarget, setDeleteTarget] = useState<CustomField | null>(null)
 
     useEffect(() => {
         loadFields()
@@ -149,14 +160,16 @@ export function CustomFieldsManager() {
         }
     }
 
-    async function handleDelete(field: CustomField) {
-        if (!confirm(`Delete custom field "${field.name}"? This will not remove existing values from records.`)) return
+    async function handleConfirmDelete() {
+        if (!deleteTarget) return
         try {
-            await deleteCustomField(field.id)
+            await deleteCustomField(deleteTarget.id)
             toast.success("Custom field deleted")
+            setDeleteTarget(null)
             loadFields()
         } catch (err: any) {
             toast.error(err.message || "Failed to delete custom field")
+            setDeleteTarget(null)
         }
     }
 
@@ -252,7 +265,7 @@ export function CustomFieldsManager() {
                                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(field)}>
                                             <Edit2 className="h-3.5 w-3.5" />
                                         </Button>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(field)}>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteTarget(field)}>
                                             <Trash2 className="h-3.5 w-3.5" />
                                         </Button>
                                     </div>
@@ -361,6 +374,26 @@ export function CustomFieldsManager() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete custom field?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will delete the &ldquo;{deleteTarget?.name}&rdquo; custom field. Existing values stored on records will not be removed, but the field will no longer appear in detail views. This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-white hover:bg-destructive/90"
+                            onClick={handleConfirmDelete}
+                        >
+                            Delete Field
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     )
 }

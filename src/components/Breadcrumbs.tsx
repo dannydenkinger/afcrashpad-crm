@@ -26,6 +26,15 @@ const labels: Record<string, string> = {
     blog: "Blog",
     seo: "SEO",
     analytics: "Analytics",
+    prepare: "Prepare",
+    sign: "Sign",
+    haro: "HARO",
+    bookings: "Bookings",
+    commissions: "Commissions",
+    referrals: "Referrals",
+    forecasting: "Forecasting",
+    "system-properties": "System Properties",
+    branding: "Branding",
 }
 
 export function Breadcrumbs() {

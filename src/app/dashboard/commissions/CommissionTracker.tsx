@@ -149,7 +149,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{formatCurrency(data.totalEarned)}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">{data.entries.length} commissions</p>
+                        <p className="text-xs text-muted-foreground mt-1">{data.entries.length} commissions</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -159,7 +159,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-emerald-600">{formatCurrency(data.totalPaid)}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">Settled commissions</p>
+                        <p className="text-xs text-muted-foreground mt-1">Settled commissions</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -169,7 +169,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-amber-600">{formatCurrency(data.totalPending)}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">Awaiting payment</p>
+                        <p className="text-xs text-muted-foreground mt-1">Awaiting payment</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -179,7 +179,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{data.defaultRate}%</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">Commission rate</p>
+                        <p className="text-xs text-muted-foreground mt-1">Commission rate</p>
                     </CardContent>
                 </Card>
             </div>
@@ -200,7 +200,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                                 <div key={`mobile-${agent.agentId}`} className="p-3 rounded-xl border border-border/50 bg-card space-y-2">
                                     <div className="flex items-center gap-3">
                                         <Avatar className="h-8 w-8 border border-background shadow-sm">
-                                            <AvatarFallback className="text-[10px] font-bold bg-primary/10 text-primary">
+                                            <AvatarFallback className="text-xs font-bold bg-primary/10 text-primary">
                                                 {agent.agentName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)}
                                             </AvatarFallback>
                                         </Avatar>
@@ -236,7 +236,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                                             <td className="px-4 sm:px-6 py-3.5">
                                                 <div className="flex items-center gap-3">
                                                     <Avatar className="h-7 w-7 border border-background shadow-sm">
-                                                        <AvatarFallback className="text-[9px] font-bold bg-primary/10 text-primary">
+                                                        <AvatarFallback className="text-[10px] font-bold bg-primary/10 text-primary">
                                                             {agent.agentName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)}
                                                         </AvatarFallback>
                                                     </Avatar>
@@ -269,7 +269,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                                 key={f}
                                 variant={filter === f ? "secondary" : "ghost"}
                                 size="sm"
-                                className="h-7 text-[10px] font-semibold px-2.5 capitalize"
+                                className="h-7 text-xs font-semibold px-2.5 capitalize"
                                 onClick={() => setFilter(f)}
                             >
                                 {f}
@@ -313,12 +313,12 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                                             )}
                                             <div className="min-w-0 flex-1">
                                                 <div className="font-medium text-sm truncate">{entry.contactName}</div>
-                                                <div className="text-[10px] text-muted-foreground">
+                                                <div className="text-xs text-muted-foreground">
                                                     {entry.agentName} · {entry.base || "No base"} · {entry.earnedAt?.split("T")[0] || ""}
                                                 </div>
                                             </div>
                                             {entry.status === "paid" ? (
-                                                <Badge variant="secondary" className="text-[10px] text-emerald-600 bg-emerald-500/10 shrink-0">
+                                                <Badge variant="secondary" className="text-xs text-emerald-600 bg-emerald-500/10 shrink-0">
                                                     <CheckCircle2 className="h-3 w-3 mr-1" />
                                                     Paid
                                                 </Badge>
@@ -326,7 +326,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    className="h-7 text-[10px] px-2.5 shrink-0 touch-manipulation"
+                                                    className="h-7 text-xs px-2.5 shrink-0 touch-manipulation"
                                                     onClick={() => setConfirmPayId(entry.id)}
                                                     disabled={payingId === entry.id}
                                                 >
@@ -379,7 +379,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                                                 </td>
                                                 <td className="px-4 sm:px-6 py-3.5">
                                                     <div className="font-medium text-sm">{entry.contactName}</div>
-                                                    <div className="text-[10px] text-muted-foreground">
+                                                    <div className="text-xs text-muted-foreground">
                                                         {entry.base || "No base"} · {entry.earnedAt?.split("T")[0] || ""}
                                                     </div>
                                                 </td>
@@ -391,7 +391,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                                                 <td className="text-right px-4 sm:px-6 py-3.5 font-semibold">{formatCurrency(entry.commissionAmount)}</td>
                                                 <td className="text-right px-4 sm:px-6 py-3.5">
                                                     {entry.status === "paid" ? (
-                                                        <Badge variant="secondary" className="text-[10px] text-emerald-600 bg-emerald-500/10">
+                                                        <Badge variant="secondary" className="text-xs text-emerald-600 bg-emerald-500/10">
                                                             <CheckCircle2 className="h-3 w-3 mr-1" />
                                                             Paid
                                                         </Badge>
@@ -399,7 +399,7 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                                                         <Button
                                                             variant="outline"
                                                             size="sm"
-                                                            className="h-6 text-[10px] px-2"
+                                                            className="h-6 text-xs px-2"
                                                             onClick={() => handleMarkPaid(entry.id)}
                                                             disabled={payingId === entry.id}
                                                         >

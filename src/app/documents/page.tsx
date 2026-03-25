@@ -410,11 +410,11 @@ export default function DocumentsPage() {
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-muted-foreground truncate">{doc.contactName || "Standalone"}</span>
-                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${config.color}`}>
+                            <Badge variant="outline" className={`text-xs px-1.5 py-0 h-4 ${config.color}`}>
                                 {config.label}
                             </Badge>
                         </div>
-                        <span className="text-[10px] text-muted-foreground/60 mt-1 block">
+                        <span className="text-xs text-muted-foreground/60 mt-1 block">
                             {doc.createdAt ? new Date(doc.createdAt).toLocaleDateString() : ""}
                         </span>
                     </div>
@@ -464,7 +464,7 @@ export default function DocumentsPage() {
                             )}
                             <div className="flex items-center gap-2 mt-1">
                                 <span className="text-xs text-muted-foreground">{selectedDoc.contactName || "Standalone"}</span>
-                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${config.color}`}>
+                                <Badge variant="outline" className={`text-xs px-1.5 py-0 h-4 ${config.color}`}>
                                     {config.label}
                                 </Badge>
                             </div>
@@ -598,7 +598,7 @@ export default function DocumentsPage() {
                             )}
                             {selectedDoc.contactEmail && !signEmails.includes(selectedDoc.contactEmail) && (
                                 <button
-                                    className="text-[10px] text-primary hover:underline mb-2"
+                                    className="text-xs text-primary hover:underline mb-2"
                                     onClick={() => setSignEmails([...signEmails, selectedDoc.contactEmail])}
                                 >
                                     + Add {selectedDoc.contactName}&apos;s email ({selectedDoc.contactEmail})
@@ -861,7 +861,7 @@ export default function DocumentsPage() {
                                 className="h-8 text-xs"
                             />
                             <div>
-                                <p className="text-[10px] text-muted-foreground mb-1">Attach to contact (optional):</p>
+                                <p className="text-xs text-muted-foreground mb-1">Attach to contact (optional):</p>
                                 <ContactSelector
                                     value={newDraftContact}
                                     onChange={setNewDraftContact}
@@ -920,7 +920,7 @@ export default function DocumentsPage() {
                                     <>
                                         <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground/40" />
                                         <p className="text-xs text-muted-foreground">Drop files here or click to browse</p>
-                                        <p className="text-[10px] text-muted-foreground/60 mt-1">PDF, DOC, XLS, images — max 25MB</p>
+                                        <p className="text-xs text-muted-foreground/60 mt-1">PDF, DOC, XLS, images — max 25MB</p>
                                     </>
                                 )}
                             </div>

@@ -14,6 +14,7 @@ import { triggerWorkflows } from "@/lib/workflow-engine";
 import { softDelete, restoreItem, permanentlyDelete } from "@/lib/soft-delete";
 import { captureError } from "@/lib/error-tracking";
 import { getCurrentUserRole } from "@/app/settings/users/actions";
+import { getCachedPipelines, getCachedUsers, invalidatePipelinesCache } from "@/lib/cached-queries";
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────────
 
@@ -174,25 +175,21 @@ export async function getPipelines() {
     };
 
     try {
-        const pipelinesSnapshot = await adminDb.collection('pipelines').orderBy('createdAt', 'asc').get();
-        
+        // Use cached pipelines/stages/users to avoid redundant Firestore reads
+        const [cachedPipelinesData, oppsSnapshot, contactsSnap, cachedUsersData] = await Promise.all([
+            getCachedPipelines(),
+            adminDb.collection('opportunities').orderBy('createdAt', 'desc').get(),
+            adminDb.collection('contacts').get(),
+            getCachedUsers(),
+        ]);
+
         const pipelinesMap: Record<string, any> = {};
-        
-        // Load pipelines and their stages
-        for (const doc of pipelinesSnapshot.docs) {
-            const data = doc.data();
-            const stagesSnapshot = await doc.ref.collection('stages').orderBy('order', 'asc').get();
-            const stages = stagesSnapshot.docs.map(sDoc => ({
-                id: sDoc.id,
-                name: sDoc.data().name,
-                order: sDoc.data().order
-            }));
-            
-            pipelinesMap[doc.id] = {
-                id: doc.id,
-                name: data.name,
-                stages: stages,
-                deals: []
+        for (const p of cachedPipelinesData) {
+            pipelinesMap[p.id] = {
+                id: p.id,
+                name: p.name,
+                stages: p.stages.map(s => ({ id: s.id, name: s.name, order: s.order })),
+                deals: [],
             };
         }
 
@@ -204,32 +201,29 @@ export async function getPipelines() {
             }
         }
 
-        // Load all opportunities, contacts, and users in parallel (avoid N+1)
-        const [oppsSnapshot, contactsSnap, usersSnap] = await Promise.all([
-            adminDb.collection('opportunities').orderBy('createdAt', 'desc').get(),
-            adminDb.collection('contacts').get(),
-            adminDb.collection('users').get(),
-        ]);
-
-        // Build contacts and users maps from bulk queries
+        // Build contacts and users maps
         const contactsMap: Record<string, any> = {};
         contactsSnap.docs.forEach(doc => {
             contactsMap[doc.id] = { id: doc.id, ...doc.data() };
         });
         const usersMap: Record<string, any> = {};
-        usersSnap.docs.forEach(doc => {
-            usersMap[doc.id] = { id: doc.id, ...doc.data() };
-        });
+        for (const u of cachedUsersData) {
+            usersMap[u.id] = u;
+        }
 
-        // Pre-fetch latest note per contact using collectionGroup (avoids N+1 note queries)
+        // Pre-fetch latest note per contact in parallel (only for contacts with deals)
         const contactNotesMap: Record<string, string> = {};
         try {
-            const allNotesSnap = await adminDb.collectionGroup('notes').orderBy('createdAt', 'desc').get();
-            for (const noteDoc of allNotesSnap.docs) {
-                const contactId = noteDoc.ref.parent.parent?.id;
-                if (contactId && !contactNotesMap[contactId]) {
-                    contactNotesMap[contactId] = noteDoc.data().content || "";
-                }
+            const contactIdsWithDeals = new Set(oppsSnapshot.docs.map(d => d.data().contactId).filter(Boolean));
+            const noteResults = await Promise.all(
+                Array.from(contactIdsWithDeals).map(async (cid) => {
+                    const snap = await adminDb.collection('contacts').doc(cid).collection('notes')
+                        .orderBy('createdAt', 'desc').limit(1).get();
+                    return { cid, content: snap.empty ? null : (snap.docs[0].data().content || "") };
+                })
+            );
+            for (const { cid, content } of noteResults) {
+                if (content !== null) contactNotesMap[cid] = content;
             }
         } catch {
             // Fallback: notes map stays empty, opp.notes will be null
@@ -460,6 +454,7 @@ export async function createPipeline(name: string) {
             entityName: name,
         }).catch(() => {});
 
+        invalidatePipelinesCache();
         revalidatePath("/pipeline");
         return { success: true, pipeline: { id: pipelineRef.id, name } };
     } catch (error) {
@@ -495,6 +490,7 @@ export async function createPipelineStage(pipelineId: string, name: string, orde
             metadata: { pipelineId: parsed.data.pipelineId },
         }).catch(() => {});
 
+        invalidatePipelinesCache();
         revalidatePath("/pipeline");
         return { success: true, stage: { id: stageRef.id, name, order } };
     } catch (error) {
@@ -533,6 +529,7 @@ export async function updatePipelineStage(id: string, name: string, order: numbe
             entityName: name,
         }).catch(() => {});
 
+        invalidatePipelinesCache();
         revalidatePath("/pipeline");
         return { success: true };
     } catch (error) {
@@ -573,6 +570,7 @@ export async function deletePipelineStage(id: string) {
             }
         }
 
+        invalidatePipelinesCache();
         revalidatePath("/pipeline");
         return { success: true };
     } catch (error) {
@@ -614,6 +612,7 @@ export async function deletePipeline(id: string) {
             entityName: pipelineName,
         }).catch(() => {});
 
+        invalidatePipelinesCache();
         revalidatePath("/pipeline");
         return { success: true };
     } catch (error) {
@@ -1184,6 +1183,75 @@ export async function getUsers() {
         return { success: true, users };
     } catch {
         return { success: true, users: [] };
+    }
+}
+
+/**
+ * Consolidated page-data fetch: returns pipelines + base names + users +
+ * special accommodations + priority settings + auto-advance results in a
+ * single server action call (saves 5-6 HTTP round trips on page load).
+ */
+export async function getPipelinePageData() {
+    try {
+        const [pipelinesResult, baseNames, usersResult, accommodationsResult, priorityResult, automationResult] = await Promise.all([
+            getPipelines(),
+            getBaseNames(),
+            getUsers(),
+            (async () => {
+                const snap = await adminDb.collection('special_accommodations').orderBy('order', 'asc').get();
+                return snap.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
+            })(),
+            (async () => {
+                const doc = await adminDb.collection("settings").doc("pipeline").get();
+                const data = doc.data();
+                return {
+                    urgentDays: typeof data?.priorityUrgentDays === "number" ? data.priorityUrgentDays : 14,
+                    soonDays: typeof data?.prioritySoonDays === "number" ? data.prioritySoonDays : 30,
+                };
+            })(),
+            (async () => {
+                const doc = await adminDb.collection('settings').doc('automations').get();
+                return doc.exists ? doc.data() : { autoAdvanceEnabled: false };
+            })(),
+        ]);
+
+        // Run auto-advance server-side if enabled (avoids second round trip)
+        let advancedCount = 0;
+        if (automationResult?.autoAdvanceEnabled) {
+            const advRes = await autoAdvanceOpportunities();
+            if (advRes.success && advRes.advancedCount && advRes.advancedCount > 0) {
+                advancedCount = advRes.advancedCount;
+                // Re-fetch pipelines with the advanced data
+                const refreshed = await getPipelines();
+                if (refreshed.success) {
+                    pipelinesResult.pipelines = refreshed.pipelines;
+                }
+            }
+        }
+
+        // Fire-and-forget: stay reminders
+        checkStayReminders().catch(() => {});
+
+        return {
+            success: true,
+            pipelines: pipelinesResult.success ? pipelinesResult.pipelines : {},
+            baseNames,
+            users: usersResult.success ? usersResult.users : [],
+            specialAccommodations: accommodationsResult,
+            priorityRanges: priorityResult,
+            advancedCount,
+        };
+    } catch (error: any) {
+        captureError(error, { context: "getPipelinePageData" });
+        return {
+            success: false,
+            pipelines: {},
+            baseNames: [],
+            users: [],
+            specialAccommodations: [],
+            priorityRanges: { urgentDays: 14, soonDays: 30 },
+            advancedCount: 0,
+        };
     }
 }
 

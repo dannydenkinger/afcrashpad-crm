@@ -16,7 +16,7 @@ import {
     Upload, FileText, CheckCircle2, AlertCircle, Loader2,
     ArrowRight, ChevronLeft, ChevronRight,
 } from "lucide-react"
-import Papa from "papaparse"
+// papaparse is dynamically imported in handlers to reduce initial bundle size
 import { importMappedContacts } from "./actions"
 import { toast } from "sonner"
 
@@ -56,7 +56,7 @@ export function ImportMappingDialog({ isOpen, onClose, onImportComplete }: Impor
         setParseError(null)
     }, [])
 
-    const handleFilesSelected = useCallback((files: File[]) => {
+    const handleFilesSelected = useCallback(async (files: File[]) => {
         const selectedFile = files[0]
         if (!selectedFile) return
 
@@ -68,6 +68,7 @@ export function ImportMappingDialog({ isOpen, onClose, onImportComplete }: Impor
         setParseError(null)
         setFile(selectedFile)
 
+        const Papa = (await import("papaparse")).default
         Papa.parse(selectedFile, {
             header: true,
             skipEmptyLines: true,

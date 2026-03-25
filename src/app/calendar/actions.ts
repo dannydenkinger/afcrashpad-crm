@@ -28,8 +28,8 @@ const createTaskSchema = z.object({
     dueDate: z.coerce.date().optional(),
     endDate: z.coerce.date().optional(),
     priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
-    contactId: z.string().optional(),
-    opportunityId: z.string().optional(),
+    contactId: z.string().optional().nullable(),
+    opportunityId: z.string().optional().nullable(),
     assigneeId: z.string().optional(),
     recurrence: recurrenceSchema,
     blockedByTaskId: z.string().optional().nullable(),
@@ -261,8 +261,8 @@ export async function createTask(data: {
     dueDate?: Date;
     endDate?: Date;
     priority?: string;
-    contactId?: string;
-    opportunityId?: string;
+    contactId?: string | null;
+    opportunityId?: string | null;
     assigneeId?: string;
     recurrence?: { type: string; interval?: number; endDate?: Date | null } | null;
     blockedByTaskId?: string | null;

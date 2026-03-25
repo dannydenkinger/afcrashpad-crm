@@ -1,5 +1,5 @@
 // AFCrashpad CRM Service Worker - Offline Support
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const STATIC_CACHE = `afcrashpad-static-${CACHE_VERSION}`;
 const DATA_CACHE = `afcrashpad-data-${CACHE_VERSION}`;
 const OFFLINE_QUEUE_STORE = "offline-mutations";
@@ -10,6 +10,9 @@ const APP_SHELL = [
   "/pipeline",
   "/contacts",
   "/dashboard",
+  "/tasks",
+  "/calendar",
+  "/communications",
   "/manifest.json",
 ];
 
@@ -67,17 +70,17 @@ self.addEventListener("fetch", (event) => {
 
 function isStaticAsset(url) {
   const pathname = url.pathname;
-  // Note: /_next/static/, .js, .css are intentionally excluded — Next.js
-  // fingerprints these with content hashes and sets immutable cache headers.
-  // Caching them here with cache-first breaks Turbopack HMR in development.
   return (
+    pathname.startsWith("/_next/static/") ||
     pathname.startsWith("/icons/") ||
     pathname.endsWith(".woff2") ||
     pathname.endsWith(".woff") ||
     pathname.endsWith(".png") ||
     pathname.endsWith(".jpg") ||
     pathname.endsWith(".svg") ||
-    pathname.endsWith(".ico")
+    pathname.endsWith(".ico") ||
+    pathname.endsWith(".js") ||
+    pathname.endsWith(".css")
   );
 }
 

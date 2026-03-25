@@ -173,7 +173,7 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{data.totalReferrals}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">{data.conversionRate}% convert to active tenant</p>
+                        <p className="text-xs text-muted-foreground mt-1">{data.conversionRate}% convert to active tenant</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -183,7 +183,7 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-emerald-600">{data.activeTenantsCount}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">Referred & moved in</p>
+                        <p className="text-xs text-muted-foreground mt-1">Referred & moved in</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -193,7 +193,7 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-amber-600">{formatCurrency(data.totalPayoutsPending)}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                             {data.referrals.filter(r => r.status === "active_tenant").length} referrers owed
                         </p>
                     </CardContent>
@@ -205,7 +205,7 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-emerald-600">{formatCurrency(data.totalPayoutsPaid)}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">{data.paidCount} payouts completed</p>
+                        <p className="text-xs text-muted-foreground mt-1">{data.paidCount} payouts completed</p>
                     </CardContent>
                 </Card>
             </div>
@@ -213,11 +213,11 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
             {/* Workflow Explainer */}
             <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
                 <CardContent className="py-3 px-4">
-                    <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-semibold">
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs font-semibold">
                         {STATUS_ORDER.filter(s => s !== "lost").map((status, i) => (
                             <div key={status} className="flex items-center gap-1.5">
                                 {i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />}
-                                <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${STATUS_CONFIG[status].color}`}>
+                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${STATUS_CONFIG[status].color}`}>
                                     {STATUS_CONFIG[status].label}
                                 </Badge>
                             </div>
@@ -242,12 +242,12 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                             {data.topReferrers.map((referrer, i) => (
                                 <div key={`mobile-${i}`} className="p-3 rounded-xl border border-border/50 bg-card space-y-2">
                                     <div className="flex items-center gap-2.5">
-                                        <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold shrink-0 border border-background shadow-sm">
+                                        <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0 border border-background shadow-sm">
                                             {getInitials(referrer.name)}
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <div className="font-medium text-sm truncate">{referrer.name}</div>
-                                            {referrer.email && <div className="text-[10px] text-muted-foreground truncate">{referrer.email}</div>}
+                                            {referrer.email && <div className="text-xs text-muted-foreground truncate">{referrer.email}</div>}
                                         </div>
                                         <span className="text-xs font-semibold shrink-0">{referrer.count} referrals</span>
                                     </div>
@@ -277,12 +277,12 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                                         <tr key={i} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
                                             <td className="px-4 sm:px-6 py-3.5">
                                                 <div className="flex items-center gap-2.5">
-                                                    <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold shrink-0 border border-background shadow-sm">
+                                                    <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0 border border-background shadow-sm">
                                                         {getInitials(referrer.name)}
                                                     </div>
                                                     <div className="min-w-0">
                                                         <div className="font-medium text-sm truncate">{referrer.name}</div>
-                                                        {referrer.email && <div className="text-[10px] text-muted-foreground truncate">{referrer.email}</div>}
+                                                        {referrer.email && <div className="text-xs text-muted-foreground truncate">{referrer.email}</div>}
                                                     </div>
                                                 </div>
                                             </td>
@@ -320,7 +320,7 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                                     key={f.key}
                                     variant={filter === f.key ? "secondary" : "ghost"}
                                     size="sm"
-                                    className="h-7 text-[10px] font-semibold px-2.5"
+                                    className="h-7 text-xs font-semibold px-2.5"
                                     onClick={() => setFilter(f.key)}
                                 >
                                     {f.label}
@@ -329,7 +329,7 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                         </div>
                         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                             <DialogTrigger asChild>
-                                <Button size="sm" className="h-7 text-[10px] font-semibold">
+                                <Button size="sm" className="h-7 text-xs font-semibold">
                                     <Plus className="h-3 w-3 mr-1" />
                                     Add Referral
                                 </Button>
@@ -426,16 +426,16 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                                                             <span className="font-medium text-sm text-muted-foreground">{referral.referredName}</span>
                                                         </div>
                                                         <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                                            <Badge variant="outline" className={`text-[9px] px-1.5 py-0 font-bold ${statusCfg.color}`}>
+                                                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 font-bold ${statusCfg.color}`}>
                                                                 {statusCfg.label}
                                                             </Badge>
                                                             {referral.referredEmail && (
-                                                                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                                                <span className="text-xs text-muted-foreground flex items-center gap-1">
                                                                     <Mail className="h-2.5 w-2.5 opacity-50" />
                                                                     {referral.referredEmail}
                                                                 </span>
                                                             )}
-                                                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                                            <span className="text-xs text-muted-foreground flex items-center gap-1">
                                                                 <Calendar className="h-2.5 w-2.5 opacity-50" />
                                                                 {referral.createdAt.split("T")[0]}
                                                             </span>
@@ -450,7 +450,7 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                                                             <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
                                                             {formatCurrency(referral.dealValue)}
                                                         </div>
-                                                        <div className="text-[9px] text-muted-foreground">deal value</div>
+                                                        <div className="text-[10px] text-muted-foreground">deal value</div>
                                                     </div>
                                                 )}
                                             </div>
@@ -537,7 +537,7 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                                             {/* Status selector for non-terminal statuses */}
                                             {!isPaid && !isPayoutReady && referral.status !== "lost" && (
                                                 <div className="flex items-center gap-2 pt-2 border-t border-border/50 pl-12">
-                                                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Status</span>
+                                                    <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Status</span>
                                                     <Select
                                                         value={referral.status}
                                                         onValueChange={(v) => handleStatusChange(referral.id, v as ReferralStatus)}

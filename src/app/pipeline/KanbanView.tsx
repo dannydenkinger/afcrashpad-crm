@@ -3,7 +3,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { MapPin, DollarSign, CalendarIcon, Phone, MessageSquare, FileText, CheckSquare, ChevronRight, User, Ban, Clock, Palette } from "lucide-react"
+import { MapPin, DollarSign, CalendarIcon, Phone, MessageSquare, FileText, CheckSquare, ChevronRight, User, Ban, Clock, Palette, Briefcase } from "lucide-react"
 import { getLengthOfStay, formatDisplayDate, getAgingInfo } from "./utils"
 
 // Use the Calendar icon under an alias to match the original import name
@@ -88,7 +88,7 @@ const DealCard = React.memo(function DealCard({
                         <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-sm group-hover:text-primary transition-colors tracking-tight">{deal.name}</span>
                             {isNewInquiry && (
-                                <Badge className="shrink-0 text-[10px] font-bold tracking-wider bg-primary text-primary-foreground border-0 px-1.5 py-0">New</Badge>
+                                <Badge className="shrink-0 text-xs font-bold tracking-wider bg-primary text-primary-foreground border-0 px-1.5 py-0">New</Badge>
                             )}
                         </div>
                         {showBase && (
@@ -125,24 +125,24 @@ const DealCard = React.memo(function DealCard({
                             <div className="space-y-1.5">
                                 <p className="text-xs font-semibold">{aging.label}</p>
                                 {deal.createdAt && (
-                                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                    <p className="text-xs text-muted-foreground flex items-center gap-1">
                                         <Clock className="h-2.5 w-2.5" />
                                         Created {new Date(deal.createdAt).toLocaleDateString()}
                                     </p>
                                 )}
                                 {deal.updatedAt && (
-                                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                    <p className="text-xs text-muted-foreground flex items-center gap-1">
                                         <Clock className="h-2.5 w-2.5" />
                                         Updated {new Date(deal.updatedAt).toLocaleDateString()}
                                     </p>
                                 )}
                                 {deal.paymentStatus && deal.paymentStatus !== "unpaid" && (
-                                    <p className="text-[10px] text-emerald-500 font-medium capitalize">
+                                    <p className="text-xs text-emerald-500 font-medium capitalize">
                                         Payment: {deal.paymentStatus}
                                     </p>
                                 )}
                                 {deal.claimedByName && (
-                                    <p className="text-[10px] text-muted-foreground">
+                                    <p className="text-xs text-muted-foreground">
                                         Claimed by {deal.claimedByName}
                                     </p>
                                 )}
@@ -150,14 +150,14 @@ const DealCard = React.memo(function DealCard({
                         </TooltipContent>
                     </Tooltip>
                     <Avatar title={`Assignee: ${deal.assignee}`} className="h-6 w-6 border border-background shadow-sm shrink-0">
-                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary font-bold">{deal.assignee}</AvatarFallback>
+                        <AvatarFallback className="text-xs bg-primary/10 text-primary font-bold">{deal.assignee}</AvatarFallback>
                     </Avatar>
                 </div>
             </div>
 
             {deal.claimedByName && (
                 <div className="flex items-center gap-1.5 pl-1">
-                    <Badge variant="outline" className="text-[9px] font-bold bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                    <Badge variant="outline" className="text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
                         <User className="h-2.5 w-2.5 mr-1" />
                         {deal.claimedByName}
                     </Badge>
@@ -168,7 +168,7 @@ const DealCard = React.memo(function DealCard({
                 <div className="grid grid-cols-2 gap-2 text-xs pl-1">
                     {showValue && (
                         <div className="flex flex-col gap-1">
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Value</span>
+                            <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Value</span>
                             <div className="flex items-center gap-1">
                                 <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
                                 <span className="font-mono font-semibold text-sm">${deal.value.toLocaleString()}</span>
@@ -177,10 +177,10 @@ const DealCard = React.memo(function DealCard({
                     )}
                     {showPriority && (
                         <div className="flex flex-col items-end gap-1">
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Priority</span>
+                            <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Priority</span>
                             <Badge
                                 variant="outline"
-                                className={`text-[10px] font-bold tracking-wider rounded-sm
+                                className={`text-xs font-bold tracking-wider rounded-sm
                                     ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-red-500") || (!deal.startDate && deal.priority === "HIGH") ? "bg-red-500/10 text-red-600 border-red-500/20" : ""}
                                     ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-yellow-500") || (!deal.startDate && deal.priority === "MEDIUM") ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : ""}
                                     ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-blue-500") || (!deal.startDate && deal.priority === "LOW") ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : ""}
@@ -215,7 +215,7 @@ const DealCard = React.memo(function DealCard({
                     )}
                     {showLengthOfStayProp && (
                         <div className="flex flex-col items-center justify-center bg-muted/20 border border-border/40 p-2 rounded-md shrink-0 min-w-[70px]">
-                            <span className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground mb-0.5">Duration</span>
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-0.5">Duration</span>
                             <span className="text-xs font-bold text-primary/80">{getLengthOfStay(deal.startDate, deal.endDate)}</span>
                         </div>
                     )}
@@ -285,7 +285,7 @@ const MobileDealCard = React.memo(function MobileDealCard({
                     <div className="min-w-0">
                         <div className="flex items-center gap-2">
                             <span className="font-semibold text-sm truncate">{deal.name}</span>
-                            {isNewInquiry && <Badge className="shrink-0 text-[10px] font-bold bg-primary text-primary-foreground border-0 px-1.5 py-0">New</Badge>}
+                            {isNewInquiry && <Badge className="shrink-0 text-xs font-bold bg-primary text-primary-foreground border-0 px-1.5 py-0">New</Badge>}
                             <span className={`inline-block h-2 w-2 rounded-full ${aging.color} shrink-0`} title={aging.label} />
                             {hasBlockers && <Ban className="h-3.5 w-3.5 text-red-500 shrink-0" />}
                         </div>
@@ -403,7 +403,7 @@ export const KanbanView = React.memo(function KanbanView({
                             style={mobileSelectedStage === stageName ? { backgroundColor: stageColor } : undefined}
                         >
                             {stageName}
-                            <span className="ml-1.5 text-[10px] opacity-70">({stageDeals.length})</span>
+                            <span className="ml-1.5 text-xs opacity-70">({stageDeals.length})</span>
                         </button>
                     );
                 })}
@@ -421,8 +421,10 @@ export const KanbanView = React.memo(function KanbanView({
                     />
                 ))}
                 {mobileDeals.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-muted-foreground/20 rounded-xl text-muted-foreground bg-muted/10">
-                        <span className="text-xs font-medium">No deals in this stage</span>
+                    <div className="flex flex-col items-center justify-center py-10 border-2 border-dashed border-muted-foreground/20 rounded-xl text-muted-foreground bg-muted/10">
+                        <Briefcase className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                        <span className="text-sm font-medium text-foreground mb-1">No deals in this stage</span>
+                        <span className="text-xs text-muted-foreground">Drag a deal here or create a new one</span>
                     </div>
                 )}
             </div>
@@ -452,7 +454,7 @@ export const KanbanView = React.memo(function KanbanView({
                                     <span className="text-sm uppercase tracking-wider">{stageName}</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                    <Badge variant="secondary" className="px-2 py-0.5 rounded-full font-bold text-[10px]">
+                                    <Badge variant="secondary" className="px-2 py-0.5 rounded-full font-bold text-xs">
                                         {stageDeals.length} deal{stageDeals.length !== 1 ? "s" : ""}
                                     </Badge>
                                 </div>
@@ -462,7 +464,7 @@ export const KanbanView = React.memo(function KanbanView({
                                     ${(stageValues[stageName] || 0).toLocaleString()}
                                 </span>
                                 {currentPipeline.deals.length > 0 && stageDeals.length > 0 && (
-                                    <span className="text-[10px] text-muted-foreground">
+                                    <span className="text-xs text-muted-foreground">
                                         {Math.round((stageDeals.length / currentPipeline.deals.length) * 100)}% of pipeline
                                     </span>
                                 )}
@@ -496,8 +498,10 @@ export const KanbanView = React.memo(function KanbanView({
                                 />
                             ))}
                             {stageDeals.length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-muted-foreground/20 rounded-xl text-muted-foreground bg-muted/10">
-                                    <span className="text-xs font-medium">No deals in this stage</span>
+                                <div className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-muted-foreground/20 rounded-xl text-muted-foreground bg-muted/10">
+                                    <Briefcase className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                                    <span className="text-xs font-medium text-foreground mb-0.5">No deals in this stage</span>
+                                    <span className="text-[10px] text-muted-foreground">Drag a deal here to get started</span>
                                 </div>
                             )}
                         </div>

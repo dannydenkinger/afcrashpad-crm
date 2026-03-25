@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, use } from "react"
+import { useState, useEffect, useCallback, use, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Save, Loader2 } from "lucide-react"
@@ -15,7 +15,19 @@ import {
 } from "../../signature-config-actions"
 import { toast } from "sonner"
 
-export default function PrepareSignaturePage({
+export default function PrepareSignaturePageWrapper({
+    params,
+}: {
+    params: Promise<{ docId: string }>
+}) {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>}>
+            <PrepareSignaturePage params={params} />
+        </Suspense>
+    )
+}
+
+function PrepareSignaturePage({
     params,
 }: {
     params: Promise<{ docId: string }>

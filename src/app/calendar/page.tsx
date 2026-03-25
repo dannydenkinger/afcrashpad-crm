@@ -292,7 +292,7 @@ export default function CalendarPage() {
                                                         <span className="text-xs text-muted-foreground">
                                                             {isAllDay ? "All day" : format(startTime, "h:mm a")}
                                                         </span>
-                                                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-border text-muted-foreground">
+                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-border text-muted-foreground">
                                                             {event.source === "GOOGLE" ? "Google" : event.source === "APPLE" ? "iCal" : event.source === "TASK" ? "Task" : event.source === "EVENT" ? "Event" : "Stay"}
                                                         </Badge>
                                                     </div>
@@ -471,7 +471,7 @@ export default function CalendarPage() {
                                     </div>
                                     <div className="grid grid-cols-7 gap-0">
                                         {["Su","Mo","Tu","We","Th","Fr","Sa"].map(day => (
-                                            <div key={day} className="text-[9px] font-bold text-muted-foreground/50 text-center py-1">{day}</div>
+                                            <div key={day} className="text-[10px] font-bold text-muted-foreground/50 text-center py-1">{day}</div>
                                         ))}
                                         {miniDays.map((day, i) => {
                                             const dayEvents = events.filter(e => isSameDay(new Date(e.start), day))
@@ -571,7 +571,7 @@ export default function CalendarPage() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-[11px] font-semibold truncate leading-tight">{task.title.replace('Task: ', '')}</p>
-                                        <p className="text-[9px] text-muted-foreground mt-1 font-bold">{format(new Date(task.start), 'MMM d, yyyy')}</p>
+                                        <p className="text-[10px] text-muted-foreground mt-1 font-bold">{format(new Date(task.start), 'MMM d, yyyy')}</p>
                                     </div>
                                 </div>
                             ))}
@@ -801,7 +801,7 @@ function MonthView({
                                     onDragEnd={handleDragEnd}
                                     onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
                                     className={cn(
-                                        "text-[9px] px-2 py-1.5 rounded-lg border truncate font-bold shadow-sm transition-all active:scale-95 cursor-pointer hover:brightness-110 hover:shadow-md",
+                                        "text-[10px] px-2 py-1.5 rounded-lg border truncate font-bold shadow-sm transition-all active:scale-95 cursor-pointer hover:brightness-110 hover:shadow-md",
                                         event.source === "TASK" && "cursor-grab active:cursor-grabbing"
                                     )}
                                     style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
@@ -897,7 +897,7 @@ function WeekView({
                             onDragEnd={handleDragEnd}
                             onClick={() => onEventClick(event)}
                             className={cn(
-                                "text-[9px] p-1.5 rounded-lg border font-bold truncate mb-0.5 cursor-pointer hover:brightness-110",
+                                "text-[10px] p-1.5 rounded-lg border font-bold truncate mb-0.5 cursor-pointer hover:brightness-110",
                                 event.source === "TASK" && "cursor-grab active:cursor-grabbing"
                             )}
                             style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
@@ -954,7 +954,7 @@ function WeekView({
                                         onDragEnd={handleDragEnd}
                                         onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
                                         className={cn(
-                                            "text-[9px] p-2 rounded-lg border font-bold shadow-md transition-all hover:brightness-110 cursor-pointer mb-1",
+                                            "text-[10px] p-2 rounded-lg border font-bold shadow-md transition-all hover:brightness-110 cursor-pointer mb-1",
                                             event.source === "TASK" && "cursor-grab active:cursor-grabbing"
                                         )}
                                         style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
@@ -1071,7 +1071,7 @@ function DayView({
                                         <Clock className="h-3 w-3 opacity-40" />
                                         {format(new Date(event.start), 'h:mm a')}
                                     </p>
-                                    <p className="text-[9px] font-bold opacity-40 uppercase tracking-tighter">Start Time</p>
+                                    <p className="text-[10px] font-bold opacity-40 uppercase tracking-tighter">Start Time</p>
                                 </div>
                                 <div className="h-10 w-[2px] rounded-full" style={{ backgroundColor: event.color }} />
                                 <div className="flex-1">

@@ -31,6 +31,8 @@ vi.mock('../utils', () => ({
     return Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24))
   },
   formatDisplayDate: (d: string) => d ? new Date(d).toLocaleDateString() : '-',
+  getAgingInfo: () => ({ label: 'New', color: 'bg-blue-500', days: 0 }),
+  getPriorityColor: () => 'bg-blue-500',
 }))
 
 import { KanbanView } from '../KanbanView'
@@ -100,8 +102,9 @@ describe('KanbanView', () => {
 
   it('renders stage column headers', () => {
     render(<KanbanView {...defaultProps} />)
-    expect(screen.getByText('New Lead')).toBeInTheDocument()
-    expect(screen.getByText('Qualified')).toBeInTheDocument()
+    // Stage names appear in both mobile tabs and desktop columns
+    expect(screen.getAllByText('New Lead').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Qualified').length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders a deal card with the contact name', () => {
@@ -131,8 +134,8 @@ describe('KanbanView', () => {
   it('renders empty columns with no deal cards', () => {
     const emptyPipeline = { ...samplePipeline, deals: [] }
     render(<KanbanView {...defaultProps} currentPipeline={emptyPipeline} />)
-    expect(screen.getByText('New Lead')).toBeInTheDocument()
-    expect(screen.getByText('Qualified')).toBeInTheDocument()
+    expect(screen.getAllByText('New Lead').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Qualified').length).toBeGreaterThanOrEqual(1)
   })
 
   it('marks cards as draggable', () => {

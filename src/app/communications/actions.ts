@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getTrackingForContact } from "@/lib/email-tracking";
 import { sendTrackedEmail } from "@/lib/email";
 import { captureError } from "@/lib/error-tracking";
+import { auth } from "@/auth";
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────────
 
@@ -179,13 +180,14 @@ export async function sendMessage(
 
         // If sending an email, actually send it via Resend with tracking
         if (type === "email") {
-            const contactDoc = await adminDb.collection('contacts').doc(contactId).get();
+            const [contactDoc, session] = await Promise.all([
+                adminDb.collection('contacts').doc(contactId).get(),
+                auth(),
+            ]);
             const contactData = contactDoc.data();
             if (contactData?.email) {
-                // Convert plain text to HTML for the email
-                const html = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-                    ${content.replace(/\n/g, "<br>")}
-                </div>`;
+                // Minimal HTML — styled templates trigger Gmail's Promotions filter
+                const html = content.replace(/\n/g, "<br>");
 
                 // Build Resend attachments from URLs
                 const resendAttachments = attachments?.length
@@ -241,6 +243,8 @@ export async function scheduleMessage(
             return { success: false, error: "Scheduled time must be in the future" };
         }
 
+        const session = await auth();
+
         await adminDb.collection('contacts').doc(parsed.data.contactId).collection('messages').add({
             contactId: parsed.data.contactId,
             type: parsed.data.type,
@@ -250,6 +254,7 @@ export async function scheduleMessage(
             scheduledAt: scheduledDate,
             status: "scheduled",
             ...(attachments?.length && { attachments }),
+            ...(session?.user?.email && { senderEmail: session.user.email }),
         });
 
         revalidatePath("/communications");
@@ -311,9 +316,7 @@ export async function processScheduledMessages(): Promise<{ sent: number; failed
                     const contactDoc = await adminDb.collection('contacts').doc(msg.contactId).get();
                     const contactData = contactDoc.data();
                     if (contactData?.email) {
-                        const html = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-                            ${msg.content.replace(/\n/g, "<br>")}
-                        </div>`;
+                        const html = msg.content.replace(/\n/g, "<br>");
 
                         const resendAttachments = msg.attachments?.length
                             ? await buildResendAttachments(msg.attachments)
@@ -349,6 +352,56 @@ export async function processScheduledMessages(): Promise<{ sent: number; failed
     }
 
     return results;
+}
+
+// ── Delete Conversation (all messages for a contact) ──────────────────────────
+
+export async function deleteConversation(contactId: string) {
+    const parsed = firestoreIdSchema.safeParse(contactId);
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const messagesSnap = await adminDb
+            .collection('contacts')
+            .doc(parsed.data)
+            .collection('messages')
+            .get();
+
+        const batch = adminDb.batch();
+        for (const doc of messagesSnap.docs) {
+            batch.delete(doc.ref);
+        }
+        await batch.commit();
+
+        revalidatePath("/communications");
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to delete conversation:", error);
+        return { success: false, error: "Failed to delete conversation" };
+    }
+}
+
+// ── Delete Message ────────────────────────────────────────────────────────────
+
+export async function deleteMessage(contactId: string, messageId: string) {
+    const parsedContact = firestoreIdSchema.safeParse(contactId);
+    const parsedMessage = firestoreIdSchema.safeParse(messageId);
+    if (!parsedContact.success || !parsedMessage.success) return { success: false, error: "Invalid input" };
+
+    try {
+        await adminDb
+            .collection('contacts')
+            .doc(parsedContact.data)
+            .collection('messages')
+            .doc(parsedMessage.data)
+            .delete();
+
+        revalidatePath("/communications");
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to delete message:", error);
+        return { success: false, error: "Failed to delete message" };
+    }
 }
 
 // ── Snippets (Canned Responses) ──────────────────────────────────────────────
@@ -743,26 +796,15 @@ export async function getEmailTracking(contactId: string) {
 
 /**
  * Build Resend-compatible attachment objects from file URLs.
- * Fetches files from URLs and converts to base64 for Resend API.
+ * Uses Resend's `path` option to pass the URL directly — avoids
+ * downloading large files into serverless memory.
  */
-async function buildResendAttachments(
+function buildResendAttachments(
     attachments: { filename: string; url: string; contentType?: string }[]
-): Promise<{ filename: string; content: Buffer }[]> {
-    const results: { filename: string; content: Buffer }[] = [];
-
-    for (const att of attachments) {
-        try {
-            const response = await fetch(att.url);
-            if (!response.ok) continue;
-            const arrayBuffer = await response.arrayBuffer();
-            results.push({
-                filename: att.filename,
-                content: Buffer.from(arrayBuffer),
-            });
-        } catch (err) {
-            console.error(`Failed to fetch attachment ${att.filename}:`, err);
-        }
-    }
-
-    return results;
+): { filename: string; path: string; contentType?: string }[] {
+    return attachments.map(att => ({
+        filename: att.filename,
+        path: att.url,
+        ...(att.contentType && { contentType: att.contentType }),
+    }));
 }

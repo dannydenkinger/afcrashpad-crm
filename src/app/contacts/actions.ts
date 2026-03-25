@@ -10,6 +10,60 @@ import { triggerSequence } from "@/lib/email-sequences";
 import { softDelete, restoreItem, permanentlyDelete } from "@/lib/soft-delete";
 import { captureError } from "@/lib/error-tracking";
 import type { TimelineItem, DuplicateContact, DuplicateGroup } from "./types";
+import { getCachedStageNames } from "@/lib/cached-queries";
+
+/**
+ * Consolidated page-data fetch: returns contacts + statuses + tags + users
+ * in a single server action call (saves 3-4 HTTP round trips on page load).
+ */
+export async function getContactsPageData(options?: { limit?: number; lastDocId?: string }) {
+    try {
+        const [contactsResult, statusesResult, tagsResult, usersResult] = await Promise.all([
+            getContactsPaginated(options),
+            (async () => {
+                const snap = await adminDb.collection('contact_statuses').orderBy('order', 'asc').get();
+                return snap.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
+            })(),
+            (async () => {
+                const snap = await adminDb.collection('tags').orderBy('name', 'asc').get();
+                return snap.docs.map(doc => ({
+                    id: doc.id,
+                    name: doc.data().name || "",
+                    color: doc.data().color || "",
+                }));
+            })(),
+            (async () => {
+                const snap = await adminDb.collection('users').orderBy('name', 'asc').get();
+                return snap.docs.map(doc => ({
+                    id: doc.id,
+                    name: doc.data().name,
+                    email: doc.data().email,
+                }));
+            })(),
+        ]);
+
+        return {
+            success: true,
+            contacts: contactsResult.success ? contactsResult.contacts : [],
+            lastDocId: contactsResult.success ? contactsResult.lastDocId : null,
+            hasMore: contactsResult.success ? contactsResult.hasMore : false,
+            contactStatuses: statusesResult,
+            tags: tagsResult,
+            users: usersResult,
+        };
+    } catch (error: any) {
+        console.error("Failed to fetch contacts page data:", error);
+        return {
+            success: false,
+            contacts: [],
+            lastDocId: null,
+            hasMore: false,
+            contactStatuses: [],
+            tags: [],
+            users: [],
+        };
+    }
+}
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────────
 
@@ -131,20 +185,12 @@ export async function getContactsPaginated(options?: { limit?: number; lastDocId
         // Fetch one extra to check if there are more
         contactsQuery = contactsQuery.limit(pageSize + 1);
 
-        const [pipelinesSnap, snapshot, oppsSnap] = await Promise.all([
-            adminDb.collection('pipelines').get(),
+        // Use cached stage names + parallel Firestore reads
+        const [stageNamesMap, snapshot, oppsSnap] = await Promise.all([
+            getCachedStageNames(),
             contactsQuery.get(),
             adminDb.collection('opportunities').get(),
         ]);
-
-        // Build stageId -> name map
-        const stageNamesMap: Record<string, string> = {};
-        for (const pDoc of pipelinesSnap.docs) {
-            const stagesSnap = await pDoc.ref.collection('stages').get();
-            stagesSnap.docs.forEach(sDoc => {
-                stageNamesMap[sDoc.id] = sDoc.data().name || 'Unknown';
-            });
-        }
 
         // Group opportunities by contactId (in-memory join), excluding soft-deleted
         const oppsByContact: Record<string, any[]> = {};
@@ -176,49 +222,29 @@ export async function getContactsPaginated(options?: { limit?: number; lastDocId
         // Check if there are more results
         const allDocs = snapshot.docs.filter(doc => !doc.data().deletedAt);
 
-        // Pre-fetch latest note per contact using collectionGroup (1 query instead of N)
+        // Pre-fetch latest note per visible contact in parallel (avoid fetching ALL notes)
         const latestNoteByContact: Record<string, any> = {};
+        const hasMore = allDocs.length > pageSize;
+        const pageDocs = hasMore ? allDocs.slice(0, pageSize) : allDocs;
         try {
-            const allNotesSnap = await adminDb.collectionGroup('notes').orderBy('createdAt', 'desc').get();
-            for (const nDoc of allNotesSnap.docs) {
-                const contactId = nDoc.ref.parent.parent?.id;
-                if (contactId && !latestNoteByContact[contactId]) {
-                    const nd = nDoc.data();
-                    latestNoteByContact[contactId] = {
-                        id: nDoc.id,
-                        content: nd.content,
-                        contactId: nd.contactId,
-                        createdAt: toISO(nd.createdAt),
-                        updatedAt: toISO(nd.updatedAt),
-                    };
-                }
-            }
-        } catch (notesError) {
-            console.error("Failed to fetch notes via collectionGroup (may need Firestore index):", notesError);
-            // Fallback: fetch notes individually for the current page of contacts
-            try {
-                const contactIds = allDocs.slice(0, pageSize).map(doc => doc.id);
-                await Promise.all(contactIds.map(async (cid) => {
-                    const notesSnap = await adminDb.collection('contacts').doc(cid).collection('notes')
+            const noteResults = await Promise.all(
+                pageDocs.map(async (doc) => {
+                    const notesSnap = await adminDb.collection('contacts').doc(doc.id).collection('notes')
                         .orderBy('createdAt', 'desc').limit(1).get();
                     if (!notesSnap.empty) {
                         const nDoc = notesSnap.docs[0];
                         const nd = nDoc.data();
-                        latestNoteByContact[cid] = {
-                            id: nDoc.id,
-                            content: nd.content,
-                            contactId: nd.contactId || cid,
-                            createdAt: toISO(nd.createdAt),
-                            updatedAt: toISO(nd.updatedAt),
-                        };
+                        return { cid: doc.id, note: { id: nDoc.id, content: nd.content, contactId: nd.contactId || doc.id, createdAt: toISO(nd.createdAt), updatedAt: toISO(nd.updatedAt) } };
                     }
-                }));
-            } catch (fallbackError) {
-                console.error("Fallback notes fetch also failed:", fallbackError);
+                    return { cid: doc.id, note: null };
+                })
+            );
+            for (const { cid, note } of noteResults) {
+                if (note) latestNoteByContact[cid] = note;
             }
+        } catch (notesError) {
+            console.error("Failed to fetch notes for page:", notesError);
         }
-        const hasMore = allDocs.length > pageSize;
-        const pageDocs = hasMore ? allDocs.slice(0, pageSize) : allDocs;
         const nextLastDocId = pageDocs.length > 0 ? pageDocs[pageDocs.length - 1].id : null;
 
         const contacts = pageDocs.map(doc => {
@@ -257,21 +283,12 @@ export async function getContactsPaginated(options?: { limit?: number; lastDocId
 
 export async function getContacts() {
     try {
-        // Fetch contacts, opportunities, stages, and notes in parallel (avoid N+1)
-        const [pipelinesSnap, snapshot, oppsSnap] = await Promise.all([
-            adminDb.collection('pipelines').get(),
+        // Use cached stage names + parallel Firestore reads
+        const [stageNamesMap, snapshot, oppsSnap] = await Promise.all([
+            getCachedStageNames(),
             adminDb.collection('contacts').orderBy('createdAt', 'desc').get(),
             adminDb.collection('opportunities').get(),
         ]);
-
-        // Build stageId -> name map
-        const stageNamesMap: Record<string, string> = {};
-        for (const pDoc of pipelinesSnap.docs) {
-            const stagesSnap = await pDoc.ref.collection('stages').get();
-            stagesSnap.docs.forEach(sDoc => {
-                stageNamesMap[sDoc.id] = sDoc.data().name || 'Unknown';
-            });
-        }
 
         // Group opportunities by contactId (in-memory join), excluding soft-deleted
         const oppsByContact: Record<string, any[]> = {};
@@ -300,46 +317,27 @@ export async function getContacts() {
             oppsByContact[contactId].push(o);
         }
 
-        // Pre-fetch latest note per contact using collectionGroup (1 query instead of N)
+        // Pre-fetch latest note per contact in parallel (avoid fetching ALL notes)
         const allDocs = snapshot.docs.filter(doc => !doc.data().deletedAt);
         const latestNoteByContact: Record<string, any> = {};
         try {
-            const allNotesSnap = await adminDb.collectionGroup('notes').orderBy('createdAt', 'desc').get();
-            for (const nDoc of allNotesSnap.docs) {
-                const contactId = nDoc.ref.parent.parent?.id;
-                if (contactId && !latestNoteByContact[contactId]) {
-                    const nd = nDoc.data();
-                    latestNoteByContact[contactId] = {
-                        id: nDoc.id,
-                        content: nd.content,
-                        contactId: nd.contactId,
-                        createdAt: toISO(nd.createdAt),
-                        updatedAt: toISO(nd.updatedAt),
-                    };
-                }
-            }
-        } catch (notesError) {
-            console.error("Failed to fetch notes via collectionGroup (may need Firestore index):", notesError);
-            try {
-                const contactIds = allDocs.map(doc => doc.id);
-                await Promise.all(contactIds.map(async (cid) => {
-                    const notesSnap = await adminDb.collection('contacts').doc(cid).collection('notes')
+            const noteResults = await Promise.all(
+                allDocs.map(async (doc) => {
+                    const notesSnap = await adminDb.collection('contacts').doc(doc.id).collection('notes')
                         .orderBy('createdAt', 'desc').limit(1).get();
                     if (!notesSnap.empty) {
                         const nDoc = notesSnap.docs[0];
                         const nd = nDoc.data();
-                        latestNoteByContact[cid] = {
-                            id: nDoc.id,
-                            content: nd.content,
-                            contactId: nd.contactId || cid,
-                            createdAt: toISO(nd.createdAt),
-                            updatedAt: toISO(nd.updatedAt),
-                        };
+                        return { cid: doc.id, note: { id: nDoc.id, content: nd.content, contactId: nd.contactId || doc.id, createdAt: toISO(nd.createdAt), updatedAt: toISO(nd.updatedAt) } };
                     }
-                }));
-            } catch (fallbackError) {
-                console.error("Fallback notes fetch also failed:", fallbackError);
+                    return { cid: doc.id, note: null };
+                })
+            );
+            for (const { cid, note } of noteResults) {
+                if (note) latestNoteByContact[cid] = note;
             }
+        } catch (notesError) {
+            console.error("Failed to fetch notes:", notesError);
         }
 
         const contacts = allDocs.map(doc => {

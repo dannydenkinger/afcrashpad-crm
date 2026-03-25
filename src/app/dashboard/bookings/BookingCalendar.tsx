@@ -169,7 +169,7 @@ export function BookingCalendar() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{filteredBookings.length}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">With dates assigned</p>
+                        <p className="text-xs text-muted-foreground mt-1">With dates assigned</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -179,7 +179,7 @@ export function BookingCalendar() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{baseList.length}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">With active travelers</p>
+                        <p className="text-xs text-muted-foreground mt-1">With active travelers</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -189,7 +189,7 @@ export function BookingCalendar() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-emerald-600">{overlapCount}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">Same base, overlapping dates</p>
+                        <p className="text-xs text-muted-foreground mt-1">Same base, overlapping dates</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -199,7 +199,7 @@ export function BookingCalendar() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-emerald-600">{formatCurrency(totalArbitrageRevenue)}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">Combined overlap deal value</p>
+                        <p className="text-xs text-muted-foreground mt-1">Combined overlap deal value</p>
                     </CardContent>
                 </Card>
             </div>
@@ -221,11 +221,11 @@ export function BookingCalendar() {
                             <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-lg border bg-card/60">
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                        <Badge variant="outline" className="text-[10px] font-semibold">
+                                        <Badge variant="outline" className="text-xs font-semibold">
                                             <MapPin className="h-3 w-3 mr-1" />
                                             {overlap.base}
                                         </Badge>
-                                        <Badge variant="secondary" className="text-[10px] text-emerald-600">
+                                        <Badge variant="secondary" className="text-xs text-emerald-600">
                                             {overlap.overlapDays} overlapping days
                                         </Badge>
                                     </div>
@@ -234,13 +234,13 @@ export function BookingCalendar() {
                                         <span className="text-muted-foreground mx-1.5">&</span>
                                         <span className="font-medium">{overlap.travelers[1].name}</span>
                                     </div>
-                                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                                    <div className="text-xs text-muted-foreground mt-0.5">
                                         {formatDateShort(overlap.overlapStart)} → {formatDateShort(overlap.overlapEnd)}
                                     </div>
                                 </div>
                                 <div className="text-right shrink-0">
                                     <div className="text-sm font-bold text-emerald-600">{formatCurrency(overlap.combinedRevenue)}</div>
-                                    <div className="text-[10px] text-muted-foreground">combined value</div>
+                                    <div className="text-xs text-muted-foreground">combined value</div>
                                 </div>
                             </div>
                         ))}
@@ -250,16 +250,16 @@ export function BookingCalendar() {
 
             {/* Base Legend */}
             <div className="flex flex-wrap items-center gap-4 px-1">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Base:</span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Base:</span>
                 {baseList.map((base, i) => (
                     <div key={base} className="flex items-center gap-1.5">
                         <div className={`h-2.5 w-2.5 rounded-sm ${BASE_COLOR_DOTS[i % BASE_COLOR_DOTS.length]}`} />
-                        <span className="text-[10px] text-muted-foreground font-medium">{base}</span>
+                        <span className="text-xs text-muted-foreground font-medium">{base}</span>
                     </div>
                 ))}
                 <div className="flex items-center gap-1.5">
                     <div className="h-2.5 w-2.5 rounded-sm bg-amber-500" />
-                    <span className="text-[10px] text-muted-foreground font-medium">Overlap</span>
+                    <span className="text-xs text-muted-foreground font-medium">Overlap</span>
                 </div>
             </div>
 
@@ -318,7 +318,7 @@ export function BookingCalendar() {
                                         w.monthLabel ? (
                                             <div
                                                 key={`month-${i}`}
-                                                className="text-[10px] font-bold text-foreground/70 uppercase tracking-wider px-1 pb-0.5"
+                                                className="text-xs font-bold text-foreground/70 uppercase tracking-wider px-1 pb-0.5"
                                                 style={{ width: `${100 / viewWeeks}%` }}
                                             >
                                                 {w.monthLabel}
@@ -332,14 +332,14 @@ export function BookingCalendar() {
 
                             {/* Week headers */}
                             <div className="flex border-b border-border/30 mb-1">
-                                <div className="w-36 sm:w-44 shrink-0 text-[10px] font-semibold text-muted-foreground px-2 py-1.5">
+                                <div className="w-36 sm:w-44 shrink-0 text-xs font-semibold text-muted-foreground px-2 py-1.5">
                                     Base / Traveler
                                 </div>
                                 <div className="flex-1 flex">
                                     {weekLabels.map((w, i) => (
                                         <div
                                             key={i}
-                                            className="text-[10px] text-muted-foreground font-medium border-l border-border/20 px-1 py-1.5"
+                                            className="text-xs text-muted-foreground font-medium border-l border-border/20 px-1 py-1.5"
                                             style={{ width: `${100 / viewWeeks}%` }}
                                         >
                                             {w.label}
@@ -362,11 +362,11 @@ export function BookingCalendar() {
                                     <div className="flex items-center gap-2 px-2 py-2 bg-muted/10 rounded-lg mb-1">
                                         <MapPin className={`h-3.5 w-3.5 ${baseColor.text}`} />
                                         <span className={`text-xs font-bold ${baseColor.text}`}>{base}</span>
-                                        <Badge variant="secondary" className="text-[9px] h-4 px-1.5">
+                                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
                                             {travelers.length} {travelers.length === 1 ? "traveler" : "travelers"}
                                         </Badge>
                                         {travelers.length >= 2 && (
-                                            <Badge variant="secondary" className="text-[9px] h-4 px-1.5 text-amber-600 bg-amber-500/10 border-amber-500/20">
+                                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 text-amber-600 bg-amber-500/10 border-amber-500/20">
                                                 Overlap detected
                                             </Badge>
                                         )}
@@ -387,7 +387,7 @@ export function BookingCalendar() {
                                             <div key={traveler.id} className="flex items-center group">
                                                 <div className="w-36 sm:w-44 shrink-0 px-2 py-1.5">
                                                     <div className="text-xs font-semibold truncate">{traveler.name}</div>
-                                                    <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                                                    <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                                                         <span>{formatDateShort(traveler.startDate)} → {formatDateShort(traveler.endDate)}</span>
                                                         <span className="text-muted-foreground/40">·</span>
                                                         <span>{duration}d</span>
@@ -410,7 +410,7 @@ export function BookingCalendar() {
                                                         `}
                                                         style={{ left: pos.left, width: pos.width, minWidth: "24px" }}
                                                     >
-                                                        <div className={`px-2 text-[10px] font-semibold truncate leading-8 h-full flex items-center gap-1.5 ${stageColor.text}`}>
+                                                        <div className={`px-2 text-xs font-semibold truncate leading-8 h-full flex items-center gap-1.5 ${stageColor.text}`}>
                                                             <span className="truncate">{traveler.name.split(" ")[0]}</span>
                                                             {isOverlap && <span className="shrink-0">⚡</span>}
                                                         </div>

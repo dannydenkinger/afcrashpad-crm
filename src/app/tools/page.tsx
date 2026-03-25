@@ -6,6 +6,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
     Calculator,
     Home,
     MapPin,
@@ -24,30 +34,36 @@ import {
 } from "lucide-react";
 
 // Dynamically import calculators with SSR disabled to avoid gRPC errors
+const CalcSkeleton = () => (
+    <div className="h-[400px] flex flex-col items-center justify-center bg-muted/20 rounded-xl gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <span className="text-sm text-muted-foreground">Loading calculator...</span>
+    </div>
+);
+
 const BAHCalculator = dynamic(() => import("@/components/calculators/BAHCalculator").then(mod => mod.BAHCalculator), {
     ssr: false,
-    loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/20 rounded-xl">Loading BAH Tool...</div>
+    loading: CalcSkeleton,
 });
-
 
 const VALoanCalculator = dynamic(() => import("@/components/calculators/VALoanCalculator").then(mod => mod.VALoanCalculator), {
     ssr: false,
-    loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/20 rounded-xl">Loading VA Loan Tool...</div>
+    loading: CalcSkeleton,
 });
 
 const OnBaseLodgingCalculator = dynamic(() => import("@/components/calculators/OnBaseLodgingCalculator").then(mod => mod.OnBaseLodgingCalculator), {
     ssr: false,
-    loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/20 rounded-xl">Loading On-Base Tool...</div>
+    loading: CalcSkeleton,
 });
 
 const HomeAffordabilityCalculator = dynamic(() => import("@/components/calculators/HomeAffordabilityCalculator").then(mod => mod.HomeAffordabilityCalculator), {
     ssr: false,
-    loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/20 rounded-xl">Loading Affordability Tool...</div>
+    loading: CalcSkeleton,
 });
 
 const OffBaseLodgingCalculator = dynamic(() => import("@/components/calculators/OffBaseLodgingCalculator").then(mod => mod.default), {
     ssr: false,
-    loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/20 rounded-xl">Loading Off-Base Tool...</div>
+    loading: CalcSkeleton,
 });
 
 type ToolType = "HUB" | "BAH" | "VA" | "ON_BASE" | "OFF_BASE" | "AFFORDABILITY";
@@ -66,6 +82,7 @@ export default function ToolsPage() {
     const [recentTools, setRecentTools] = useState<ToolType[]>([]);
     const [calcHistory, setCalcHistory] = useState<CalcHistoryEntry[]>([]);
     const [showHistory, setShowHistory] = useState(false);
+    const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
 
     useEffect(() => {
         try {
@@ -318,7 +335,7 @@ export default function ToolsPage() {
                                         variant="ghost"
                                         size="icon"
                                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                                        onClick={() => { setCalcHistory([]); localStorage.removeItem("tools-calc-history"); }}
+                                        onClick={() => setShowClearHistoryConfirm(true)}
                                         title="Clear history"
                                     >
                                         <Trash2 className="h-3.5 w-3.5" />
@@ -393,6 +410,26 @@ export default function ToolsPage() {
                 </Card>
             </div>
             </div>
+
+            <AlertDialog open={showClearHistoryConfirm} onOpenChange={setShowClearHistoryConfirm}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Clear calculation history?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will permanently delete all {calcHistory.length} calculation history entries. This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-white hover:bg-destructive/90"
+                            onClick={() => { setCalcHistory([]); localStorage.removeItem("tools-calc-history"); }}
+                        >
+                            Clear History
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

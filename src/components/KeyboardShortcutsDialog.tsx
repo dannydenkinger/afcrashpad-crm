@@ -28,6 +28,7 @@ const shortcuts: ShortcutEntry[] = [
     { keys: ["G", "M"], description: "Go to Marketing" },
     { keys: ["G", "S"], description: "Go to Settings" },
     { divider: "Actions" },
+    { keys: ["Cmd", "N"], description: "New item (context-aware)" },
     { keys: ["N", "D"], description: "New deal / opportunity" },
     { keys: ["N", "C"], description: "New contact" },
     { keys: ["N", "T"], description: "New task" },

@@ -22,6 +22,7 @@ import { createTask, updateTask } from "@/app/calendar/actions"
 import { getAllContacts } from "@/app/communications/actions"
 import { getOpportunitiesList } from "@/app/pipeline/actions"
 import { CheckSquare, CalendarDays } from "lucide-react"
+import { toast } from "sonner"
 
 interface Recurrence {
     type: "none" | "daily" | "weekly" | "monthly"
@@ -144,7 +145,10 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
     const isEvent = itemType === "event"
 
     const handleSave = async () => {
-        if (!title.trim()) return
+        if (!title.trim()) {
+            toast.error("Title is required")
+            return
+        }
         setIsLoading(true)
 
         const taskData: any = {
@@ -184,6 +188,7 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
             onClose()
         } catch (error) {
             console.error("Failed to save:", error)
+            toast.error("Failed to save " + typeLabel.toLowerCase())
         } finally {
             setIsLoading(false)
         }

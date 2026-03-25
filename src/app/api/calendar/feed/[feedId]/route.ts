@@ -109,7 +109,8 @@ export async function GET(
         return new NextResponse(lines.join("\r\n"), {
             headers: {
                 "Content-Type": "text/calendar; charset=utf-8",
-                "Content-Disposition": `attachment; filename="crm-schedule.ics"`
+                "Content-Disposition": `attachment; filename="crm-schedule.ics"`,
+                "Cache-Control": "public, max-age=300",
             }
         })
     } catch (error) {

@@ -4,6 +4,7 @@ import { adminDb } from "@/lib/firebase-admin"
 import { auth } from "@/auth"
 import { revalidatePath } from "next/cache"
 import type { LeaderboardAgent, LeaderboardData, DashboardData, ActivityItem } from "./types"
+import { getCachedPipelines, getCachedStageMap, getCachedUsers } from "@/lib/cached-queries"
 
 const STAGE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4']
 const BASE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4']
@@ -21,34 +22,27 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
     const rangeEnd = endDate ? new Date(endDate + 'T23:59:59.999') : null
 
     try {
-        const [pipelinesSnap, oppsSnap, contactsSnap, tasksSnap, usersSnap] = await Promise.all([
-            adminDb.collection('pipelines').orderBy('createdAt', 'asc').get(),
+        // Use cached pipelines/stages/users to avoid redundant Firestore reads
+        const [cachedPipelines, cachedStageMapData, oppsSnap, contactsSnap, tasksSnap, cachedUsersData] = await Promise.all([
+            getCachedPipelines(),
+            getCachedStageMap(),
             adminDb.collection('opportunities').get(),
             adminDb.collection('contacts').get(),
             adminDb.collection('tasks').orderBy('dueDate', 'asc').get(),
-            adminDb.collection('users').get(),
+            getCachedUsers(),
         ])
 
-        // Build stages map (parallel reads to avoid Netlify function timeout)
-        const pipelinesList: { id: string; name: string }[] = []
+        // Build maps from cached data
+        const pipelinesList = cachedPipelines.map(p => ({ id: p.id, name: p.name }))
         const stageMap: Record<string, { pipelineId: string; name: string; order: number }> = {}
         const stageProbMap: Record<string, number> = {}
+        for (const [id, info] of Object.entries(cachedStageMapData)) {
+            stageMap[id] = { pipelineId: info.pipelineId, name: info.name, order: info.order }
+            stageProbMap[id] = info.probability
+        }
 
-        const stageReadPromises = pipelinesSnap.docs.map(doc => {
-            pipelinesList.push({ id: doc.id, name: doc.data().name })
-            return doc.ref.collection('stages').orderBy('order', 'asc').get().then(stagesSnap => {
-                for (const sDoc of stagesSnap.docs) {
-                    const sData = sDoc.data()
-                    stageMap[sDoc.id] = {
-                        pipelineId: doc.id,
-                        name: sData.name,
-                        order: sData.order,
-                    }
-                    stageProbMap[sDoc.id] = sData.probability ?? 0
-                }
-            })
-        })
-        await Promise.all(stageReadPromises)
+        // Build users snapshot equivalent from cache
+        const usersSnap = { docs: cachedUsersData.map(u => ({ id: u.id, data: () => u })) }
 
         // Determine closed/booked stage IDs
         const closedNames = new Set(['Booked', 'Closed', 'Signed', 'Closed Won', 'Lost', 'Abandoned'])
@@ -452,31 +446,36 @@ export async function getRecentActivity(): Promise<{ success: boolean; data?: Ac
         }
 
         // 4. Recent communications sent — messages are subcollections on contacts
-        //    We pull the most recent messages from the contacts we already fetched
-        for (const contactDoc of contactsSnap.docs) {
-            const contactName = contactDoc.data().name || contactDoc.data().email || 'Unknown'
-            try {
-                const messagesSnap = await contactDoc.ref.collection('messages')
-                    .orderBy('createdAt', 'desc')
-                    .limit(3)
-                    .get()
-                for (const msgDoc of messagesSnap.docs) {
-                    const m = msgDoc.data()
-                    const sentAt = toDate(m.createdAt)
-                    const direction = m.direction === 'inbound' ? 'received from' : 'sent to'
-                    const channel = m.channel === 'sms' ? 'SMS' : 'Email'
-                    activities.push({
-                        id: `msg-${msgDoc.id}`,
-                        type: 'communication_sent',
-                        description: `${channel} ${direction} ${contactName}`,
-                        timestamp: sentAt.toISOString(),
-                        linkHref: '/communications',
-                        meta: contactName,
+        //    Fetch in parallel (avoid sequential N+1 queries)
+        const messageResults = await Promise.all(
+            contactsSnap.docs.map(async (contactDoc) => {
+                const contactName = contactDoc.data().name || contactDoc.data().email || 'Unknown'
+                try {
+                    const messagesSnap = await contactDoc.ref.collection('messages')
+                        .orderBy('createdAt', 'desc')
+                        .limit(3)
+                        .get()
+                    return messagesSnap.docs.map(msgDoc => {
+                        const m = msgDoc.data()
+                        const sentAt = toDate(m.createdAt)
+                        const direction = m.direction === 'inbound' ? 'received from' : 'sent to'
+                        const channel = m.channel === 'sms' ? 'SMS' : 'Email'
+                        return {
+                            id: `msg-${msgDoc.id}`,
+                            type: 'communication_sent' as const,
+                            description: `${channel} ${direction} ${contactName}`,
+                            timestamp: sentAt.toISOString(),
+                            linkHref: '/communications',
+                            meta: contactName,
+                        }
                     })
+                } catch {
+                    return []
                 }
-            } catch {
-                // Some contacts may not have messages subcollection
-            }
+            })
+        )
+        for (const msgs of messageResults) {
+            activities.push(...msgs)
         }
 
         // Sort all activities by timestamp descending and take top 20
@@ -495,25 +494,24 @@ export async function getLeaderboardData(): Promise<{ success: boolean; data?: L
     if (!session?.user) return { success: false, error: "Not authenticated" }
 
     try {
-        const [usersSnap, oppsSnap, pipelinesSnap] = await Promise.all([
-            adminDb.collection('users').get(),
+        // Use cached pipelines/users to avoid redundant Firestore reads
+        const [cachedUsersLb, oppsSnap, cachedPipelinesLb] = await Promise.all([
+            getCachedUsers(),
             adminDb.collection('opportunities').get(),
-            adminDb.collection('pipelines').get(),
+            getCachedPipelines(),
         ])
 
-        // Build stage lookup — identify booked/won stages
+        // Build stage lookup from cache — identify booked/won stages
         const bookedNames = new Set(['Booked', 'Closed', 'Signed', 'Closed Won', 'Lease Signed'])
         const bookedStageIds = new Set<string>()
+        for (const p of cachedPipelinesLb) {
+            for (const s of p.stages) {
+                if (bookedNames.has(s.name)) bookedStageIds.add(s.id)
+            }
+        }
 
-        await Promise.all(pipelinesSnap.docs.map(pDoc =>
-            pDoc.ref.collection('stages').orderBy('order', 'asc').get().then(stagesSnap => {
-                for (const sDoc of stagesSnap.docs) {
-                    if (bookedNames.has(sDoc.data().name)) {
-                        bookedStageIds.add(sDoc.id)
-                    }
-                }
-            })
-        ))
+        // Create usersSnap-compatible structure from cache
+        const usersSnap = { docs: cachedUsersLb.map(u => ({ id: u.id, data: () => u })) }
 
         // Calculate metrics per user (by assigneeId AND claimedBy)
         const agentMetrics: Record<string, {

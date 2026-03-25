@@ -145,7 +145,7 @@ export async function sendHaroResponse(queryId: string) {
     const settings = await getHaroSettings()
 
     try {
-        const fromEmail = settings?.sendFromEmail || process.env.RESEND_FROM_EMAIL || "noreply@afcrashpad.com"
+        const fromEmail = settings?.sendFromEmail || process.env.RESEND_FROM_EMAIL || "support@afcrashpad.com"
         await sendEmail({
             to: query.reporterEmail,
             subject: query.responseSubject || `RE: ${query.title}`,

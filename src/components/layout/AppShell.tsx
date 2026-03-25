@@ -15,6 +15,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { OfflineIndicator } from "@/components/OfflineIndicator"
 import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts"
 import { SessionTimeoutWarning } from "@/components/SessionTimeoutWarning"
 import { QuickAddFAB } from "@/components/QuickAddFAB"
 import { OnboardingWizard } from "@/components/OnboardingWizard"
@@ -34,6 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const [mobileUnreadCount, setMobileUnreadCount] = useState(0)
 
     useKeyboardShortcuts()
+    useGlobalShortcuts()
 
     // Fetch unread notification count for mobile (only when tab is visible)
     const fetchMobileNotifications = useCallback(async () => {

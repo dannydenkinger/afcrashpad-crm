@@ -43,10 +43,16 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { LeadSourceSelector } from "@/components/ui/LeadSourceSelector"
 import { TagPicker } from "@/components/ui/TagPicker"
-import { DocumentManager } from "@/app/contacts/documents/DocumentManager"
+const DocumentManager = dynamic(() => import("@/app/contacts/documents/DocumentManager").then(mod => mod.DocumentManager), {
+    loading: () => <div className="h-32 bg-muted animate-pulse rounded-md" />,
+    ssr: false,
+})
 import { createNote, deleteNote } from "@/app/contacts/actions"
 import type { TimelineItem } from "@/app/contacts/types"
-import { NotesEditor } from "@/components/NotesEditor"
+const NotesEditor = dynamic(() => import("@/components/NotesEditor").then(mod => mod.NotesEditor), {
+    loading: () => <div className="h-32 bg-muted animate-pulse rounded-md" />,
+    ssr: false,
+})
 import { CustomFieldsSection } from "@/components/CustomFieldsSection"
 import { updateRequiredDocs, moveToLeaseSigned, claimOpportunity, updateBlockers, addPayment, getPayments, updateDealExpenses, getDealExpenses, updateOpportunity } from "./actions"
 import type { DealStatus } from "@/types"
@@ -183,6 +189,9 @@ export function DealDetailSheet({
             setSelectedDeal((prev: any) => prev ? { ...prev, blockers: newBlockers } : null)
             setBlockerInput("")
             fetchPipelines()
+            toast.success("Blocker added")
+        } else {
+            toast.error("Failed to add blocker")
         }
         setIsSavingBlockers(false)
     }
@@ -195,6 +204,9 @@ export function DealDetailSheet({
         if (res.success) {
             setSelectedDeal((prev: any) => prev ? { ...prev, blockers: newBlockers } : null)
             fetchPipelines()
+            toast.success("Blocker removed")
+        } else {
+            toast.error("Failed to remove blocker")
         }
         setIsSavingBlockers(false)
     }
@@ -346,7 +358,11 @@ export function DealDetailSheet({
     const handleValidatedSave = () => {
         const errors = validateDealForm()
         setFormErrors(errors)
-        if (Object.keys(errors).length > 0) return
+        if (Object.keys(errors).length > 0) {
+            const messages = Object.values(errors)
+            toast.error(messages.join(". "))
+            return
+        }
         onSave()
     }
 
@@ -354,7 +370,12 @@ export function DealDetailSheet({
         if (!noteToDelete) return;
         setIsDeletingNote(true);
         const res = await deleteNote(noteToDelete.contactId, noteToDelete.noteId);
-        if (res.success) onRefetchTimeline();
+        if (res.success) {
+            toast.success("Note deleted");
+            onRefetchTimeline();
+        } else {
+            toast.error("Failed to delete note");
+        }
         setNoteToDelete(null);
         setIsDeletingNote(false);
     };
@@ -410,6 +431,8 @@ export function DealDetailSheet({
                                                                             setSelectedDeal((prev: any) => prev ? { ...prev, status: s } : null)
                                                                             fetchPipelines()
                                                                             toast.success(`Deal marked as ${DEAL_STATUS_LABELS[s]}`)
+                                                                        } else {
+                                                                            toast.error("Failed to update deal status")
                                                                         }
                                                                     }}
                                                                 >
@@ -916,7 +939,12 @@ export function DealDetailSheet({
                                                         source: "deal",
                                                         mentions,
                                                     });
-                                                    if (res.success) onRefetchTimeline();
+                                                    if (res.success) {
+                                                        toast.success("Note added");
+                                                        onRefetchTimeline();
+                                                    } else {
+                                                        toast.error("Failed to add note");
+                                                    }
                                                 }}
                                                 onDeleteNote={(noteId) => setNoteToDelete({ contactId: selectedDeal.contactId, noteId })}
                                                 users={allUsers}
@@ -1029,7 +1057,11 @@ export function DealDetailSheet({
                                                                         requiredDocs: { ...prev.requiredDocs, [doc.key]: val }
                                                                     } : null);
                                                                     if (selectedDeal.id !== "new") {
-                                                                        await updateRequiredDocs(selectedDeal.id, doc.key, val);
+                                                                        try {
+                                                                            await updateRequiredDocs(selectedDeal.id, doc.key, val);
+                                                                        } catch {
+                                                                            toast.error("Failed to update document status");
+                                                                        }
                                                                     }
                                                                 }}
                                                                 className="h-5 w-5 rounded border-2 border-muted-foreground/30 text-primary accent-primary cursor-pointer"

@@ -29,8 +29,15 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { DocumentManager } from "./documents/DocumentManager"
-import { NotesEditor } from "@/components/NotesEditor"
+const DocumentManager = dynamic(() => import("./documents/DocumentManager").then(mod => mod.DocumentManager), {
+    loading: () => <div className="h-32 bg-muted animate-pulse rounded-md" />,
+    ssr: false,
+})
+import dynamic from "next/dynamic"
+const NotesEditor = dynamic(() => import("@/components/NotesEditor").then(mod => mod.NotesEditor), {
+    loading: () => <div className="h-32 bg-muted animate-pulse rounded-md" />,
+    ssr: false,
+})
 import { addRelatedContact, removeRelatedContact } from "./actions"
 import { toast } from "sonner"
 import {
@@ -253,7 +260,11 @@ export function ContactDetailSheet({
     const handleValidatedSave = () => {
         const errors = validateContactForm()
         setFormErrors(errors)
-        if (Object.keys(errors).length > 0) return
+        if (Object.keys(errors).length > 0) {
+            const messages = Object.values(errors)
+            toast.error(messages.join(". "))
+            return
+        }
         onSave()
     }
 

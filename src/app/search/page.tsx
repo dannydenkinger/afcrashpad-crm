@@ -133,7 +133,7 @@ function SearchContent() {
                             </h3>
                             <button
                                 onClick={() => { setRecentSearches([]); localStorage.removeItem('recent-searches') }}
-                                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                             >
                                 Clear all
                             </button>
@@ -185,7 +185,7 @@ function SearchContent() {
                                                 <p className="text-xs text-muted-foreground truncate">{result.email}</p>
                                             )}
                                         </div>
-                                        <Badge variant="outline" className="ml-auto text-[10px] shrink-0">Contact</Badge>
+                                        <Badge variant="outline" className="ml-auto text-xs shrink-0">Contact</Badge>
                                     </CardContent>
                                 </Card>
                             ))}
@@ -214,7 +214,7 @@ function SearchContent() {
                                                 {result.contactName} — Deal
                                             </p>
                                         </div>
-                                        <Badge variant="outline" className="ml-auto text-[10px] shrink-0">Deal</Badge>
+                                        <Badge variant="outline" className="ml-auto text-xs shrink-0">Deal</Badge>
                                     </CardContent>
                                 </Card>
                             ))}
@@ -244,7 +244,7 @@ function SearchContent() {
                                             </p>
                                             <p className="text-xs text-muted-foreground truncate">{result.content}</p>
                                         </div>
-                                        <Badge variant="outline" className="ml-auto text-[10px] shrink-0">Note</Badge>
+                                        <Badge variant="outline" className="ml-auto text-xs shrink-0">Note</Badge>
                                     </CardContent>
                                 </Card>
                             ))}

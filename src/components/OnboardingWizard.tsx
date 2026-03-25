@@ -126,32 +126,42 @@ export function OnboardingWizard() {
             borderRadius: "12px",
         })
 
-        const style: React.CSSProperties = { position: "fixed" }
+        const tooltipWidth = tooltipRef.current?.offsetWidth || 340
+        const tooltipHeight = tooltipRef.current?.offsetHeight || 200
+        const margin = 12 // minimum distance from viewport edge
+
+        let top: number | undefined
+        let left: number | undefined
 
         switch (step.placement) {
             case "bottom":
-                style.top = rect.bottom + padding + 12
-                style.left = rect.left + rect.width / 2
-                style.transform = "translateX(-50%)"
+                top = rect.bottom + padding + 12
+                left = rect.left + rect.width / 2 - tooltipWidth / 2
                 break
             case "top":
-                style.bottom = window.innerHeight - rect.top + padding + 12
-                style.left = rect.left + rect.width / 2
-                style.transform = "translateX(-50%)"
+                top = rect.top - padding - 12 - tooltipHeight
+                left = rect.left + rect.width / 2 - tooltipWidth / 2
                 break
             case "right":
-                style.top = rect.top + rect.height / 2
-                style.left = rect.right + padding + 12
-                style.transform = "translateY(-50%)"
+                top = rect.top + rect.height / 2 - tooltipHeight / 2
+                left = rect.right + padding + 12
                 break
             case "left":
-                style.top = rect.top + rect.height / 2
-                style.right = window.innerWidth - rect.left + padding + 12
-                style.transform = "translateY(-50%)"
+                top = rect.top + rect.height / 2 - tooltipHeight / 2
+                left = rect.left - padding - 12 - tooltipWidth
                 break
         }
 
-        setTooltipStyle(style)
+        // Clamp within viewport bounds
+        const vw = window.innerWidth
+        const vh = window.innerHeight
+
+        if (left < margin) left = margin
+        if (left + tooltipWidth > vw - margin) left = vw - margin - tooltipWidth
+        if (top < margin) top = margin
+        if (top + tooltipHeight > vh - margin) top = vh - margin - tooltipHeight
+
+        setTooltipStyle({ position: "fixed", top, left })
     }, [currentStep, activeSteps])
 
     useEffect(() => {

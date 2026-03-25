@@ -87,7 +87,7 @@ export function LeaderboardTab() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{formatCurrency(teamRevenue)}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">{teamBooked} deals closed</p>
+                        <p className="text-xs text-muted-foreground mt-1">{teamBooked} deals closed</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -97,7 +97,7 @@ export function LeaderboardTab() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{formatCurrency(teamProfit)}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">Total margin earned</p>
+                        <p className="text-xs text-muted-foreground mt-1">Total margin earned</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -107,7 +107,7 @@ export function LeaderboardTab() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{teamTotal}</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">Across all agents</p>
+                        <p className="text-xs text-muted-foreground mt-1">Across all agents</p>
                     </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -117,7 +117,7 @@ export function LeaderboardTab() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{teamTotal > 0 ? Math.round((teamBooked / teamTotal) * 1000) / 10 : 0}%</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">Deals → Booked</p>
+                        <p className="text-xs text-muted-foreground mt-1">Deals → Booked</p>
                     </CardContent>
                 </Card>
             </div>
@@ -135,7 +135,7 @@ export function LeaderboardTab() {
                                 key={opt.key}
                                 variant={sortBy === opt.key ? "secondary" : "ghost"}
                                 size="sm"
-                                className="h-7 text-[10px] font-semibold px-2.5"
+                                className="h-7 text-xs font-semibold px-2.5"
                                 onClick={() => setSortBy(opt.key)}
                             >
                                 {opt.label}
@@ -175,13 +175,13 @@ export function LeaderboardTab() {
                                         <td className="px-4 sm:px-6 py-3.5">
                                             <div className="flex items-center gap-3">
                                                 <Avatar className="h-8 w-8 border border-background shadow-sm">
-                                                    <AvatarFallback className="text-[10px] font-bold bg-primary/10 text-primary">
+                                                    <AvatarFallback className="text-xs font-bold bg-primary/10 text-primary">
                                                         {agent.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)}
                                                     </AvatarFallback>
                                                 </Avatar>
                                                 <div>
                                                     <p className="font-medium text-sm">{agent.name}</p>
-                                                    <p className="text-[10px] text-muted-foreground">{agent.role}</p>
+                                                    <p className="text-xs text-muted-foreground">{agent.role}</p>
                                                 </div>
                                             </div>
                                         </td>
@@ -190,7 +190,7 @@ export function LeaderboardTab() {
                                         <td className="text-right px-4 sm:px-6 py-3.5 hidden sm:table-cell">{agent.bookedDeals}</td>
                                         <td className="text-right px-4 sm:px-6 py-3.5 hidden md:table-cell text-muted-foreground">{agent.totalDeals}</td>
                                         <td className="text-right px-4 sm:px-6 py-3.5 hidden md:table-cell">
-                                            <Badge variant="outline" className={`text-[10px] ${agent.conversionRate >= 50 ? "text-emerald-600 border-emerald-500/20" : agent.conversionRate >= 25 ? "text-amber-600 border-amber-500/20" : "text-muted-foreground"}`}>
+                                            <Badge variant="outline" className={`text-xs ${agent.conversionRate >= 50 ? "text-emerald-600 border-emerald-500/20" : agent.conversionRate >= 25 ? "text-amber-600 border-amber-500/20" : "text-muted-foreground"}`}>
                                                 {agent.conversionRate}%
                                             </Badge>
                                         </td>
