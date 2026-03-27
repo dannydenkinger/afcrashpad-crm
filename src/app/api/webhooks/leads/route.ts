@@ -90,12 +90,19 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 })
         }
 
-        // 1. Authenticate Request (support both env-based key and managed API keys)
+        // 1. Authenticate Request (support header, query param, and managed API keys)
         const authHeader = req.headers.get('authorization');
         const expectedApiKey = process.env.WEBHOOK_API_KEY;
+        const url = new URL(req.url);
+        const queryApiKey = url.searchParams.get('api_key');
 
         let authenticated = false;
         if (expectedApiKey && authHeader === `Bearer ${expectedApiKey}`) {
+            authenticated = true;
+        }
+
+        // Support api_key query parameter (for Elementor which can't set headers)
+        if (!authenticated && expectedApiKey && queryApiKey === expectedApiKey) {
             authenticated = true;
         }
 

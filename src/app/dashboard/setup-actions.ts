@@ -37,7 +37,8 @@ export async function getSetupStatus(): Promise<{
             adminDb.collection("users").get(),
         ])
 
-        const hasProfile = userDoc.exists && !!(userDoc.data()?.name)
+        const userData = userDoc.exists ? userDoc.data() : null
+        const hasProfile = !!(userData?.name || userData?.displayName || userData?.email)
         const hasContacts = !contactsSnap.empty
         const hasPipelines = !pipelinesSnap.empty
         const hasTemplates = !templatesSnap.empty
