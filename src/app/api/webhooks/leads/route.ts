@@ -69,17 +69,17 @@ function normalizeBaseName(input: unknown): string | null {
 
 // Define the expected schema from the WordPress webhook
 const webhookSchema = z.object({
-    name: z.string().optional(),
-    first_name: z.string().optional(),
-    last_name: z.string().optional(),
+    name: z.string().nullish(),
+    first_name: z.string().nullish(),
+    last_name: z.string().nullish(),
     email: z.string().email("Valid email is required"),
-    phone: z.string().optional(),
-    startDate: z.string().optional(), // Expected format: YYYY-MM-DD
-    endDate: z.string().optional(),   // Expected format: YYYY-MM-DD
-    base: z.string().optional(),
-    notes: z.string().optional(),
-    special_accommodations: z.union([z.string(), z.array(z.string())]).optional(),
-    reason_for_stay: z.string().optional(),
+    phone: z.string().nullish(),
+    startDate: z.string().nullish(), // Expected format: YYYY-MM-DD
+    endDate: z.string().nullish(),   // Expected format: YYYY-MM-DD
+    base: z.string().nullish(),
+    notes: z.string().nullish(),
+    special_accommodations: z.union([z.string(), z.array(z.string())]).nullish(),
+    reason_for_stay: z.string().nullish(),
 });
 
 export async function POST(req: Request) {
