@@ -1,0 +1,131 @@
+/*
+ * react-grid-layout default styles + our customizations.
+ *
+ * The library ships with bare-minimum CSS that we override here to fit
+ * the Vesta visual language (subtle shadows, primary-tinted handles in
+ * edit mode, smoother transitions).
+ */
+
+.react-grid-layout {
+    position: relative;
+    transition: height 200ms ease;
+}
+
+.react-grid-item {
+    transition: all 200ms ease;
+    transition-property: left, top, width, height;
+    box-sizing: border-box;
+}
+
+.react-grid-item.cssTransforms {
+    transition-property: transform, width, height;
+}
+
+.react-grid-item.resizing {
+    z-index: 1;
+    will-change: width, height;
+    opacity: 0.95;
+}
+
+.react-grid-item.react-draggable-dragging {
+    transition: none;
+    z-index: 3;
+    will-change: transform;
+    cursor: grabbing !important;
+    transform: scale(1.02);
+}
+
+/* The placeholder shown while dragging — should look like an obvious
+   "this is where it'll land" target. */
+.react-grid-item.react-grid-placeholder {
+    background: hsl(var(--primary) / 0.18);
+    border: 2px dashed hsl(var(--primary) / 0.45);
+    border-radius: 12px;
+    opacity: 1;
+    transition-duration: 100ms;
+    z-index: 2;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+/*  Resize handle — only visible in edit mode, redesigned for clarity   */
+/* ──────────────────────────────────────────────────────────────────── */
+
+.react-grid-item > .react-resizable-handle {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    bottom: 4px;
+    right: 4px;
+    cursor: nwse-resize;
+    opacity: 0;
+    transition: opacity 150ms ease, transform 100ms ease;
+    background: none;
+    z-index: 10;
+}
+
+/* Always-on while in edit mode */
+.dashboard-grid--edit .react-grid-item > .react-resizable-handle {
+    opacity: 1;
+}
+
+/* Custom handle visual: rounded primary-tinted square + diagonal lines */
+.react-grid-item > .react-resizable-handle::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    border-radius: 6px;
+    background-color: hsl(var(--primary) / 0.15);
+    border: 1px solid hsl(var(--primary) / 0.35);
+    background-image:
+        linear-gradient(
+            135deg,
+            transparent 0%,
+            transparent 38%,
+            hsl(var(--primary)) 38%,
+            hsl(var(--primary)) 42%,
+            transparent 42%,
+            transparent 58%,
+            hsl(var(--primary)) 58%,
+            hsl(var(--primary)) 62%,
+            transparent 62%
+        );
+    background-size: 100% 100%;
+}
+
+.react-grid-item > .react-resizable-handle:hover {
+    transform: scale(1.15);
+}
+
+.react-grid-item > .react-resizable-handle:hover::after {
+    background-color: hsl(var(--primary) / 0.25);
+    border-color: hsl(var(--primary) / 0.6);
+}
+
+/* Hide default chevrons on side handles (we only register "se" anyway) */
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-sw::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-ne::after,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-nw::after {
+    content: none;
+}
+
+/* Edit-mode visual outline on each widget — primary tint, hovers brighter */
+.dashboard-grid--edit .react-grid-item {
+    outline: 2px solid hsl(var(--primary) / 0.18);
+    outline-offset: -2px;
+    border-radius: 12px;
+    transition: outline-color 150ms ease;
+}
+.dashboard-grid--edit .react-grid-item:hover {
+    outline-color: hsl(var(--primary) / 0.5);
+}
+.dashboard-grid--edit .react-grid-item.react-draggable-dragging {
+    outline-color: hsl(var(--primary));
+    outline-width: 3px;
+}

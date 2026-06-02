@@ -5,16 +5,18 @@
  * Called from the main daily cron and the dedicated cron endpoint.
  */
 
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 
-export async function processFollowUpReminders(): Promise<{
+export async function processFollowUpReminders(workspaceId: string): Promise<{
     success: boolean
     created: number
     skipped: number
     totalStale: number
 }> {
+    const db = tenantDb(workspaceId)
+
     // 1. Load follow-up config
-    const configDoc = await adminDb.collection("settings").doc("follow_up_reminders").get()
+    const configDoc = await db.settingsDoc("follow_up_reminders").get()
     if (!configDoc.exists || !configDoc.data()?.enabled) {
         return { success: true, created: 0, skipped: 0, totalStale: 0 }
     }
@@ -28,7 +30,7 @@ export async function processFollowUpReminders(): Promise<{
     cutoffDate.setDate(cutoffDate.getDate() - daysThreshold)
 
     // 3. Query opportunities updated before the cutoff
-    const oppsSnap = await adminDb.collection("opportunities").get()
+    const oppsSnap = await db.collection("opportunities").get()
     const staleOpps = oppsSnap.docs.filter(doc => {
         const data = doc.data()
         const updatedAt = data.updatedAt?.toDate?.() || data.createdAt?.toDate?.() || new Date()
@@ -40,11 +42,7 @@ export async function processFollowUpReminders(): Promise<{
     if (pipelineIds.length > 0) {
         validStageIds = new Set<string>()
         for (const pipelineId of pipelineIds) {
-            const stagesSnap = await adminDb
-                .collection("pipelines")
-                .doc(pipelineId)
-                .collection("stages")
-                .get()
+            const stagesSnap = await db.subcollection("pipelines", pipelineId, "stages").get()
             for (const sDoc of stagesSnap.docs) {
                 validStageIds.add(sDoc.id)
             }
@@ -63,7 +61,7 @@ export async function processFollowUpReminders(): Promise<{
         }
 
         // 5. Check if a follow-up task already exists for this opportunity
-        const existingTasks = await adminDb
+        const existingTasks = await db
             .collection("tasks")
             .where("opportunityId", "==", oppDoc.id)
             .where("completed", "==", false)
@@ -86,7 +84,7 @@ export async function processFollowUpReminders(): Promise<{
         const dueDate = new Date()
         dueDate.setDate(dueDate.getDate() + 1)
 
-        await adminDb.collection("tasks").add({
+        await db.add("tasks", {
             title: `Follow up on ${dealName}`,
             description: `This deal hasn't been updated in ${daysThreshold}+ days. Please review and take action.`,
             dueDate,

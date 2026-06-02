@@ -19,7 +19,6 @@ import {
     Repeat,
     Lock,
     Unlock,
-    LayoutTemplate,
     Send,
     Trash2,
     Pencil,
@@ -32,12 +31,10 @@ import {
     getTasks,
     toggleTaskComplete,
     deleteTask,
+    softDeleteTask,
+    restoreTask,
+    permanentlyDeleteTask,
     completeRecurringTask,
-    getTaskTemplates,
-    createTaskTemplate,
-    updateTaskTemplate,
-    deleteTaskTemplate,
-    applyTaskTemplate,
     getTaskComments,
     addTaskComment,
     addRecurrenceException,
@@ -80,22 +77,9 @@ import { toast } from "sonner"
 import { withRetry } from "@/lib/retry"
 import { useIsMobile } from "@/hooks/useIsMobile"
 import { usePullToRefresh } from "@/hooks/usePullToRefresh"
+import { EmptyState } from "@/components/ui/EmptyState"
 
 // ── Types ───────────────────────────────────────────────────────────────────
-
-interface TemplateTask {
-    title: string
-    description?: string
-    priority?: string
-    relativeDueDays?: number
-}
-
-interface TaskTemplate {
-    id: string
-    name: string
-    tasks: TemplateTask[]
-    createdAt?: string
-}
 
 interface TaskComment {
     id: string
@@ -104,45 +88,6 @@ interface TaskComment {
     text: string
     createdAt: string
 }
-
-// ── Default Templates ───────────────────────────────────────────────────────
-
-const DEFAULT_TEMPLATES: Omit<TaskTemplate, "id" | "createdAt">[] = [
-    {
-        name: "New Tenant Onboarding",
-        tasks: [
-            { title: "Send welcome email with move-in instructions", priority: "HIGH", relativeDueDays: 0 },
-            { title: "Verify lease agreement is signed", priority: "HIGH", relativeDueDays: 1 },
-            { title: "Collect security deposit", priority: "HIGH", relativeDueDays: 1 },
-            { title: "Provide key/access code", priority: "HIGH", relativeDueDays: 2 },
-            { title: "Walk through property rules and amenities", priority: "MEDIUM", relativeDueDays: 2 },
-            { title: "Set up recurring rent payment", priority: "MEDIUM", relativeDueDays: 3 },
-            { title: "Follow up - settling in check", priority: "LOW", relativeDueDays: 7 },
-        ]
-    },
-    {
-        name: "Move-Out Checklist",
-        tasks: [
-            { title: "Send move-out reminder and instructions", priority: "HIGH", relativeDueDays: 0 },
-            { title: "Schedule property inspection", priority: "HIGH", relativeDueDays: 1 },
-            { title: "Collect keys/access devices", priority: "HIGH", relativeDueDays: 2 },
-            { title: "Conduct move-out inspection", priority: "HIGH", relativeDueDays: 2 },
-            { title: "Process security deposit return", priority: "MEDIUM", relativeDueDays: 5 },
-            { title: "Clean and prepare unit for next tenant", priority: "MEDIUM", relativeDueDays: 7 },
-        ]
-    },
-    {
-        name: "Monthly Property Check",
-        tasks: [
-            { title: "Inspect HVAC filters", priority: "MEDIUM", relativeDueDays: 0 },
-            { title: "Check smoke detectors and CO alarms", priority: "HIGH", relativeDueDays: 0 },
-            { title: "Inspect plumbing for leaks", priority: "MEDIUM", relativeDueDays: 1 },
-            { title: "Review exterior condition", priority: "LOW", relativeDueDays: 2 },
-            { title: "Check common area cleanliness", priority: "LOW", relativeDueDays: 2 },
-            { title: "Log maintenance findings", priority: "MEDIUM", relativeDueDays: 3 },
-        ]
-    },
-]
 
 // ── Mobile Tasks Component ──────────────────────────────────────────────────
 
@@ -234,19 +179,14 @@ function MobileTasksView({
                             ))}
                         </div>
                     ) : groupedTasks.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <CheckSquare className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                            <h3 className="text-lg font-medium text-foreground mb-1">
-                                {filter === "active" ? "No active tasks" : "No tasks found"}
-                            </h3>
-                            <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                                {filter === "active" ? "All caught up! Create a new task to stay organized." : "Try adjusting your filters or create a new task."}
-                            </p>
-                            <Button size="sm" onClick={() => { setEditingTask(null); setIsCreateDialogOpen(true); }}>
-                                <Plus className="h-4 w-4 mr-1" />
-                                Create a task
-                            </Button>
-                        </div>
+                        <EmptyState
+                            Icon={CheckSquare}
+                            accent={filter === "active" ? "emerald" : "muted"}
+                            title={filter === "active" ? "No active tasks" : "No tasks found"}
+                            description={filter === "active" ? "All caught up! Create a new task to stay organized." : "Try adjusting your filters or create a new task."}
+                            action={{ label: "Create a task", onClick: () => { setEditingTask(null); setIsCreateDialogOpen(true); } }}
+                            compact
+                        />
                     ) : (
                         groupedTasks.map(group => (
                             <div key={group.key}>
@@ -352,11 +292,6 @@ export default function TasksPage() {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
     const [editingTask, setEditingTask] = useState<any>(null)
     const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-
-    // Templates state
-    const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false)
-    const [templates, setTemplates] = useState<TaskTemplate[]>([])
-    const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
 
     // Comments state
     const [commentSheetTaskId, setCommentSheetTaskId] = useState<string | null>(null)
@@ -480,13 +415,31 @@ export default function TasksPage() {
         setTasks(prev => prev.filter(t => t.id !== taskId))
         setDeleteTarget(null)
 
+        // Soft-delete first, then either restore on Undo or hard-delete on
+        // toast dismiss. Mirrors the contact-delete flow so users have a
+        // consistent way to recover from accidental clicks across the app.
         try {
-            await withRetry(
-                () => deleteTask(taskId),
-                { onRetry: (attempt) => toast.info(`Retrying delete... (attempt ${attempt + 1}/4)`, { id: "retry-toast", duration: 2000 }) }
-            )
-            toast.success("Task deleted")
-            loadTasks()
+            const res = await softDeleteTask(taskId)
+            if (!res.success) {
+                throw new Error(res.error || "Failed to delete task")
+            }
+            toast("Task deleted", {
+                duration: 10000,
+                action: {
+                    label: "Undo",
+                    onClick: async () => {
+                        const undo = await restoreTask(taskId)
+                        if (undo.success) {
+                            toast.success("Task restored")
+                            loadTasks()
+                        } else {
+                            toast.error("Couldn't restore task")
+                        }
+                    },
+                },
+                onDismiss: () => { permanentlyDeleteTask(taskId).catch(() => {}) },
+                onAutoClose: () => { permanentlyDeleteTask(taskId).catch(() => {}) },
+            })
         } catch (error) {
             console.error("Failed to delete task:", error)
             setTasks(previousTasks)
@@ -577,10 +530,17 @@ export default function TasksPage() {
         setCommentSheetTaskId(taskId)
         setIsLoadingComments(true)
         try {
-            const data = await getTaskComments(taskId)
+            // Race the fetch against a 10s timeout so the spinner can't hang forever
+            const data = await Promise.race([
+                getTaskComments(taskId),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error("Loading comments took too long")), 10_000)
+                ),
+            ])
             setComments(data)
-        } catch {
-            toast.error("Failed to load comments")
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to load comments")
+            setComments([])
         }
         setIsLoadingComments(false)
     }, [])
@@ -603,35 +563,6 @@ export default function TasksPage() {
             setNewComment(text)
         }
     }, [commentSheetTaskId, newComment])
-
-    // ── Templates ───────────────────────────────────────────────────────────
-
-    const openTemplates = useCallback(async () => {
-        setIsTemplateDialogOpen(true)
-        setIsLoadingTemplates(true)
-        try {
-            const data = await getTaskTemplates()
-            setTemplates(data)
-        } catch {
-            toast.error("Failed to load templates")
-        }
-        setIsLoadingTemplates(false)
-    }, [])
-
-    const handleApplyTemplate = useCallback(async (templateId: string) => {
-        try {
-            const result = await applyTaskTemplate(templateId)
-            if (result.success) {
-                toast.success(`Created ${result.createdCount} tasks from template`)
-                setIsTemplateDialogOpen(false)
-                loadTasks()
-            } else {
-                toast.error(result.error || "Failed to apply template")
-            }
-        } catch {
-            toast.error("Failed to apply template")
-        }
-    }, [])
 
     const toggleQuickFilter = useCallback((key: string) => {
         setQuickFilters(prev => {
@@ -756,25 +687,22 @@ export default function TasksPage() {
             <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
-                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-                            Task Manager
+                        <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                            Tasks
                         </h2>
-                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Keep track of everything you need to do.</p>
+                        <p className="text-sm text-muted-foreground mt-0.5">
+                            What needs to happen — by you, by your team, today and beyond.
+                        </p>
                     </div>
-                    <div className="flex items-center gap-2 sm:gap-3">
-                        <Button variant="outline" className="h-9 gap-2 touch-manipulation" onClick={openTemplates}>
-                            <LayoutTemplate className="h-4 w-4" />
-                            <span className="hidden sm:inline">Templates</span>
-                        </Button>
-                        <Button className="h-9 gap-2 shadow-lg shadow-primary/20 touch-manipulation flex-1 sm:flex-initial" onClick={() => {
-                            setEditingTask(null);
-                            setIsCreateDialogOpen(true);
-                        }}>
-                            <Plus className="h-4 w-4" />
-                            New Task
-                        </Button>
-                    </div>
+                    <Button className="h-9 gap-2 shadow-sm touch-manipulation flex-1 sm:flex-initial" onClick={() => {
+                        setEditingTask(null);
+                        setIsCreateDialogOpen(true);
+                    }}>
+                        <Plus className="h-4 w-4" />
+                        New Task
+                    </Button>
                 </div>
+
 
             <CreateTaskDialog
                 isOpen={isCreateDialogOpen}
@@ -1075,15 +1003,13 @@ export default function TasksPage() {
                         </div>
                     ))
                 ) : (
-                    <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <CheckSquare className="h-12 w-12 text-muted-foreground/20 mb-4" />
-                        <p className="text-lg font-medium text-foreground mb-1">No tasks yet</p>
-                        <p className="text-sm text-muted-foreground mb-4 max-w-sm">Create a task to stay on top of your work</p>
-                        <Button onClick={() => { setEditingTask(null); setIsCreateDialogOpen(true); }}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            New Task
-                        </Button>
-                    </div>
+                    <EmptyState
+                        Icon={CheckSquare}
+                        accent="primary"
+                        title="No tasks yet"
+                        description="Create a task to stay on top of your work."
+                        action={{ label: "New task", onClick: () => { setEditingTask(null); setIsCreateDialogOpen(true); } }}
+                    />
                 )}
             </div>
             </div>
@@ -1231,258 +1157,6 @@ export default function TasksPage() {
                 </SheetContent>
             </Sheet>
 
-            {/* Templates Dialog */}
-            <TemplateDialog
-                isOpen={isTemplateDialogOpen}
-                onClose={() => setIsTemplateDialogOpen(false)}
-                templates={templates}
-                setTemplates={setTemplates}
-                isLoading={isLoadingTemplates}
-                onApply={handleApplyTemplate}
-            />
         </div>
-    )
-}
-
-// ── Template Dialog ─────────────────────────────────────────────────────────
-
-function TemplateDialog({
-    isOpen,
-    onClose,
-    templates,
-    setTemplates,
-    isLoading,
-    onApply,
-}: {
-    isOpen: boolean
-    onClose: () => void
-    templates: TaskTemplate[]
-    setTemplates: (t: TaskTemplate[]) => void
-    isLoading: boolean
-    onApply: (id: string) => void
-}) {
-    const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null)
-    const [isCreating, setIsCreating] = useState(false)
-
-    // Editor state
-    const [templateName, setTemplateName] = useState("")
-    const [templateTasks, setTemplateTasks] = useState<TemplateTask[]>([])
-
-    const openEditor = (template?: TaskTemplate) => {
-        if (template) {
-            setEditingTemplate(template)
-            setTemplateName(template.name)
-            setTemplateTasks([...template.tasks])
-        } else {
-            setEditingTemplate(null)
-            setTemplateName("")
-            setTemplateTasks([{ title: "", priority: "MEDIUM", relativeDueDays: 0 }])
-        }
-        setIsCreating(true)
-    }
-
-    const addTaskRow = () => {
-        setTemplateTasks(prev => [...prev, { title: "", priority: "MEDIUM", relativeDueDays: 0 }])
-    }
-
-    const removeTaskRow = (index: number) => {
-        setTemplateTasks(prev => prev.filter((_, i) => i !== index))
-    }
-
-    const updateTaskRow = (index: number, field: keyof TemplateTask, value: any) => {
-        setTemplateTasks(prev => prev.map((t, i) => i === index ? { ...t, [field]: value } : t))
-    }
-
-    const handleSaveTemplate = async () => {
-        const validTasks = templateTasks.filter(t => t.title.trim())
-        if (!templateName.trim() || validTasks.length === 0) {
-            toast.error("Template needs a name and at least one task")
-            return
-        }
-
-        try {
-            if (editingTemplate) {
-                await updateTaskTemplate(editingTemplate.id, { name: templateName, tasks: validTasks })
-                toast.success("Template updated")
-            } else {
-                await createTaskTemplate({ name: templateName, tasks: validTasks })
-                toast.success("Template created")
-            }
-            // Reload templates
-            const data = await getTaskTemplates()
-            setTemplates(data)
-            setIsCreating(false)
-        } catch {
-            toast.error("Failed to save template")
-        }
-    }
-
-    const handleDeleteTemplate = async (id: string) => {
-        try {
-            await deleteTaskTemplate(id)
-            setTemplates(templates.filter(t => t.id !== id))
-            toast.success("Template deleted")
-        } catch {
-            toast.error("Failed to delete template")
-        }
-    }
-
-    const handleCreateDefault = async (template: Omit<TaskTemplate, "id" | "createdAt">) => {
-        try {
-            await createTaskTemplate({ name: template.name, tasks: template.tasks })
-            const data = await getTaskTemplates()
-            setTemplates(data)
-            toast.success(`"${template.name}" template created`)
-        } catch {
-            toast.error("Failed to create template")
-        }
-    }
-
-    return (
-        <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { onClose(); setIsCreating(false); } }}>
-            <DialogContent className="sm:max-w-[600px] border-border bg-background/95 backdrop-blur-xl max-h-[85vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <LayoutTemplate className="h-5 w-5 text-primary" />
-                        {isCreating ? (editingTemplate ? "Edit Template" : "Create Template") : "Task Templates"}
-                    </DialogTitle>
-                </DialogHeader>
-
-                {isCreating ? (
-                    <div className="space-y-4">
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium">Template Name</label>
-                            <Input
-                                value={templateName}
-                                onChange={(e) => setTemplateName(e.target.value)}
-                                placeholder="e.g., New Tenant Onboarding"
-                                autoFocus
-                            />
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                            <div className="flex items-center justify-between">
-                                <label className="text-sm font-medium">Tasks</label>
-                                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={addTaskRow}>
-                                    <Plus className="h-3 w-3" /> Add Task
-                                </Button>
-                            </div>
-                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                                {templateTasks.map((task, index) => (
-                                    <div key={index} className="flex items-start gap-2 p-3 rounded-xl bg-muted/10 border border-border">
-                                        <div className="flex-1 space-y-2">
-                                            <Input
-                                                value={task.title}
-                                                onChange={(e) => updateTaskRow(index, "title", e.target.value)}
-                                                placeholder="Task title"
-                                                className="h-8 text-sm"
-                                            />
-                                            <div className="flex gap-2">
-                                                <Select value={task.priority || "MEDIUM"} onValueChange={(v) => updateTaskRow(index, "priority", v)}>
-                                                    <SelectTrigger className="h-7 text-xs w-24">
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="LOW">Low</SelectItem>
-                                                        <SelectItem value="MEDIUM">Medium</SelectItem>
-                                                        <SelectItem value="HIGH">High</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                                <div className="flex items-center gap-1">
-                                                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Due in</span>
-                                                    <Input
-                                                        type="number"
-                                                        min={0}
-                                                        max={365}
-                                                        value={task.relativeDueDays ?? 0}
-                                                        onChange={(e) => updateTaskRow(index, "relativeDueDays", parseInt(e.target.value) || 0)}
-                                                        className="h-7 w-14 text-xs"
-                                                    />
-                                                    <span className="text-[10px] text-muted-foreground">days</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-rose-500"
-                                            onClick={() => removeTaskRow(index)}
-                                        >
-                                            <X className="h-3.5 w-3.5" />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsCreating(false)}>Back</Button>
-                            <Button onClick={handleSaveTemplate} disabled={!templateName.trim() || templateTasks.filter(t => t.title.trim()).length === 0}>
-                                {editingTemplate ? "Update" : "Create"} Template
-                            </Button>
-                        </DialogFooter>
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {isLoading ? (
-                            <div className="flex items-center justify-center py-12">
-                                <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                            </div>
-                        ) : (
-                            <>
-                                {/* Saved Templates */}
-                                {templates.length > 0 && (
-                                    <div className="space-y-2">
-                                        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Saved Templates</h3>
-                                        {templates.map(template => (
-                                            <div key={template.id} className="flex items-center gap-3 p-3 rounded-xl bg-muted/10 border border-border hover:bg-muted/20 transition-all group">
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-bold truncate">{template.name}</p>
-                                                    <p className="text-[10px] text-muted-foreground">{template.tasks.length} tasks</p>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onApply(template.id)} title="Apply template">
-                                                        <Plus className="h-3.5 w-3.5 text-primary" />
-                                                    </Button>
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openEditor(template)}>
-                                                        <Pencil className="h-3 w-3" />
-                                                    </Button>
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-rose-500" onClick={() => handleDeleteTemplate(template.id)}>
-                                                        <Trash2 className="h-3 w-3" />
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* Default Templates */}
-                                <div className="space-y-2">
-                                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Quick-Start Templates</h3>
-                                    <p className="text-xs text-muted-foreground">Click to save these as your own templates.</p>
-                                    {DEFAULT_TEMPLATES.map((template, index) => (
-                                        <div key={index} className="flex items-center gap-3 p-3 rounded-xl bg-muted/5 border border-border border-dashed hover:bg-muted/10 hover:border-border transition-all cursor-pointer" onClick={() => handleCreateDefault(template)}>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-bold truncate">{template.name}</p>
-                                                <p className="text-[10px] text-muted-foreground">{template.tasks.length} tasks</p>
-                                            </div>
-                                            <Plus className="h-4 w-4 text-muted-foreground" />
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
-                        )}
-
-                        <DialogFooter>
-                            <Button variant="outline" onClick={onClose}>Close</Button>
-                            <Button onClick={() => openEditor()}>
-                                <Plus className="mr-2 h-4 w-4" />
-                                Create Template
-                            </Button>
-                        </DialogFooter>
-                    </div>
-                )}
-            </DialogContent>
-        </Dialog>
     )
 }

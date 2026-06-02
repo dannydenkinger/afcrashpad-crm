@@ -1,7 +1,8 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { requireAuth } from "@/lib/auth-guard"
+import { getCachedUsers } from "@/lib/cached-queries"
 import type { BookingEntry, OverlapGroup, BookingsData } from "./types"
 
 function datesOverlap(s1: string, e1: string, s2: string, e2: string): { start: string; end: string; days: number } | null {
@@ -25,15 +26,16 @@ function datesOverlap(s1: string, e1: string, s2: string, e2: string): { start: 
 }
 
 export async function getBookingsData(): Promise<{ success: boolean; data?: BookingsData; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const [oppsSnap, contactsSnap, pipelinesSnap, usersSnap] = await Promise.all([
-            adminDb.collection("opportunities").get(),
-            adminDb.collection("contacts").get(),
-            adminDb.collection("pipelines").get(),
-            adminDb.collection("users").get(),
+        const [oppsSnap, contactsSnap, pipelinesSnap, cachedUsersData] = await Promise.all([
+            db.collection("opportunities").get(),
+            db.collection("contacts").get(),
+            db.collection("pipelines").get(),
+            getCachedUsers(workspaceId),
         ])
 
         // Build contacts map
@@ -42,16 +44,16 @@ export async function getBookingsData(): Promise<{ success: boolean; data?: Book
             contactsMap[doc.id] = { id: doc.id, ...doc.data() }
         })
 
-        // Build users map
+        // Build users map from cached data
         const usersMap: Record<string, string> = {}
-        usersSnap.docs.forEach(doc => {
-            usersMap[doc.id] = doc.data().name || "Unknown"
+        cachedUsersData.forEach(u => {
+            usersMap[u.id] = u.name || "Unknown"
         })
 
         // Build stage map
         const stageMap: Record<string, string> = {}
         for (const pDoc of pipelinesSnap.docs) {
-            const stagesSnap = await pDoc.ref.collection("stages").get()
+            const stagesSnap = await db.subcollection("pipelines", pDoc.id, "stages").get()
             stagesSnap.docs.forEach(sDoc => {
                 stageMap[sDoc.id] = sDoc.data().name
             })
@@ -76,12 +78,11 @@ export async function getBookingsData(): Promise<{ success: boolean; data?: Book
             const d = doc.data()
             const contact = d.contactId ? contactsMap[d.contactId] : null
 
-            const base = d.militaryBase || contact?.militaryBase
             const startDate = toDateStr(d.stayStartDate || contact?.stayStartDate)
             const endDate = toDateStr(d.stayEndDate || contact?.stayEndDate)
             const stageName = d.pipelineStageId ? stageMap[d.pipelineStageId] || "Unknown" : "Unknown"
 
-            if (!base || !startDate || !endDate) continue
+            if (!startDate || !endDate) continue
             if (d.status === "closed_lost" || d.status === "archive" || excludeStages.has(stageName)) continue
             // Skip past stays — only show current/future opportunities
             if (endDate < todayStr) continue
@@ -92,7 +93,7 @@ export async function getBookingsData(): Promise<{ success: boolean; data?: Book
                 name: contact?.name || d.name || "Unknown",
                 email: contact?.email || d.email || null,
                 phone: contact?.phone || d.phone || null,
-                base,
+                base: "",
                 startDate,
                 endDate,
                 value: Number(d.opportunityValue) || 0,

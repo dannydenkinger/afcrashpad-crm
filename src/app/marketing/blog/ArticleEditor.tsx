@@ -362,7 +362,7 @@ export default function ArticleEditor({
                         <div className="flex items-center gap-2">
                             <Globe className="h-3.5 w-3.5 text-muted-foreground" />
                             <span className="text-[10px] text-muted-foreground font-mono">
-                                afcrashpad.com/blog/{slug || "article-slug"}
+                                yoursite.com/blog/{slug || "article-slug"}
                             </span>
                         </div>
                         <Button
@@ -520,7 +520,7 @@ export default function ArticleEditor({
                                                 {metaTitle || title || "Page Title"}
                                             </p>
                                             <p className="text-[11px] text-emerald-500 font-mono truncate">
-                                                afcrashpad.com/blog/{slug || "article-slug"}
+                                                yoursite.com/blog/{slug || "article-slug"}
                                             </p>
                                             <p className="text-xs text-muted-foreground line-clamp-2">
                                                 {metaDescription || excerpt || "No meta description set."}
@@ -678,7 +678,7 @@ export default function ArticleEditor({
                                 <Input
                                     value={focusKeyword}
                                     onChange={(e) => setFocusKeyword(e.target.value)}
-                                    placeholder="e.g., air force crashpad"
+                                    placeholder="e.g., your focus keyword"
                                     className="mt-1 text-xs"
                                 />
                             </div>

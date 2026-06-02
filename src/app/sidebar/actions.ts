@@ -1,7 +1,8 @@
 "use server"
 
 import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { getAuthSession } from "@/lib/auth-guard"
 import { cached } from "@/lib/server-cache"
 
 export interface SidebarData {
@@ -19,57 +20,65 @@ export interface SidebarData {
  * This reduces HTTP round trips from 4 to 1.
  */
 export async function getSidebarData(): Promise<SidebarData> {
-    const session = await auth()
+    const session = await getAuthSession()
     const email = session?.user?.email
+    const workspaceId = session?.user?.workspaceId
+
+    // Role comes from workspace_members via session (not from users collection)
+    const sessionRole = session?.user?.role || "AGENT"
 
     // Run all queries in parallel — single round trip
     const [userResult, brandingResult, overdueResult] = await Promise.all([
-        // User role + profile (single Firestore query instead of two separate ones)
+        // User profile (name + image from users collection, role from session)
         email
             ? adminDb.collection('users').where('email', '==', email).limit(1).get()
                 .then(snap => {
-                    if (snap.empty) return { role: "AGENT", name: null, imageUrl: null }
+                    if (snap.empty) return { name: null, imageUrl: null }
                     const data = snap.docs[0].data()
                     return {
-                        role: data?.role || "AGENT",
                         name: data?.name || null,
                         imageUrl: data?.profileImageUrl || null,
                     }
                 })
-                .catch(() => ({ role: "AGENT" as string, name: null as string | null, imageUrl: null as string | null }))
-            : Promise.resolve({ role: "AGENT" as string, name: null as string | null, imageUrl: null as string | null }),
+                .catch(() => ({ name: null as string | null, imageUrl: null as string | null }))
+            : Promise.resolve({ name: null as string | null, imageUrl: null as string | null }),
 
         // Branding settings (cached for 5 min — rarely changes)
-        cached("branding", async () => {
-            const doc = await adminDb.collection("settings").doc("branding").get()
-            if (!doc.exists) return null
-            const data = doc.data()
-            return {
-                companyName: data?.companyName || undefined,
-                primaryColor: data?.primaryColor || undefined,
-                logoUrl: data?.logoUrl || undefined,
-            }
-        }, 300_000),
+        workspaceId
+            ? cached(`${workspaceId}:branding`, async () => {
+                const db = tenantDb(workspaceId)
+                const doc = await db.settingsDoc("branding").get()
+                if (!doc.exists) return null
+                const data = doc.data()
+                return {
+                    companyName: data?.companyName || undefined,
+                    primaryColor: data?.primaryColor || undefined,
+                    logoUrl: data?.logoUrl || undefined,
+                }
+            }, 300_000)
+            : Promise.resolve(null),
 
-        // Overdue task count
-        adminDb.collection('tasks').where('completed', '==', false).get()
-            .then(snapshot => {
-                const startOfToday = new Date()
-                startOfToday.setHours(0, 0, 0, 0)
-                let count = 0
-                snapshot.forEach(doc => {
-                    const task = doc.data()
-                    if (!task.dueDate) return
-                    const dueDate = task.dueDate.toDate ? task.dueDate.toDate() : new Date(task.dueDate)
-                    if (dueDate < startOfToday) count++
+        // Overdue task count (workspace-scoped)
+        workspaceId
+            ? tenantDb(workspaceId).collection('tasks').where('completed', '==', false).get()
+                .then(snapshot => {
+                    const startOfToday = new Date()
+                    startOfToday.setHours(0, 0, 0, 0)
+                    let count = 0
+                    snapshot.forEach(doc => {
+                        const task = doc.data()
+                        if (!task.dueDate) return
+                        const dueDate = task.dueDate.toDate ? task.dueDate.toDate() : new Date(task.dueDate)
+                        if (dueDate < startOfToday) count++
+                    })
+                    return count
                 })
-                return count
-            })
-            .catch(() => 0),
+                .catch(() => 0)
+            : Promise.resolve(0),
     ])
 
     return {
-        role: userResult.role,
+        role: sessionRole,
         name: userResult.name,
         imageUrl: userResult.imageUrl,
         branding: brandingResult,

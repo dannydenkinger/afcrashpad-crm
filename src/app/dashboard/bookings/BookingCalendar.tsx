@@ -164,7 +164,7 @@ export function BookingCalendar() {
             <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Stays</CardTitle>
+                        <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Bookings</CardTitle>
                         <CalendarDays className="h-4 w-4 text-primary opacity-70" />
                     </CardHeader>
                     <CardContent>

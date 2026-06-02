@@ -10,10 +10,12 @@ import {
     RotateCcw,
     FileText,
     AlertTriangle,
+    Maximize2,
 } from "lucide-react"
 import { getSignatureRequest, submitSignature, submitBlockSignatures } from "@/app/contacts/documents/signature-actions"
 import { SignerBlockOverlay } from "../components/SignerBlockOverlay"
 import type { SignatureBlockData } from "@/app/documents/components/SignatureBlock"
+import { sanitizeHtml } from "@/lib/sanitize-html"
 
 export default function SigningPage() {
     const params = useParams()
@@ -325,16 +327,25 @@ export default function SigningPage() {
                     <div className="bg-white rounded-xl border shadow-sm p-6">
                         <div
                             className="prose prose-sm max-w-none"
-                            dangerouslySetInnerHTML={{ __html: request.generatedContent }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(request.generatedContent) }}
                         />
                     </div>
                 ) : request?.documentUrl ? (
-                    <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <div className="bg-white rounded-xl border shadow-sm overflow-hidden relative group">
                         <iframe
                             src={request.documentUrl}
                             title={request.documentName}
-                            className="w-full h-[50vh] border-none"
+                            className="w-full h-[60vh] border-none"
                         />
+                        <a
+                            href={request.documentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute top-2 right-2 inline-flex items-center gap-1.5 rounded-md bg-white/90 backdrop-blur px-2.5 py-1.5 text-xs font-medium text-gray-700 border shadow-sm hover:bg-white transition-colors"
+                        >
+                            <Maximize2 className="h-3 w-3" />
+                            Open full size
+                        </a>
                     </div>
                 ) : (
                     <div className="bg-white rounded-xl border shadow-sm p-8 text-center">

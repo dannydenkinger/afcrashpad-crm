@@ -4,14 +4,18 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import NextImage from "next/image"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Users, Calendar, Settings, Plane, ChevronLeft, ChevronRight, Megaphone, LayoutGrid, Wrench, MessageSquare, X, Wallet, LogOut, CheckSquare, FileText } from "lucide-react"
+import { LayoutDashboard, Users, Calendar, Settings, ChevronLeft, ChevronRight, Megaphone, LayoutGrid, MessageSquare, X, Wallet, LogOut, CheckSquare, FileText, Workflow, HelpCircle, Activity, BookOpen, UserCircle, MessageCircle } from "lucide-react"
+import { FeedbackDialog } from "@/components/FeedbackDialog"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useSession, signOut } from "next-auth/react"
 import { getVisibleNavItems, type UserRole } from "@/lib/role-permissions"
 import { getSidebarData } from "@/app/sidebar/actions"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { FEATURES } from "@/lib/feature-flags"
+import { WorkspaceSwitcher } from "@/components/layout/WorkspaceSwitcher"
+import { SetupChecklistButton } from "@/components/layout/SetupChecklistButton"
 
 type NavItem = { name: string; href: string; icon: any } | { separator: string }
 
@@ -21,14 +25,14 @@ const navItems: NavItem[] = [
     { name: "Pipeline", href: "/pipeline", icon: LayoutGrid },
     { name: "Contacts", href: "/contacts", icon: Users },
     { separator: "Activity" },
-    { name: "Calendar", href: "/calendar", icon: Calendar },
-    { name: "Documents", href: "/documents", icon: FileText },
+    ...(FEATURES.GOOGLE_CALENDAR ? [{ name: "Calendar", href: "/calendar", icon: Calendar }] : []),
+    ...(FEATURES.DOCUMENTS ? [{ name: "Documents", href: "/documents", icon: FileText }] : []),
     { name: "Communications", href: "/communications", icon: MessageSquare },
     { name: "Tasks", href: "/tasks", icon: CheckSquare },
-    { separator: "Finance & Growth" },
-    { name: "Finance", href: "/finance", icon: Wallet },
-    { name: "Marketing", href: "/marketing", icon: Megaphone },
-    { name: "Tools", href: "/tools", icon: Wrench },
+    ...(FEATURES.FINANCE || FEATURES.MARKETING ? [{ separator: "Finance & Growth" } as NavItem] : []),
+    ...(FEATURES.FINANCE ? [{ name: "Finance", href: "/finance", icon: Wallet }] : []),
+    ...(FEATURES.MARKETING ? [{ name: "Marketing", href: "/marketing", icon: Megaphone }] : []),
+    { name: "Automations", href: "/automations", icon: Workflow },
     { separator: "Admin" },
     { name: "Settings", href: "/settings", icon: Settings },
 ]
@@ -45,11 +49,15 @@ function SidebarInner({ onNavigate, className, mobileCollapsed }: SidebarProps) 
     const { data: session } = useSession()
     const [isCollapsed, setIsCollapsed] = useState(false)
     const [mounted, setMounted] = useState(false)
-    const [realRole, setRealRole] = useState<UserRole>("AGENT")
+    // Default to OWNER so SSR renders the full nav. The real role is fetched
+    // after mount below; role downgrades for non-owner users happen as a
+    // normal client-side re-render (no hydration mismatch).
+    const [realRole, setRealRole] = useState<UserRole>("OWNER")
     const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
     const [displayName, setDisplayName] = useState<string | null>(null)
     const [branding, setBranding] = useState<{ logoUrl?: string; primaryColor?: string; companyName?: string } | null>(null)
     const [overdueCount, setOverdueCount] = useState(0)
+    const [feedbackOpen, setFeedbackOpen] = useState(false)
     const gPressedRef = useRef(false)
 
     // G-key navigation shortcuts
@@ -136,31 +144,22 @@ function SidebarInner({ onNavigate, className, mobileCollapsed }: SidebarProps) 
                 </button>
             )}
 
-            <div data-onboarding="welcome" className={cn("flex items-center mb-10 pr-12 md:pr-0", showCollapsed ? "justify-center" : "gap-3 px-2")}>
-                {branding?.logoUrl ? (
-                    <img src={branding.logoUrl} alt={branding.companyName || "Logo"} className="h-10 w-10 shrink-0 rounded-lg object-cover shadow" />
-                ) : (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow" style={branding?.primaryColor ? { backgroundColor: branding.primaryColor } : undefined}>
-                        <Plane className="h-6 w-6" />
-                    </div>
-                )}
-                {!showCollapsed && (
-                    <div className="overflow-hidden">
-                        <h2 className="text-lg font-semibold tracking-tight whitespace-nowrap">{branding?.companyName || "AFCrashpad"}</h2>
-                        <p className="text-xs text-muted-foreground font-medium whitespace-nowrap">CRM Portal</p>
-                    </div>
-                )}
-            </div>
+            <WorkspaceSwitcher collapsed={showCollapsed} branding={branding} />
 
-            <nav className="flex-1 space-y-1" aria-label="Primary navigation">
+            <nav
+                className="flex-1 space-y-1"
+                aria-label="Primary navigation"
+                suppressHydrationWarning
+            >
                 {getVisibleNavItems(realRole, navItems).map((item, idx) => {
                     if ("separator" in item) {
                         if (showCollapsed) {
                             return <div key={`sep-${idx}`} className="h-px bg-border/50 my-2 mx-2" />
                         }
                         return (
-                            <div key={`sep-${idx}`} className="pt-4 pb-1 px-3">
-                                <span className="text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">{item.separator}</span>
+                            <div key={`sep-${idx}`} className="pt-4 pb-1 px-3 flex items-center gap-1.5">
+                                <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+                                <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">{item.separator}</span>
                             </div>
                         )
                     }
@@ -195,17 +194,23 @@ function SidebarInner({ onNavigate, className, mobileCollapsed }: SidebarProps) 
                             onClick={onNavigate}
                             {...(onboardingAttr ? { "data-onboarding": onboardingAttr } : {})}
                             className={cn(
-                                "flex items-center rounded-md font-medium transition-colors min-h-[44px] touch-manipulation",
+                                "relative flex items-center rounded-md font-medium transition-all min-h-[44px] touch-manipulation",
                                 showCollapsed ? "justify-center h-11 w-11 mx-auto" : "gap-3 px-3 py-2.5 text-sm",
                                 isActive
-                                    ? "bg-secondary text-secondary-foreground shadow-sm"
+                                    ? "bg-primary/10 text-primary"
                                     : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                             )}
                         >
+                            {isActive && !showCollapsed && (
+                                <span
+                                    aria-hidden
+                                    className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-full bg-primary"
+                                />
+                            )}
                             <Icon className={cn("shrink-0", showCollapsed ? "h-5 w-5" : "h-4 w-4")} />
                             {!showCollapsed && <span>{item.name}</span>}
                             {!showCollapsed && item.name === "Tasks" && overdueCount > 0 && (
-                                <span className="ml-auto text-xs font-bold bg-rose-500 text-white rounded-full h-5 min-w-[20px] flex items-center justify-center px-1.5">
+                                <span className="ml-auto text-[10px] font-bold bg-rose-500 text-white rounded-full h-5 min-w-[20px] flex items-center justify-center px-1.5 tabular-nums">
                                     {overdueCount}
                                 </span>
                             )}
@@ -214,9 +219,14 @@ function SidebarInner({ onNavigate, className, mobileCollapsed }: SidebarProps) 
                 })}
             </nav>
 
+            {/* Setup checklist — persistent across all pages */}
+            <div className="mt-auto pb-1 px-2">
+                <SetupChecklistButton collapsed={showCollapsed} />
+            </div>
+
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                    <button className={cn("mt-auto flex items-center border-t pt-4 pb-2 min-h-[52px] w-full cursor-pointer rounded-md hover:bg-secondary/50 transition-colors", showCollapsed ? "justify-center" : "gap-3 px-2")}>
+                    <button className={cn("flex items-center border-t pt-4 pb-2 min-h-[52px] w-full cursor-pointer rounded-md hover:bg-secondary/50 transition-colors", showCollapsed ? "justify-center" : "gap-3 px-2")}>
                         <Avatar className="h-9 w-9 border shrink-0">
                             {(profileImageUrl || session?.user?.image) ? (
                                 <NextImage
@@ -241,13 +251,50 @@ function SidebarInner({ onNavigate, className, mobileCollapsed }: SidebarProps) 
                         )}
                     </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="start" className="w-48">
-                    <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/" })} className="text-destructive focus:text-destructive">
+                <DropdownMenuContent side="top" align="start" className="w-52">
+                    <DropdownMenuItem asChild>
+                        <Link href="/settings/profile">
+                            <UserCircle className="h-4 w-4 mr-2" />
+                            Profile
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link href="/settings">
+                            <Settings className="h-4 w-4 mr-2" />
+                            Settings
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                        <Link href="/help">
+                            <HelpCircle className="h-4 w-4 mr-2" />
+                            Help &amp; docs
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link href="/changelog">
+                            <BookOpen className="h-4 w-4 mr-2" />
+                            What&apos;s new
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link href="/status">
+                            <Activity className="h-4 w-4 mr-2" />
+                            System status
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setFeedbackOpen(true)}>
+                        <MessageCircle className="h-4 w-4 mr-2" />
+                        Share feedback
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })} className="text-destructive focus:text-destructive">
                         <LogOut className="h-4 w-4 mr-2" />
                         Sign Out
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
+            <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
         </div>
     )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,8 +16,28 @@ interface SchemaGeneratorProps {
 
 export default function SchemaGenerator({ article, schema, onChange }: SchemaGeneratorProps) {
     const [copied, setCopied] = useState(false)
+    /**
+     * Schema markup names the publisher (the workspace) — pull these from
+     * per-workspace branding rather than env vars. Without this, schema
+     * for a customer's blog post would say "Vesta CRM" + "example.com",
+     * which is both wrong and a leak of operator identity into the
+     * customer's SEO output.
+     */
+    const [branding, setBranding] = useState<{ companyName?: string; websiteUrl?: string } | null>(null)
+    useEffect(() => {
+        let cancelled = false
+        import("@/app/settings/branding/actions").then(({ getBrandingSettings }) =>
+            getBrandingSettings().then((b) => {
+                if (cancelled) return
+                if (b) setBranding({ companyName: b.companyName, websiteUrl: b.websiteUrl })
+            }).catch(() => {})
+        )
+        return () => { cancelled = true }
+    }, [])
 
     const generateArticleSchema = () => {
+        const publisherName = branding?.companyName || "Your Company"
+        const siteUrl = (branding?.websiteUrl || "").replace(/\/+$/, "")
         const schemaObj: Record<string, any> = {
             "@context": "https://schema.org",
             "@type": "Article",
@@ -25,18 +45,18 @@ export default function SchemaGenerator({ article, schema, onChange }: SchemaGen
             description: article.metaDescription || article.excerpt || "",
             author: {
                 "@type": "Person",
-                name: article.author || "AFCrashpad Team",
+                name: article.author || "Content Team",
             },
             publisher: {
                 "@type": "Organization",
-                name: "AFCrashpad",
-                url: "https://afcrashpad.com",
+                name: publisherName,
+                ...(siteUrl ? { url: siteUrl } : {}),
             },
             datePublished: article.publishedAt || new Date().toISOString(),
             dateModified: article.updatedAt || new Date().toISOString(),
             mainEntityOfPage: {
                 "@type": "WebPage",
-                "@id": article.wpPublishedUrl || `https://afcrashpad.com/blog/${article.slug || ""}`,
+                "@id": article.wpPublishedUrl || (siteUrl ? `${siteUrl}/blog/${article.slug || ""}` : `/blog/${article.slug || ""}`),
             },
         }
 

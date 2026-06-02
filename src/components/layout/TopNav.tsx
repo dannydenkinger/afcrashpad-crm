@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react"
 import { Bell, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ModeToggle } from "@/components/theme-toggle"
+import { FeedbackHeaderButton } from "@/components/FeedbackHeaderButton"
 import { getNotifications } from "@/app/notifications/actions"
 import { CommandPalette } from "@/components/CommandPalette"
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh"
@@ -40,6 +41,7 @@ function TopNavInner({ onMenuClick, onNotificationsClick }: { onMenuClick?: () =
             </div>
 
             <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                <FeedbackHeaderButton />
                 <ModeToggle />
 
                 <Button

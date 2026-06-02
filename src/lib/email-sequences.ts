@@ -1,3 +1,4 @@
+import { tenantDb } from "@/lib/tenant-db";
 import { adminDb } from "@/lib/firebase-admin";
 import { sendTrackedEmail } from "@/lib/email";
 
@@ -22,6 +23,7 @@ function substituteTemplate(text: string, vars: Record<string, string>): string 
  * that will be processed by the cron job.
  */
 export async function triggerSequence(
+    workspaceId: string,
     trigger: SequenceTrigger,
     contactId: string,
     email: string,
@@ -29,8 +31,10 @@ export async function triggerSequence(
     extraVars?: Record<string, string>
 ) {
     try {
+        const db = tenantDb(workspaceId)
+
         // Find enabled sequences for this trigger
-        const seqSnap = await adminDb
+        const seqSnap = await db
             .collection("email_sequences")
             .where("trigger", "==", trigger)
             .where("enabled", "==", true)
@@ -46,7 +50,7 @@ export async function triggerSequence(
 
             // Deduplicate using a deterministic doc ID to prevent race conditions
             const dedupeDocId = `${seqDoc.id}_${contactId}_step0`
-            const dedupeRef = adminDb.collection("email_sequence_log").doc(dedupeDocId)
+            const dedupeRef = db.collectionRef("email_sequence_log").doc(dedupeDocId)
 
             try {
                 await adminDb.runTransaction(async (transaction) => {
@@ -59,7 +63,7 @@ export async function triggerSequence(
                         const scheduledFor = new Date(now.getTime() + step.delayDays * 86400000);
                         const docRef = i === 0
                             ? dedupeRef
-                            : adminDb.collection("email_sequence_log").doc(`${seqDoc.id}_${contactId}_step${i}`)
+                            : db.collectionRef("email_sequence_log").doc(`${seqDoc.id}_${contactId}_step${i}`)
 
                         transaction.set(docRef, {
                             sequenceId: seqDoc.id,
@@ -75,6 +79,7 @@ export async function triggerSequence(
                             error: null,
                             extraVars: extraVars || null,
                             createdAt: now,
+                            workspaceId,
                         })
                     }
                 })
@@ -91,12 +96,13 @@ export async function triggerSequence(
 /**
  * Process all scheduled emails that are due. Called by cron job.
  */
-export async function processScheduledEmails(): Promise<{ sent: number; failed: number }> {
+export async function processScheduledEmails(workspaceId: string): Promise<{ sent: number; failed: number }> {
     const results = { sent: 0, failed: 0 };
+    const db = tenantDb(workspaceId)
 
     try {
         const now = new Date();
-        const dueSnap = await adminDb
+        const dueSnap = await db
             .collection("email_sequence_log")
             .where("status", "==", "scheduled")
             .where("scheduledFor", "<=", now)
@@ -108,10 +114,7 @@ export async function processScheduledEmails(): Promise<{ sent: number; failed: 
 
             try {
                 // Load the template
-                const templateDoc = await adminDb
-                    .collection("email_templates")
-                    .doc(log.templateId)
-                    .get();
+                const templateDoc = await db.doc("email_templates", log.templateId).get();
 
                 if (!templateDoc.exists) {
                     await logDoc.ref.update({ status: "failed", error: "Template not found" });
@@ -136,6 +139,7 @@ export async function processScheduledEmails(): Promise<{ sent: number; failed: 
                     subject,
                     html,
                     contactId: log.contactId,
+                    workspaceId,
                 });
 
                 await logDoc.ref.update({

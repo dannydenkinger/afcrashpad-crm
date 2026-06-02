@@ -1,9 +1,10 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Bell, Check, CheckCheck, X, ExternalLink } from "lucide-react"
+import { Bell, Check, CheckCheck, X, ExternalLink, ArrowRight } from "lucide-react"
 import { getNotifications, markAsRead, markAllAsRead } from "@/app/notifications/actions"
 import { useRouter } from "next/navigation"
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh"
@@ -53,12 +54,18 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps) {
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
         setUnreadCount(prev => Math.max(0, prev - 1))
         await markAsRead(id)
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("crm:data-update"))
+        }
     }
 
     const handleMarkAllRead = async () => {
         setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
         setUnreadCount(0)
         await markAllAsRead()
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("crm:data-update"))
+        }
     }
 
     const handleClick = async (notif: Notification) => {
@@ -237,6 +244,18 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps) {
                             ))}
                         </div>
                     )}
+                </div>
+
+                {/* Footer */}
+                <div className="border-t shrink-0 px-4 py-2.5 bg-muted/20">
+                    <Link
+                        href="/notifications"
+                        onClick={onClose}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors group"
+                    >
+                        View all notifications
+                        <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
                 </div>
             </div>
         </>

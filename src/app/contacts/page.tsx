@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense, useMemo } from "react"
 import { useDebounce } from "@/hooks/useDebounce"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { FirstVisitHint } from "@/components/FirstVisitHint"
 import {
     Phone, Mail, MoreVertical, Search, Filter, Plus, ChevronRight, LayoutGrid,
     List as ListIcon, Calendar as CalendarIcon, ArrowUp, ArrowDown, Calculator,
@@ -50,7 +51,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { getContacts, getContactsPaginated, getContactDetail, createNote, deleteNote, updateNote, updateContact, updateFormTracking, bulkCreateContacts, createContact, deleteContact, bulkDeleteContacts, bulkUpdateContactStatus, bulkAddTag, mergeContacts, findDuplicateContacts, softDeleteContact, restoreContact, permanentlyDeleteContact, bulkSoftDeleteContacts, bulkRestoreContacts, bulkPermanentlyDeleteContacts, getContactsPageData } from "./actions"
+import { getContacts, getContactsPaginated, getContactDetail, createNote, deleteNote, updateNote, updateContact, updateFormTracking, createContact, deleteContact, bulkDeleteContacts, bulkUpdateContactStatus, bulkAddTag, mergeContacts, findDuplicateContacts, softDeleteContact, restoreContact, permanentlyDeleteContact, bulkSoftDeleteContacts, bulkRestoreContacts, bulkPermanentlyDeleteContacts, getContactsPageData } from "./actions"
 import { sendMessage } from "@/app/communications/actions"
 import { getContactStatuses } from "@/app/settings/system-properties/actions"
 import { getTags } from "@/app/settings/tags/actions"
@@ -76,10 +77,6 @@ import { exportToCSV } from "@/lib/export"
 import dynamic from "next/dynamic"
 
 // Lazy-loaded heavy components (only shown on user action)
-const CSVImportDialog = dynamic(() => import("@/components/ui/CSVImportDialog").then(mod => mod.CSVImportDialog), {
-    loading: () => <div className="flex items-center justify-center p-8"><div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>,
-    ssr: false,
-})
 const ContactMergeDialog = dynamic(() => import("./ContactMergeDialog").then(mod => mod.ContactMergeDialog), {
     loading: () => <div className="flex items-center justify-center p-8"><div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>,
     ssr: false,
@@ -95,7 +92,9 @@ const ImportMappingDialog = dynamic(() => import("./ImportMappingDialog").then(m
 import { toast } from "sonner"
 import { VirtualList } from "@/components/ui/VirtualList"
 import { ContactsVirtualTable } from "./ContactsVirtualTable"
-import { getSavedViews, createSavedView, deleteSavedView } from "@/app/saved-views/actions"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { UserPlus, Moon } from "lucide-react"
+import { getSavedViews, createSavedView, deleteSavedView, updateSavedViewName } from "@/app/saved-views/actions"
 import { withRetryAction } from "@/lib/retry"
 import { useRealtimeRefreshOnChange } from "@/hooks/useRealtimeCollection"
 import { useIsMobile } from "@/hooks/useIsMobile"
@@ -171,7 +170,6 @@ function ContactsContent() {
     const [sortConfig, setSortConfig] = useState<{ key: ColumnId | 'dealValue'; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
-    const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
     const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
     const [contactToDelete, setContactToDelete] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -213,6 +211,11 @@ function ContactsContent() {
     const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
     const [filterNameInput, setFilterNameInput] = useState("");
     const [showSaveFilter, setShowSaveFilter] = useState(false);
+    /** Name of the saved view currently applied. Persisted in localStorage so
+     *  reloads land back on the same smart list. Cleared when the user makes
+     *  any manual filter change (search, status, sort) so the badge doesn't
+     *  lie about what's actually filtered. */
+    const [activeFilterName, setActiveFilterName] = useState<string | null>(null);
 
     // Restore filter state + saved presets from localStorage on mount, then sync Firestore
     useEffect(() => {
@@ -225,6 +228,7 @@ function ContactsContent() {
                 if (f.searchTerm) setSearchTerm(f.searchTerm);
                 if (f.statusFilter?.length) setStatusFilter(f.statusFilter);
                 if (f.sortKey) setSortConfig({ key: f.sortKey, direction: f.sortDir || "asc" });
+                if (f.activeFilterName) setActiveFilterName(f.activeFilterName);
             }
         } catch { /* ignore corrupt localStorage */ }
         // Sync from Firestore
@@ -248,10 +252,11 @@ function ContactsContent() {
             try {
                 localStorage.setItem("contacts-last-filter", JSON.stringify({
                     searchTerm, statusFilter, sortKey: sortConfig.key, sortDir: sortConfig.direction,
+                    activeFilterName,
                 }));
             } catch { /* ignore */ }
         }, 500);
-    }, [searchTerm, statusFilter, sortConfig]);
+    }, [searchTerm, statusFilter, sortConfig, activeFilterName]);
 
     const handleSaveFilter = useCallback(async () => {
         if (!filterNameInput.trim()) {
@@ -279,6 +284,7 @@ function ContactsContent() {
         setSearchTerm(f.searchTerm);
         setStatusFilter(f.statusFilter);
         setSortConfig({ key: f.sortKey as ColumnId, direction: f.sortDir as "asc" | "desc" });
+        setActiveFilterName(f.name);
     }, []);
 
     const handleDeleteFilter = useCallback((name: string) => {
@@ -290,6 +296,61 @@ function ContactsContent() {
         setSavedFilters(updated);
         localStorage.setItem("contacts-saved-filters", JSON.stringify(updated));
     }, [savedFilters]);
+
+    const handleRenameFilter = useCallback(async (oldName: string) => {
+        const filter = savedFilters.find(f => f.name === oldName);
+        if (!filter) return;
+        const next = window.prompt("Rename smart list", oldName)?.trim();
+        if (!next || next === oldName) return;
+        if (savedFilters.some(f => f.name === next)) {
+            toast.error("A smart list with that name already exists.");
+            return;
+        }
+        if (filter.id) {
+            const res = await updateSavedViewName(filter.id, next);
+            if (!res.success) {
+                toast.error("Failed to rename");
+                return;
+            }
+        }
+        const updated = savedFilters.map(f => f.name === oldName ? { ...f, name: next } : f);
+        setSavedFilters(updated);
+        localStorage.setItem("contacts-saved-filters", JSON.stringify(updated));
+        toast.success("Renamed");
+    }, [savedFilters]);
+
+    const handleReplaceFilter = useCallback(async (name: string) => {
+        const existing = savedFilters.find(f => f.name === name);
+        if (!existing) return;
+        if (!window.confirm(`Replace "${name}" with the current filter? This overwrites the saved search and status filter.`)) return;
+        const replacement: SavedFilter = {
+            id: existing.id,
+            name,
+            searchTerm,
+            statusFilter,
+            sortKey: sortConfig.key as string,
+            sortDir: sortConfig.direction,
+        };
+        // Replace in local state immediately
+        const updated = savedFilters.map(f => f.name === name ? replacement : f);
+        setSavedFilters(updated);
+        localStorage.setItem("contacts-saved-filters", JSON.stringify(updated));
+        // Re-create on the server (delete + create) so the filter JSON updates.
+        if (existing.id) {
+            await deleteSavedView(existing.id).catch(() => {});
+        }
+        const created = await createSavedView({
+            page: "contacts",
+            name,
+            filters: { searchTerm, statusFilter, sortKey: sortConfig.key as string, sortDir: sortConfig.direction },
+        });
+        if (created.success && created.id) {
+            const withId = updated.map(f => f.name === name ? { ...f, id: created.id } : f);
+            setSavedFilters(withId);
+            localStorage.setItem("contacts-saved-filters", JSON.stringify(withId));
+        }
+        toast.success(`Updated "${name}"`);
+    }, [savedFilters, searchTerm, statusFilter, sortConfig]);
 
     const fetchContactStatuses = async () => {
         const res = await getContactStatuses();
@@ -378,6 +439,18 @@ function ContactsContent() {
             }
         }
     }, [searchParams, allContacts]);
+
+    // Auto-open import dialog from ?import=1 URL param (deep-link from Settings → Data)
+    const pathname = usePathname();
+    useEffect(() => {
+        if (searchParams.get("import") === "1") {
+            setIsImportMappingOpen(true);
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete("import");
+            const q = params.toString();
+            router.replace(q ? `${pathname}?${q}` : pathname);
+        }
+    }, [searchParams, pathname, router]);
 
     const handleSelectContact = useCallback(async (contact: { id: string }) => {
         setIsLoading(true);
@@ -674,7 +747,6 @@ function ContactsContent() {
             email: '',
             phone: '',
             businessName: '',
-            militaryBase: '',
             status: 'Lead',
             opportunities: [],
             notes: [],
@@ -683,6 +755,29 @@ function ContactsContent() {
         setSelectedContact(newContactTemplate);
         setEditingContact(newContactTemplate);
     };
+
+    /**
+     * Loads the demo data set (~10 contacts, ~7 deals, ~5 tasks) so a brand
+     * new workspace has something to click around in. Tagged as `__sample__`
+     * so the user can wipe it later from Settings.
+     */
+    const [loadingSample, setLoadingSample] = useState(false);
+    const handleLoadSampleData = useCallback(async () => {
+        if (loadingSample) return;
+        setLoadingSample(true);
+        try {
+            const { loadSampleData } = await import("@/app/dashboard/sample-data-actions");
+            const res = await loadSampleData();
+            if (!res.success) {
+                toast.error(res.error || "Couldn't load sample data");
+                return;
+            }
+            toast.success(`Loaded ${res.counts?.contacts || 0} sample contacts`);
+            await fetchAllContacts();
+        } finally {
+            setLoadingSample(false);
+        }
+    }, [loadingSample, fetchAllContacts]);
 
     const handleMergeWith = useCallback(async (duplicateId: string) => {
         if (!selectedContact) return;
@@ -718,7 +813,6 @@ function ContactsContent() {
             name: selectedContact.name,
             email: selectedContact.email,
             phone: selectedContact.phone,
-            base: selectedContact.militaryBase,
             startDate: selectedContact.stayStartDate || '',
             endDate: selectedContact.stayEndDate || ''
         });
@@ -746,11 +840,11 @@ function ContactsContent() {
                         name: editingContact.name,
                         email: editingContact.email,
                         phone: editingContact.phone,
-                        militaryBase: editingContact.militaryBase,
                         businessName: editingContact.businessName,
                         status: editingContact.status || 'Lead',
                         stayStartDate: editingContact.stayStartDate || null,
-                        stayEndDate: editingContact.stayEndDate || null
+                        stayEndDate: editingContact.stayEndDate || null,
+                        dndUntil: editingContact.dndUntil || null,
                     }),
                     retryOpts
                 );
@@ -769,11 +863,11 @@ function ContactsContent() {
                         name: editingContact.name,
                         email: editingContact.email,
                         phone: editingContact.phone,
-                        militaryBase: editingContact.militaryBase,
                         businessName: editingContact.businessName,
                         status: editingContact.status || 'Lead',
                         stayStartDate: editingContact.stayStartDate || null,
-                        stayEndDate: editingContact.stayEndDate || null
+                        stayEndDate: editingContact.stayEndDate || null,
+                        dndUntil: editingContact.dndUntil || null,
                     }),
                     retryOpts
                 );
@@ -895,6 +989,27 @@ function ContactsContent() {
         });
     }, []);
 
+    // Live counts for saved filters — recomputed whenever allContacts changes,
+    // so the badge always reflects current matching records (smart-list behavior).
+    const savedFilterCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        for (const f of savedFilters) {
+            const term = (f.searchTerm || "").toLowerCase();
+            const statuses = f.statusFilter || [];
+            counts[f.name] = allContacts.filter((c: any) => {
+                const matchesSearch =
+                    !term ||
+                    (c.name || "").toLowerCase().includes(term) ||
+                    (c.email || "").toLowerCase().includes(term) ||
+                    (c.phone || "").includes(f.searchTerm || "") ||
+                    (c.businessName || "").toLowerCase().includes(term);
+                const matchesStatus = statuses.length === 0 || statuses.includes(c.status);
+                return matchesSearch && matchesStatus;
+            }).length;
+        }
+        return counts;
+    }, [savedFilters, allContacts]);
+
     const filteredAndSortedContacts = useMemo(() => [...allContacts]
         .filter(contact => {
             const matchesSearch =
@@ -915,17 +1030,43 @@ function ContactsContent() {
             const { key, direction } = sortConfig;
             if (!key) return 0;
 
-            let valA: unknown = (a as Record<string, unknown>)[key] || "";
-            let valB: unknown = (b as Record<string, unknown>)[key] || "";
+            let valA: unknown = (a as Record<string, unknown>)[key];
+            let valB: unknown = (b as Record<string, unknown>)[key];
 
-            // Handle special cases like Opportunity Value or Dates
+            // Column-specific normalization. Default: string compare with
+            // empty strings sorted last so blanks don't crowd the top.
             if (key === 'opportunity') {
-                valA = a.dealValue;
-                valB = b.dealValue;
+                valA = Number(a.dealValue) || 0;
+                valB = Number(b.dealValue) || 0;
             } else if (key === 'created' || key === 'lastActivity') {
                 valA = new Date(valA as string).getTime() || 0;
                 valB = new Date(valB as string).getTime() || 0;
+            } else if (key === 'tags') {
+                // Sort by number of tags, then by first tag name
+                const tagsA = Array.isArray(a.tags) ? a.tags : [];
+                const tagsB = Array.isArray(b.tags) ? b.tags : [];
+                if (tagsA.length !== tagsB.length) {
+                    valA = tagsA.length;
+                    valB = tagsB.length;
+                } else {
+                    valA = (tagsA[0]?.name || "").toLowerCase();
+                    valB = (tagsB[0]?.name || "").toLowerCase();
+                }
+            } else if (key === 'lastNote') {
+                valA = String(a.lastNote || "").toLowerCase();
+                valB = String(b.lastNote || "").toLowerCase();
+                if (valA === "no notes") valA = "";
+                if (valB === "no notes") valB = "";
+            } else {
+                valA = String(valA ?? "").toLowerCase();
+                valB = String(valB ?? "").toLowerCase();
             }
+
+            // Push empty values to the bottom regardless of direction
+            const aEmpty = valA === "" || valA === 0;
+            const bEmpty = valB === "" || valB === 0;
+            if (aEmpty && !bEmpty) return 1;
+            if (!aEmpty && bEmpty) return -1;
 
             if ((valA as number | string) < (valB as number | string)) return direction === 'asc' ? -1 : 1;
             if ((valA as number | string) > (valB as number | string)) return direction === 'asc' ? 1 : -1;
@@ -964,19 +1105,14 @@ function ContactsContent() {
                             ))}
                         </div>
                     ) : filteredAndSortedContacts.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <Search className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                            <h3 className="text-lg font-medium text-foreground mb-1">{searchTerm ? "No matching contacts" : "No contacts yet"}</h3>
-                            <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                                {searchTerm ? "Try adjusting your search or filters." : "Add your first contact to start managing relationships."}
-                            </p>
-                            {!searchTerm && (
-                                <Button onClick={handleAddContactClick} size="sm">
-                                    <Plus className="h-4 w-4 mr-1" />
-                                    Add your first contact
-                                </Button>
-                            )}
-                        </div>
+                        <EmptyState
+                            Icon={searchTerm ? Search : UserPlus}
+                            accent={searchTerm ? "muted" : "primary"}
+                            title={searchTerm ? "No matching contacts" : "No contacts yet"}
+                            description={searchTerm ? "Try adjusting your search or filters." : "Add your first contact to start managing relationships."}
+                            action={!searchTerm ? { label: "Add your first contact", onClick: handleAddContactClick } : undefined}
+                            secondaryAction={!searchTerm && allContacts.length === 0 ? { label: loadingSample ? "Loading…" : "Or load sample data", onClick: handleLoadSampleData } : undefined}
+                        />
                     ) : (
                         filteredAndSortedContacts.map((contact: any) => (
                             <button
@@ -990,7 +1126,15 @@ function ContactsContent() {
                                     </AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 min-w-0">
-                                    <span className="text-sm font-semibold text-foreground block truncate">{contact.name}</span>
+                                    <span className="text-sm font-semibold text-foreground block truncate flex items-center gap-1.5">
+                                        {contact.name}
+                                        {contact.dndUntil && new Date(contact.dndUntil) > new Date() && (
+                                            <Moon
+                                                className="h-3 w-3 text-rose-500 shrink-0"
+                                                aria-label={`Do not disturb until ${new Date(contact.dndUntil).toLocaleString()}`}
+                                            />
+                                        )}
+                                    </span>
                                     <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
                                         {contact.phone && (
                                             <span className="flex items-center gap-0.5">
@@ -1009,11 +1153,11 @@ function ContactsContent() {
                                 <div className="flex items-center gap-2 shrink-0">
                                     {contact.status && (
                                         <Badge variant="outline" className={`text-[9px] h-5 ${
-                                            contact.status === "Active Stay" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
+                                            contact.status === "Customer" || contact.status === "Active Stay" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
                                             contact.status === "Lead" ? "bg-blue-500/10 text-blue-400 border-blue-500/30" :
-                                            contact.status === "Forms Pending" ? "bg-amber-500/10 text-amber-400 border-amber-500/30" :
-                                            contact.status === "Booked" ? "bg-primary/10 text-primary border-primary/30" :
-                                            contact.status === "Past Tenant" ? "bg-gray-500/10 text-gray-400 border-gray-500/30" :
+                                            contact.status === "Pending" || contact.status === "Forms Pending" ? "bg-amber-500/10 text-amber-400 border-amber-500/30" :
+                                            contact.status === "Won" || contact.status === "Booked" ? "bg-primary/10 text-primary border-primary/30" :
+                                            contact.status === "Past Customer" || contact.status === "Past Tenant" ? "bg-gray-500/10 text-gray-400 border-gray-500/30" :
                                             "border-border"
                                         }`}>
                                             {contact.status}
@@ -1070,46 +1214,54 @@ function ContactsContent() {
     return (
         <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-8">
+                <FirstVisitHint
+                    pageKey="contacts"
+                    text="Add contacts manually or import a CSV from the toolbar. Click any row to open the detail sheet — activity, notes, and timeline live there."
+                />
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
-                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Contacts</h2>
-                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">Manage your leads, active tenants, and past guests.</p>
+                        <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                            Contacts
+                        </h2>
+                        <p className="text-sm text-muted-foreground mt-0.5">
+                            Every contact across your business — leads, customers, and partners.
+                        </p>
                     </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <DuplicateDetector onMergeComplete={fetchAllContacts} />
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="touch-manipulation"
-                        onClick={() => {
-                            const rows = (allContacts || []).map((c: any) => ({
-                                Name: c.name || "",
-                                Email: c.email || "",
-                                Phone: c.phone || "",
-                                Status: c.status || "",
-                                "Military Base": c.militaryBase || "",
-                                "Business Name": c.businessName || "",
-                                "Stay Start": c.stayStartDate ? new Date(c.stayStartDate).toLocaleDateString() : "",
-                                "Stay End": c.stayEndDate ? new Date(c.stayEndDate).toLocaleDateString() : "",
-                                Source: c.utmSource || "",
-                                Created: c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "",
-                            }));
-                            exportToCSV(rows, "contacts-export");
-                        }}
-                    >
-                        <Download className="mr-2 h-4 w-4" />
-                        Export CSV
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setIsImportMappingOpen(true)} className="touch-manipulation">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Import CSV
-                    </Button>
-                    <Button size="sm" onClick={handleAddContactClick} className="touch-manipulation">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Contact
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <DuplicateDetector onMergeComplete={fetchAllContacts} />
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="touch-manipulation"
+                            onClick={() => {
+                                const rows = (allContacts || []).map((c: any) => ({
+                                    Name: c.name || "",
+                                    Email: c.email || "",
+                                    Phone: c.phone || "",
+                                    Status: c.status || "",
+                                    "Business Name": c.businessName || "",
+                                    "Stay Start": c.stayStartDate ? new Date(c.stayStartDate).toLocaleDateString() : "",
+                                    "Stay End": c.stayEndDate ? new Date(c.stayEndDate).toLocaleDateString() : "",
+                                    Source: c.utmSource || "",
+                                    Created: c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "",
+                                }));
+                                exportToCSV(rows, "contacts-export");
+                            }}
+                        >
+                            <Download className="mr-2 h-4 w-4" />
+                            Export CSV
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setIsImportMappingOpen(true)} className="touch-manipulation">
+                            <Upload className="mr-2 h-4 w-4" />
+                            Import CSV
+                        </Button>
+                        <Button size="sm" onClick={handleAddContactClick} className="touch-manipulation gap-1.5 shadow-sm">
+                            <Plus className="h-4 w-4" />
+                            Add Contact
+                        </Button>
+                    </div>
                 </div>
-            </div>
+
 
             {selectedContactIds.size > 0 && (
                 <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-lg border bg-muted/50 px-4 py-3 shadow-sm">
@@ -1127,7 +1279,7 @@ function ContactsContent() {
                         <DropdownMenuContent align="start" className="w-[200px]">
                             <DropdownMenuLabel>Set Status</DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            {(contactStatuses.length > 0 ? contactStatuses.map(s => s.name) : ["Active Stay", "Lead", "Forms Pending", "Booked"]).map(status => (
+                            {(contactStatuses.length > 0 ? contactStatuses.map(s => s.name) : ["Lead", "Customer", "Past Customer"]).map(status => (
                                 <DropdownMenuItem key={status} onClick={() => handleBulkStatusChange(status)}>
                                     {status}
                                 </DropdownMenuItem>
@@ -1228,7 +1380,7 @@ function ContactsContent() {
                                     <DropdownMenuLabel>Filter by Status</DropdownMenuLabel>
                                     <DropdownMenuSeparator />
                                     <div className="flex flex-col gap-1 p-1">
-                                        {(contactStatuses.length > 0 ? contactStatuses.map(s => s.name) : ["Active Stay", "Lead", "Forms Pending", "Booked"]).map(status => (
+                                        {(contactStatuses.length > 0 ? contactStatuses.map(s => s.name) : ["Lead", "Customer", "Past Customer"]).map(status => (
                                             <div key={status} className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted rounded-sm transition-colors cursor-pointer" onClick={() => {
                                                 setStatusFilter(prev =>
                                                     prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
@@ -1401,26 +1553,73 @@ function ContactsContent() {
                         </div>
                         </div>
 
-                        {/* Saved filter presets */}
+                        {/* Saved filter presets — live counts make these "smart lists" */}
                         {savedFilters.length > 0 && (
                             <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                                <span className="text-[10px] text-muted-foreground/60 uppercase font-semibold tracking-wider mr-1">Saved:</span>
-                                {savedFilters.map(f => (
-                                    <Badge
-                                        key={f.name}
-                                        variant="secondary"
-                                        className="cursor-pointer text-xs px-2 py-0.5 gap-1 hover:bg-secondary/80"
-                                        onClick={() => handleApplyFilter(f)}
-                                    >
-                                        {f.name}
-                                        <button
-                                            className="ml-0.5 hover:text-destructive"
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteFilter(f.name); }}
+                                <span className="text-[10px] text-muted-foreground/60 uppercase font-semibold tracking-wider mr-1">Smart lists:</span>
+                                {savedFilters.map(f => {
+                                    const count = savedFilterCounts[f.name] ?? 0;
+                                    const isActive = activeFilterName === f.name;
+                                    return (
+                                        <div
+                                            key={f.name}
+                                            className={`inline-flex items-center text-xs rounded-md border transition-colors overflow-hidden ${
+                                                isActive
+                                                    ? "border-primary bg-primary/10 text-primary"
+                                                    : "border-border bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                            }`}
                                         >
-                                            <X className="h-2.5 w-2.5" />
-                                        </button>
-                                    </Badge>
-                                ))}
+                                            <button
+                                                onClick={() => isActive
+                                                    ? (setActiveFilterName(null), setSearchTerm(""), setStatusFilter([]), setSortConfig({ key: "name", direction: "asc" }))
+                                                    : handleApplyFilter(f)
+                                                }
+                                                className="flex items-center gap-1.5 px-2 py-0.5 cursor-pointer"
+                                                title={isActive
+                                                    ? `Click to clear "${f.name}"`
+                                                    : `${count} contact${count === 1 ? "" : "s"} match this saved filter right now`
+                                                }
+                                            >
+                                                <span className="font-medium">{f.name}</span>
+                                                <span className={`px-1.5 py-px rounded-full text-[10px] font-bold tabular-nums ${
+                                                    isActive
+                                                        ? "bg-primary text-primary-foreground"
+                                                        : "bg-background/70 text-foreground/80"
+                                                }`}>
+                                                    {count}
+                                                </span>
+                                            </button>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <button
+                                                        className="px-1 py-0.5 border-l border-border/50 text-muted-foreground hover:text-foreground hover:bg-background/40"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        aria-label={`More actions for ${f.name}`}
+                                                    >
+                                                        <MoreVertical className="h-3 w-3" />
+                                                    </button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-44">
+                                                    <DropdownMenuItem onClick={() => handleApplyFilter(f)}>
+                                                        Apply
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleRenameFilter(f.name)}>
+                                                        Rename…
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleReplaceFilter(f.name)}>
+                                                        Replace with current filter
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleDeleteFilter(f.name)}
+                                                        className="text-destructive focus:text-destructive"
+                                                    >
+                                                        Delete
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -1463,13 +1662,17 @@ function ContactsContent() {
                                                         {isNewContact && (
                                                             <Badge className="shrink-0 text-[10px] bg-primary text-primary-foreground border-0">New</Badge>
                                                         )}
+                                                        {contact.dndUntil && new Date(contact.dndUntil) > new Date() && (
+                                                            <Moon
+                                                                className="h-3.5 w-3.5 text-rose-500 shrink-0"
+                                                                aria-label={`DND until ${new Date(contact.dndUntil).toLocaleString()}`}
+                                                            />
+                                                        )}
                                                     </div>
                                                     <p className="text-xs text-muted-foreground truncate">{contact.email || contact.phone || "—"}</p>
-                                                    {(contact.militaryBase || contact.dealStage !== "—") && (
+                                                    {contact.dealStage !== "—" && (
                                                         <div className="flex items-center gap-1.5 mt-0.5">
-                                                            {contact.militaryBase && <span className="text-[10px] text-muted-foreground">{contact.militaryBase}</span>}
-                                                            {contact.militaryBase && contact.dealStage !== "—" && <span className="text-[10px] text-muted-foreground/40">·</span>}
-                                                            {contact.dealStage !== "—" && <span className="text-[10px] text-muted-foreground">{contact.dealStage}</span>}
+                                                            <span className="text-[10px] text-muted-foreground">{contact.dealStage}</span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -1490,19 +1693,14 @@ function ContactsContent() {
                                 }}
                             />
                         ) : (
-                            <div className="flex flex-col items-center justify-center py-12 text-center">
-                                <Search className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                                <h3 className="text-lg font-medium text-foreground mb-1">{searchTerm ? "No matching contacts" : "No contacts yet"}</h3>
-                                <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                                    {searchTerm ? "Try adjusting your search or filters." : "Add your first contact to start managing relationships."}
-                                </p>
-                                {!searchTerm && (
-                                    <Button onClick={handleAddContactClick} size="sm">
-                                        <Plus className="h-4 w-4 mr-1" />
-                                        Add your first contact
-                                    </Button>
-                                )}
-                            </div>
+                            <EmptyState
+                                Icon={searchTerm ? Search : UserPlus}
+                                accent={searchTerm ? "muted" : "primary"}
+                                title={searchTerm ? "No matching contacts" : "No contacts yet"}
+                                description={searchTerm ? "Try adjusting your search or filters." : "Add your first contact to start managing relationships."}
+                                action={!searchTerm ? { label: "Add your first contact", onClick: handleAddContactClick } : undefined}
+                                secondaryAction={!searchTerm && allContacts.length === 0 ? { label: loadingSample ? "Loading…" : "Or load sample data", onClick: handleLoadSampleData } : undefined}
+                            />
                         )}
                     </div>
                     {/* Desktop: virtualized table */}
@@ -1528,19 +1726,14 @@ function ContactsContent() {
                         onReorderColumns={handleReorderColumns}
                     />
                     ) : (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <Search className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                            <h3 className="text-lg font-medium text-foreground mb-1">{searchTerm ? "No matching contacts" : "No contacts yet"}</h3>
-                            <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                                {searchTerm ? "Try adjusting your search or filters." : "Add your first contact to start managing relationships."}
-                            </p>
-                            {!searchTerm && (
-                                <Button onClick={handleAddContactClick} size="sm">
-                                    <Plus className="h-4 w-4 mr-1" />
-                                    Add your first contact
-                                </Button>
-                            )}
-                        </div>
+                        <EmptyState
+                            Icon={searchTerm ? Search : UserPlus}
+                            accent={searchTerm ? "muted" : "primary"}
+                            title={searchTerm ? "No matching contacts" : "No contacts yet"}
+                            description={searchTerm ? "Try adjusting your search or filters." : "Add your first contact to start managing relationships."}
+                            action={!searchTerm ? { label: "Add your first contact", onClick: handleAddContactClick } : undefined}
+                            secondaryAction={!searchTerm && allContacts.length === 0 ? { label: loadingSample ? "Loading…" : "Or load sample data", onClick: handleLoadSampleData } : undefined}
+                        />
                     )}
                     </div>
                     {/* Infinite scroll sentinel */}
@@ -1673,7 +1866,6 @@ function ContactsContent() {
                             { key: 'name', label: 'Name' },
                             { key: 'email', label: 'Email' },
                             { key: 'phone', label: 'Phone' },
-                            { key: 'militaryBase', label: 'Military Base' },
                             { key: 'businessName', label: 'Business' },
                             { key: 'status', label: 'Status' },
                         ];
@@ -1765,10 +1957,15 @@ function ContactsContent() {
             <BulkEmailDialog
                 isOpen={isBulkEmailOpen}
                 onClose={() => setIsBulkEmailOpen(false)}
-                contacts={Array.from(selectedContactIds).map(id => {
-                    const c = allContacts.find(contact => contact.id === id);
-                    return { id, name: c?.name || "", email: c?.email || "" };
-                })}
+                contacts={Array.from(selectedContactIds)
+                    .map(id => allContacts.find((contact: any) => contact.id === id))
+                    .filter((c: any): c is any => {
+                        if (!c) return false
+                        // Skip DND contacts so the user doesn't accidentally email someone on quiet hours
+                        if (c.dndUntil && new Date(c.dndUntil) > new Date()) return false
+                        return true
+                    })
+                    .map((c: any) => ({ id: c.id, name: c.name || "", email: c.email || "" }))}
             />
 
             {/* Import Mapping Dialog */}
@@ -1808,3 +2005,4 @@ function ContactsContent() {
         </div>
     )
 }
+

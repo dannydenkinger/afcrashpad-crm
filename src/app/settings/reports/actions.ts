@@ -1,17 +1,17 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
 import { revalidatePath } from "next/cache"
-import { requireAdmin } from "@/lib/auth-guard"
+import { requireAdmin, requireAuth } from "@/lib/auth-guard"
 import type { ScheduledReport } from "./types"
 
 export async function getScheduledReports(): Promise<{ success: boolean; reports?: ScheduledReport[]; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const snap = await adminDb.collection("scheduled_reports").orderBy("createdAt", "desc").get()
+        const snap = await db.collection("scheduled_reports").orderBy("createdAt", "desc").get()
         const reports: ScheduledReport[] = snap.docs.map(doc => {
             const data = doc.data()
             const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (data.createdAt || null)
@@ -39,21 +39,19 @@ export async function createScheduledReport(data: {
     recipients: string[]
     reportType: string
 }): Promise<{ success: boolean; id?: string; error?: string }> {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { success: false, error: "Unauthorized" }
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const usersSnap = await adminDb.collection("users").where("email", "==", session.user.email).limit(1).get()
-        if (usersSnap.empty) return { success: false, error: "User not found" }
-
-        const ref = await adminDb.collection("scheduled_reports").add({
-            userId: usersSnap.docs[0].id,
+        const ref = await db.add("scheduled_reports", {
+            userId: session.user.id || "",
             frequency: data.frequency,
             recipients: data.recipients,
             reportType: data.reportType,
@@ -80,14 +78,18 @@ export async function updateScheduledReport(
         enabled?: boolean
     }
 ): Promise<{ success: boolean; error?: string }> {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        await adminDb.collection("scheduled_reports").doc(id).update({
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        await db.doc("scheduled_reports", id).update({
             ...updates,
             updatedAt: new Date(),
         })
@@ -101,14 +103,18 @@ export async function updateScheduledReport(
 }
 
 export async function deleteScheduledReport(id: string): Promise<{ success: boolean; error?: string }> {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        await adminDb.collection("scheduled_reports").doc(id).delete()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        await db.doc("scheduled_reports", id).delete()
         revalidatePath("/settings")
         return { success: true }
     } catch (error) {

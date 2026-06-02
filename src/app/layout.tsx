@@ -9,13 +9,13 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "AFCrashpad CRM",
-  description: "Custom GoHighLevel-style CRM for Air Force Crashpad",
+  title: "Vesta CRM",
+  description: "Modern sales CRM for growing teams",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "AFCrashpad",
+    title: "Vesta CRM",
   },
   other: {
     "mobile-web-app-capable": "yes",
@@ -43,7 +43,7 @@ export default function RootLayout({
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
-      <body className={`${inter.className} h-screen bg-background antialiased overflow-hidden flex`} suppressHydrationWarning>
+      <body className={`${inter.className} bg-background antialiased`} suppressHydrationWarning>
         <a href="#main-content" className="skip-to-content">Skip to content</a>
         <Providers>
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>

@@ -1,5 +1,5 @@
 import { google } from "googleapis"
-import { adminDb } from "./firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -7,9 +7,11 @@ const oauth2Client = new google.auth.OAuth2(
     process.env.AUTH_URL // Redirect URI
 )
 
-export async function getGoogleCalendarClient(userId: string) {
+export async function getGoogleCalendarClient(workspaceId: string, userId: string) {
+    const db = tenantDb(workspaceId)
+
     // Look up the Google Provider account for this user
-    const integrationSnap = await adminDb.collection('calendar_integrations')
+    const integrationSnap = await db.collection('calendar_integrations')
         .where('userId', '==', userId)
         .limit(1)
         .get()
@@ -34,11 +36,12 @@ export async function getGoogleCalendarClient(userId: string) {
 }
 
 export async function syncEventToGoogle(
+    workspaceId: string,
     userId: string,
     eventDetails: { summary: string, description: string, dateStart: string, dateEnd?: string }
 ) {
     try {
-        const calendar = await getGoogleCalendarClient(userId)
+        const calendar = await getGoogleCalendarClient(workspaceId, userId)
 
         const response = await calendar.events.insert({
             calendarId: "primary",

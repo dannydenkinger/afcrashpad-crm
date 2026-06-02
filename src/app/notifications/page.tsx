@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Bell, Check, CheckCheck, Loader2, ExternalLink } from "lucide-react"
+import { Bell, Check, CheckCheck, Loader2, ExternalLink, AlertCircle, RefreshCw } from "lucide-react"
 import { getNotifications, markAsRead, markAllAsRead } from "./actions"
 import { useRouter } from "next/navigation"
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh"
@@ -28,14 +28,23 @@ export default function NotificationsPage() {
     const [notifications, setNotifications] = useState<Notification[]>([])
     const [unreadCount, setUnreadCount] = useState(0)
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [retrying, setRetrying] = useState(false)
     const [filter, setFilter] = useState<"all" | "unread">("all")
     const [typeFilter, setTypeFilter] = useState<string>("all")
 
     const fetchData = useCallback(async () => {
-        const res = await getNotifications(100)
-        if (res.success) {
-            setNotifications(res.notifications)
-            setUnreadCount(res.unreadCount)
+        setLoadError(null)
+        try {
+            const res = await getNotifications(100)
+            if (res.success) {
+                setNotifications(res.notifications)
+                setUnreadCount(res.unreadCount)
+            } else {
+                setLoadError((res as { error?: string }).error || "Failed to load notifications")
+            }
+        } catch (err) {
+            setLoadError(err instanceof Error ? err.message : "Failed to load notifications")
         }
         setLoading(false)
     }, [])
@@ -51,12 +60,19 @@ export default function NotificationsPage() {
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
         setUnreadCount(prev => Math.max(0, prev - 1))
         await markAsRead(id)
+        // Tell other panels (TopNav badge, NotificationPanel) to refresh
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("crm:data-update"))
+        }
     }
 
     const handleMarkAllRead = async () => {
         setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
         setUnreadCount(0)
         await markAllAsRead()
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("crm:data-update"))
+        }
     }
 
     const handleClick = async (notif: Notification) => {
@@ -145,6 +161,40 @@ export default function NotificationsPage() {
                         {[...Array(5)].map((_, i) => (
                             <div key={i} className="h-20 bg-muted/10 rounded-lg animate-pulse" />
                         ))}
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    if (loadError) {
+        return (
+            <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="space-y-6 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-28 md:pb-8">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                            Notifications
+                        </h2>
+                    </div>
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 sm:p-8 text-center">
+                        <div className="mx-auto h-10 w-10 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-3">
+                            <AlertCircle className="h-5 w-5" />
+                        </div>
+                        <h3 className="text-sm font-semibold mb-1">Couldn&apos;t load notifications</h3>
+                        <p className="text-xs text-muted-foreground max-w-md mx-auto mb-4">{loadError}</p>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                                setRetrying(true)
+                                try { await fetchData() } finally { setRetrying(false) }
+                            }}
+                            disabled={retrying}
+                            className="h-8 text-xs"
+                        >
+                            {retrying ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                            {retrying ? "Retrying…" : "Try again"}
+                        </Button>
                     </div>
                 </div>
             </div>

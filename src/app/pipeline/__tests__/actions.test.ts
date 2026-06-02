@@ -19,7 +19,6 @@ const createNewDealSchema = z.object({
   notes: z.string().max(5000).optional().or(z.literal("")),
   contactId: z.string().optional(),
   assigneeId: z.string().optional().nullable(),
-  specialAccommodationId: z.string().optional().nullable(),
 })
 
 const updateOpportunitySchema = z.object({
@@ -38,7 +37,6 @@ const updateOpportunitySchema = z.object({
   assigneeId: z.string().optional().nullable(),
   leadSourceId: z.string().optional().nullable(),
   tagIds: z.array(z.string()).optional(),
-  specialAccommodationId: z.string().optional().nullable(),
   blockers: z.array(z.string().max(500)).max(20).optional(),
   revenueStatus: z.enum(["booked", "collected", "partial"]).optional(),
   collectedAmount: z.number().min(0).optional(),
@@ -111,7 +109,6 @@ describe('Pipeline Actions - Zod Schema Validation', () => {
         endDate: '2026-05-30',
         notes: 'TDY orders pending.',
         assigneeId: 'agent1',
-        specialAccommodationId: 'acc1',
       })
       expect(result.success).toBe(true)
     })

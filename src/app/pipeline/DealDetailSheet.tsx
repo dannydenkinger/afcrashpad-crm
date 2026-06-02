@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
-    DollarSign, MapPin, Phone, Mail, FileText, CheckCircle2, MoreVertical, MessageSquare, Calculator, User, Trash2, FileDown, Ban, Plus, X, CreditCard, Banknote, Wallet
+    DollarSign, MapPin, Phone, Mail, FileText, CheckCircle2, MoreVertical, MessageSquare, User, Trash2, FileDown, Ban, Plus, X, CreditCard, Banknote, Wallet, UserPlus, ArrowRight, ChevronDown, Check
 } from "lucide-react"
 import { exportToPDF } from "@/lib/export-pdf"
 import { buildDealProfileHtml } from "@/components/PrintableProfile"
@@ -54,67 +55,11 @@ const NotesEditor = dynamic(() => import("@/components/NotesEditor").then(mod =>
     ssr: false,
 })
 import { CustomFieldsSection } from "@/components/CustomFieldsSection"
-import { updateRequiredDocs, moveToLeaseSigned, claimOpportunity, updateBlockers, addPayment, getPayments, updateDealExpenses, getDealExpenses, updateOpportunity } from "./actions"
+import { updateRequiredDocs, claimOpportunity, updateBlockers, addPayment, getPayments, updateDealExpenses, getDealExpenses, updateOpportunity } from "./actions"
 import type { DealStatus } from "@/types"
 import { DEAL_STATUS_LABELS, DEAL_STATUS_COLORS } from "@/types"
 import { toast } from "sonner"
 import dynamic from "next/dynamic"
-
-const OffBaseLodgingCalculator = dynamic(() => import("@/components/calculators/OffBaseLodgingCalculator"), {
-    ssr: false,
-    loading: () => <div className="h-[300px] flex items-center justify-center">Loading Off-Base Calculator...</div>
-})
-
-const OnBaseLodgingCalculator = dynamic(() => import("@/components/calculators/OnBaseLodgingCalculator").then(mod => mod.OnBaseLodgingCalculator), {
-    ssr: false,
-    loading: () => <div className="h-[300px] flex items-center justify-center">Loading On-Base Calculator...</div>
-})
-
-function BaseCombobox({ value, bases, onChange }: { value: string; bases: string[]; onChange: (val: string) => void }) {
-    const [open, setOpen] = useState(false)
-    const [search, setSearch] = useState(value)
-    const containerRef = useRef<HTMLDivElement>(null)
-
-    useEffect(() => { setSearch(value) }, [value])
-
-    useEffect(() => {
-        function handleClick(e: MouseEvent) {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
-        }
-        document.addEventListener("mousedown", handleClick)
-        return () => document.removeEventListener("mousedown", handleClick)
-    }, [])
-
-    const filtered = search
-        ? bases.filter(b => b.toLowerCase().includes(search.toLowerCase()))
-        : []
-
-    return (
-        <div className="relative" ref={containerRef}>
-            <MapPin className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground z-10" />
-            <Input
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setOpen(true); onChange(e.target.value) }}
-                onFocus={() => { if (search) setOpen(true) }}
-                className="h-8 pl-8 text-sm"
-                placeholder="Type to search bases..."
-            />
-            {open && filtered.length > 0 && (
-                <div className="absolute z-50 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
-                    {filtered.map(base => (
-                        <div
-                            key={base}
-                            className={`px-3 py-1.5 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors ${base === value ? "bg-accent/50 font-medium" : ""}`}
-                            onMouseDown={(e) => { e.preventDefault(); setSearch(base); onChange(base); setOpen(false) }}
-                        >
-                            {base}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    )
-}
 
 interface DealDetailSheetProps {
     selectedDeal: any
@@ -123,16 +68,13 @@ interface DealDetailSheetProps {
     setActiveTab: (val: string) => void
     currentPipeline: any
     activePipelineKey: string
-    baseNames: string[]
     allUsers: any[]
-    specialAccommodations: { id: string; name: string }[]
     userRole: string
     session: any
     isSaving: boolean
     saveStatus: 'idle' | 'success' | 'error'
     onSave: () => void
     onDelete: (id: string) => void
-    onSyncCalculatorValue: (val: number, type: "BAH" | "VA" | "ON_BASE" | "OFF_BASE") => void
     contactTimeline: TimelineItem[] | null
     timelineLoading: boolean
     onRefetchTimeline: () => void
@@ -151,16 +93,13 @@ export function DealDetailSheet({
     setActiveTab,
     currentPipeline,
     activePipelineKey,
-    baseNames,
     allUsers,
-    specialAccommodations,
     userRole,
     session,
     isSaving,
     saveStatus,
     onSave,
     onDelete,
-    onSyncCalculatorValue,
     contactTimeline,
     timelineLoading,
     onRefetchTimeline,
@@ -172,7 +111,6 @@ export function DealDetailSheet({
     onLinkContact,
 }: DealDetailSheetProps) {
     // Internal state for the sheet
-    const [isCalculatorOpen, setIsCalculatorOpen] = useState(false)
     const [noteToDelete, setNoteToDelete] = useState<{ contactId: string; noteId: string } | null>(null)
     const [isDeletingNote, setIsDeletingNote] = useState(false)
     const [formErrors, setFormErrors] = useState<Record<string, string>>({})
@@ -223,6 +161,47 @@ export function DealDetailSheet({
     const [expensesLoading, setExpensesLoading] = useState(false)
     const [savingExpenses, setSavingExpenses] = useState(false)
     const [showRentBreakdown, setShowRentBreakdown] = useState(false)
+
+    // Workspace default profit margin (percentage 0-100). Falls back to 25
+    // when the workspace hasn't set one. Loaded once on first open.
+    const [defaultMarginPct, setDefaultMarginPct] = useState<number>(25)
+    const [defaultMarginLoaded, setDefaultMarginLoaded] = useState(false)
+    useEffect(() => {
+        if (defaultMarginLoaded || !selectedDeal) return
+        let cancelled = false
+        ;(async () => {
+            const { getSession } = await import("next-auth/react")
+            const s = await getSession()
+            const wsId = (s?.user as { workspaceId?: string } | undefined)?.workspaceId
+            if (!wsId || cancelled) return
+            const { getWorkspaceInfo } = await import("@/app/settings/users/workspace-actions")
+            const info = await getWorkspaceInfo(wsId)
+            if (cancelled) return
+            if (info && typeof info.defaultMargin === "number") {
+                setDefaultMarginPct(info.defaultMargin)
+            }
+            setDefaultMarginLoaded(true)
+        })()
+        return () => { cancelled = true }
+    }, [selectedDeal, defaultMarginLoaded])
+
+    // Required-docs checklist — loaded from workspace settings, lazily on first
+    // open of the Docs tab. If the workspace has no items configured, the
+    // section is hidden entirely.
+    const [requiredDocsList, setRequiredDocsList] = useState<{ id: string; label: string }[]>([])
+    const [requiredDocsLoaded, setRequiredDocsLoaded] = useState(false)
+    useEffect(() => {
+        if (activeTab !== "documents" || requiredDocsLoaded) return
+        let cancelled = false
+        import("@/app/settings/required-docs/actions").then(({ getRequiredDocs }) =>
+            getRequiredDocs().then((docs) => {
+                if (cancelled) return
+                setRequiredDocsList(docs.map((d) => ({ id: d.id, label: d.label })))
+                setRequiredDocsLoaded(true)
+            }),
+        )
+        return () => { cancelled = true }
+    }, [activeTab, requiredDocsLoaded])
 
     const loadPayments = useCallback(async (dealId: string) => {
         if (!dealId || dealId === "new") return
@@ -404,49 +383,79 @@ export function DealDetailSheet({
                     {selectedDeal && (
                         <>
                             <div className="p-4 sm:p-6 bg-muted/30 border-b" style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))' }}>
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className="flex items-center gap-3 sm:gap-4">
-                                        <Avatar className="h-12 w-12 sm:h-16 sm:w-16 border-2 border-background shadow-sm">
-                                            <AvatarFallback className="text-lg sm:text-xl bg-primary/10 text-primary">{(selectedDeal.name || "?").slice(0, 2).toUpperCase()}</AvatarFallback>
+                                <div className="flex items-start justify-between mb-4 gap-3">
+                                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                                        <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-background shadow-sm shrink-0">
+                                            <AvatarFallback className="text-lg sm:text-xl bg-primary/10 text-primary font-semibold">
+                                                {(selectedDeal.name || "?").slice(0, 2).toUpperCase()}
+                                            </AvatarFallback>
                                         </Avatar>
                                         <div className="min-w-0">
-                                            <SheetTitle className="text-lg lg:text-2xl truncate">{selectedDeal.name || "New opportunity"}</SheetTitle>
-                                            <SheetDescription className="flex items-center gap-2 mt-1 flex-wrap">
-                                                <Badge variant="outline" className="font-normal">{selectedDeal.stage}</Badge>
-                                                {selectedDeal.id !== "new" && (
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Badge variant="outline" className={`cursor-pointer font-normal ${DEAL_STATUS_COLORS[(selectedDeal.status || "open") as DealStatus]}`}>
-                                                                {DEAL_STATUS_LABELS[(selectedDeal.status || "open") as DealStatus]}
-                                                            </Badge>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="start">
-                                                            {(["open", "closed_won", "closed_lost", "archive"] as DealStatus[]).map(s => (
-                                                                <DropdownMenuItem
-                                                                    key={s}
-                                                                    disabled={s === (selectedDeal.status || "open")}
-                                                                    onClick={async () => {
-                                                                        const res = await updateOpportunity(selectedDeal.id, { status: s })
-                                                                        if (res.success) {
-                                                                            setSelectedDeal((prev: any) => prev ? { ...prev, status: s } : null)
-                                                                            fetchPipelines()
-                                                                            toast.success(`Deal marked as ${DEAL_STATUS_LABELS[s]}`)
-                                                                        } else {
-                                                                            toast.error("Failed to update deal status")
-                                                                        }
-                                                                    }}
+                                            <SheetTitle className="text-lg lg:text-2xl tracking-tight truncate">
+                                                {selectedDeal.name || "New opportunity"}
+                                            </SheetTitle>
+                                            <SheetDescription className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border bg-muted text-foreground/80 border-border">
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                                                    {selectedDeal.stage}
+                                                </span>
+                                                {selectedDeal.id !== "new" && (() => {
+                                                    const currentStatus = (selectedDeal.status || "open") as DealStatus
+                                                    const dotFor = (s: DealStatus) =>
+                                                        s === "open" ? "bg-emerald-500" :
+                                                        s === "closed_won" ? "bg-blue-500" :
+                                                        s === "closed_lost" ? "bg-red-500" :
+                                                        "bg-gray-400"
+                                                    return (
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Change deal status — currently ${DEAL_STATUS_LABELS[currentStatus]}. Click to change.`}
+                                                                    className={`group inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md border-2 cursor-pointer transition-all hover:shadow-md hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${DEAL_STATUS_COLORS[currentStatus]}`}
                                                                 >
-                                                                    <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                                                                        s === "open" ? "bg-emerald-500" :
-                                                                        s === "closed_won" ? "bg-blue-500" :
-                                                                        s === "closed_lost" ? "bg-red-500" :
-                                                                        "bg-gray-400"
-                                                                    }`} />
-                                                                    {DEAL_STATUS_LABELS[s]}
-                                                                </DropdownMenuItem>
-                                                            ))}
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
+                                                                    <span className="text-[9px] uppercase tracking-widest opacity-60 font-bold mr-0.5">Status</span>
+                                                                    <span className={`h-1.5 w-1.5 rounded-full ${dotFor(currentStatus)}`} />
+                                                                    {DEAL_STATUS_LABELS[currentStatus]}
+                                                                    <ChevronDown className="h-3 w-3 opacity-70 group-hover:opacity-100 transition-opacity" />
+                                                                </button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="start" className="min-w-[200px]">
+                                                                <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+                                                                    Set deal status
+                                                                </div>
+                                                                {(["open", "closed_won", "closed_lost", "archive"] as DealStatus[]).map(s => {
+                                                                    const isCurrent = s === currentStatus
+                                                                    return (
+                                                                        <DropdownMenuItem
+                                                                            key={s}
+                                                                            disabled={isCurrent}
+                                                                            onClick={async () => {
+                                                                                const res = await updateOpportunity(selectedDeal.id, { status: s })
+                                                                                if (res.success) {
+                                                                                    setSelectedDeal((prev: any) => prev ? { ...prev, status: s } : null)
+                                                                                    fetchPipelines()
+                                                                                    toast.success(`Deal marked as ${DEAL_STATUS_LABELS[s]}`)
+                                                                                } else {
+                                                                                    toast.error("Failed to update deal status")
+                                                                                }
+                                                                            }}
+                                                                            className="flex items-center gap-2"
+                                                                        >
+                                                                            <span className={`inline-block w-2 h-2 rounded-full ${dotFor(s)}`} />
+                                                                            <span className="flex-1">{DEAL_STATUS_LABELS[s]}</span>
+                                                                            {isCurrent && <Check className="h-3.5 w-3.5 text-primary" />}
+                                                                        </DropdownMenuItem>
+                                                                    )
+                                                                })}
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    )
+                                                })()}
+                                                {selectedDeal.opportunityValue != null && Number(selectedDeal.opportunityValue) > 0 && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full tabular-nums">
+                                                        ${Number(selectedDeal.opportunityValue).toLocaleString()}
+                                                    </span>
                                                 )}
                                             </SheetDescription>
                                         </div>
@@ -472,19 +481,56 @@ export function DealDetailSheet({
                                     </DropdownMenu>
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-2 lg:gap-4 mt-4 lg:mt-6">
-                                    <Button size="sm" className="w-full">
-                                        <Phone className="mr-1.5 h-4 w-4" />
+                                <div className="flex items-center gap-2 mt-4">
+                                    <Button
+                                        size="sm"
+                                        className="flex-1 gap-1.5 shadow-sm"
+                                        disabled={!selectedDeal.phone}
+                                        onClick={() => {
+                                            const phone = (selectedDeal.phone || "").replace(/[^0-9+]/g, "")
+                                            if (!phone) {
+                                                toast.error("No phone number on this contact")
+                                                return
+                                            }
+                                            window.location.href = `tel:${phone}`
+                                            // After the OS dialer hands off, drop the user on the contact
+                                            // page so they can log the call outcome via PhoneActions.
+                                            if (selectedDeal.contactId) {
+                                                setTimeout(() => router.push(`/contacts?contact=${selectedDeal.contactId}`), 200)
+                                            }
+                                        }}
+                                    >
+                                        <Phone className="h-4 w-4" />
                                         Call
                                     </Button>
-                                    <Button size="sm" variant="outline" className="w-full">
-                                        <Mail className="mr-1.5 h-4 w-4" />
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="flex-1 gap-1.5"
+                                        disabled={!selectedDeal.email}
+                                        onClick={() => {
+                                            const email = (selectedDeal.email || "").trim()
+                                            if (!email) {
+                                                toast.error("No email on this contact")
+                                                return
+                                            }
+                                            // Prefer the in-app composer if a contact is linked — keeps
+                                            // the message threaded into the contact's timeline. Otherwise
+                                            // fall back to a mailto: handoff to the user's mail client.
+                                            if (selectedDeal.contactId) {
+                                                router.push(`/communications?contact=${selectedDeal.contactId}`)
+                                            } else {
+                                                window.location.href = `mailto:${email}`
+                                            }
+                                        }}
+                                    >
+                                        <Mail className="h-4 w-4" />
                                         Email
                                     </Button>
                                     <Button
                                         size="sm"
                                         variant={selectedDeal.claimedBy === session?.user?.id ? "default" : "outline"}
-                                        className="w-full truncate"
+                                        className="flex-1 gap-1.5 truncate min-w-0"
                                         onClick={async () => {
                                             const res = await claimOpportunity(selectedDeal.id);
                                             if (res.success) {
@@ -507,37 +553,47 @@ export function DealDetailSheet({
                                             }
                                         }}
                                     >
-                                        <User className="mr-2 h-4 w-4" />
-                                        {selectedDeal.claimedBy === session?.user?.id
-                                            ? "Unclaim"
-                                            : selectedDeal.claimedBy
-                                                ? `Claimed by ${selectedDeal.claimedByName}`
-                                                : "Claim"
-                                        }
+                                        <User className="h-4 w-4 shrink-0" />
+                                        <span className="truncate">
+                                            {selectedDeal.claimedBy === session?.user?.id
+                                                ? "Unclaim"
+                                                : selectedDeal.claimedBy
+                                                    ? `Claimed by ${selectedDeal.claimedByName}`
+                                                    : "Claim"
+                                            }
+                                        </span>
                                     </Button>
                                 </div>
                                 {selectedDeal.claimedByName && selectedDeal.claimedBy !== session?.user?.id && (
-                                    <p className="text-xs text-muted-foreground mt-2">Currently being worked by {selectedDeal.claimedByName}</p>
+                                    <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-md">
+                                        <span className="relative flex h-1.5 w-1.5">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500" />
+                                        </span>
+                                        Currently being worked by {selectedDeal.claimedByName}
+                                    </div>
                                 )}
                             </div>
 
                             <div className="flex-1 overflow-y-auto">
                                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col">
-                                    <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-3 sm:px-6 h-12">
-                                        <TabsTrigger value="details" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-2.5 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation">Details</TabsTrigger>
-                                        <TabsTrigger value="notes" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-2.5 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation">Notes</TabsTrigger>
-                                        <TabsTrigger value="timeline" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-2.5 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation">Timeline</TabsTrigger>
-                                        <TabsTrigger value="documents" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-2.5 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation">Docs</TabsTrigger>
-                                        <TabsTrigger value="finance" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-2.5 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation">Finance</TabsTrigger>
+                                    {/* Underline-style tabs (variant="line") to match the
+                                       rest of the app. Without this, the default TabsTrigger
+                                       inherits a dark-mode `border-input` outline on the
+                                       active state that bleeds through and looks like a
+                                       chunky blue ring. */}
+                                    <TabsList variant="line" className="w-full justify-start rounded-none border-b bg-transparent px-3 sm:px-6 h-11 gap-0">
+                                        <TabsTrigger value="details" className="rounded-none px-3 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation data-[state=active]:text-primary after:!bg-primary">Details</TabsTrigger>
+                                        <TabsTrigger value="notes" className="rounded-none px-3 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation data-[state=active]:text-primary after:!bg-primary">Notes</TabsTrigger>
+                                        <TabsTrigger value="timeline" className="rounded-none px-3 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation data-[state=active]:text-primary after:!bg-primary">Timeline</TabsTrigger>
+                                        <TabsTrigger value="documents" className="rounded-none px-3 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation data-[state=active]:text-primary after:!bg-primary">Docs</TabsTrigger>
+                                        <TabsTrigger value="finance" className="rounded-none px-3 sm:px-4 h-full text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation data-[state=active]:text-primary after:!bg-primary">Finance</TabsTrigger>
                                     </TabsList>
 
                                     <TabsContent value="details" className="flex-1 p-4 sm:p-6 m-0 outline-none space-y-8 overflow-y-auto">
                                         {/* Contact Info */}
                                         <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Contact Information</h3>
-                                                <Button variant="outline" size="sm">Edit</Button>
-                                            </div>
+                                            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Contact Information</h3>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4 sm:gap-x-8 text-sm">
                                                 <div className="space-y-1 sm:col-span-2">
                                                     <span className="text-muted-foreground text-xs">Full Name</span>
@@ -571,14 +627,6 @@ export function DealDetailSheet({
                                                         className="h-8 text-sm"
                                                     />
                                                 </div>
-                                                <div className="space-y-1 sm:col-span-2">
-                                                    <span className="text-muted-foreground text-xs">Military Base</span>
-                                                    <BaseCombobox
-                                                        value={selectedDeal.base || ""}
-                                                        bases={baseNames}
-                                                        onChange={(val) => setSelectedDeal((prev: any) => prev ? { ...prev, base: val } : null)}
-                                                    />
-                                                </div>
                                             </div>
                                         </div>
 
@@ -594,14 +642,14 @@ export function DealDetailSheet({
 
                                         <Separator />
 
-                                        {/* Stay Info */}
+                                        {/* Period Info */}
                                         <div className="space-y-4">
                                             <div className="flex items-center justify-between">
-                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Stay Details</h3>
+                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Schedule</h3>
                                             </div>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4 sm:gap-x-8 text-sm">
                                                 <div className="space-y-1">
-                                                    <span className="text-muted-foreground text-xs">Check-in Date</span>
+                                                    <span className="text-muted-foreground text-xs">Start Date</span>
                                                     <div className="relative">
                                                         <Input type="date" value={selectedDeal.startDate || ""} onChange={(e) => {
                                                             setSelectedDeal((prev: any) => prev ? { ...prev, startDate: e.target.value } : null)
@@ -610,7 +658,7 @@ export function DealDetailSheet({
                                                     </div>
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <span className="text-muted-foreground text-xs">Check-out Date</span>
+                                                    <span className="text-muted-foreground text-xs">End Date</span>
                                                     <div className="relative">
                                                         <Input type="date" value={selectedDeal.endDate || ""} onChange={(e) => {
                                                             setSelectedDeal((prev: any) => prev ? { ...prev, endDate: e.target.value } : null)
@@ -689,48 +737,6 @@ export function DealDetailSheet({
                                                     value={selectedDeal.leadSourceId}
                                                     onChange={(val) => setSelectedDeal((prev: any) => prev ? { ...prev, leadSourceId: val === "0" ? null : val } : null)}
                                                 />
-                                            </div>
-                                        </div>
-
-                                        {/* Special Accommodations */}
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Special Accommodations</h3>
-                                            </div>
-                                            <div className="space-y-2">
-                                                {specialAccommodations.length === 0 ? (
-                                                    <p className="text-xs text-muted-foreground">Add options in Settings &rarr; Workspace Options &rarr; Special Accommodations</p>
-                                                ) : (
-                                                    <div className="flex flex-col gap-2">
-                                                        {specialAccommodations.map((acc) => (
-                                                            <label
-                                                                key={acc.id}
-                                                                className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5"
-                                                            >
-                                                                <input
-                                                                    type="radio"
-                                                                    name="specialAccommodation"
-                                                                    value={acc.id}
-                                                                    checked={(selectedDeal.specialAccommodationId || "") === acc.id}
-                                                                    onChange={() => setSelectedDeal((prev: any) => prev ? { ...prev, specialAccommodationId: acc.id } : null)}
-                                                                    className="h-4 w-4 text-primary border-input"
-                                                                />
-                                                                <span className="text-sm font-medium">{acc.name}</span>
-                                                            </label>
-                                                        ))}
-                                                        <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5">
-                                                            <input
-                                                                type="radio"
-                                                                name="specialAccommodation"
-                                                                value=""
-                                                                checked={!selectedDeal.specialAccommodationId}
-                                                                onChange={() => setSelectedDeal((prev: any) => prev ? { ...prev, specialAccommodationId: null } : null)}
-                                                                className="h-4 w-4 text-primary border-input"
-                                                            />
-                                                            <span className="text-sm text-muted-foreground">None</span>
-                                                        </label>
-                                                    </div>
-                                                )}
                                             </div>
                                         </div>
 
@@ -828,63 +834,66 @@ export function DealDetailSheet({
                                         {/* Financials */}
                                         <div className="space-y-4">
                                             <div className="flex items-center justify-between">
-                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Financial Calculation</h3>
-                                                <Dialog open={isCalculatorOpen} onOpenChange={setIsCalculatorOpen}>
-                                                    <DialogTrigger asChild>
-                                                        <Button variant="outline" size="sm" className="gap-2 border-primary/20 hover:border-primary/50 text-primary">
-                                                            <Calculator className="h-4 w-4" />
-                                                            Calculate Opportunity Cost
-                                                        </Button>
-                                                    </DialogTrigger>
-                                                    <DialogContent className="w-[95vw] max-w-2xl bg-card border-white/5 backdrop-blur-xl max-h-[90vh] overflow-y-auto">
-                                                        <DialogHeader>
-                                                            <DialogTitle>Housing Allowance Calculator</DialogTitle>
-                                                        </DialogHeader>
-                                                        <Tabs defaultValue="on-base" className="w-full">
-                                                            <TabsList className="grid w-full grid-cols-2 mb-4">
-                                                                <TabsTrigger value="on-base">On-Base</TabsTrigger>
-                                                                <TabsTrigger value="off-base">Off-Base</TabsTrigger>
-                                                            </TabsList>
-                                                            <TabsContent value="on-base">
-                                                                <OnBaseLodgingCalculator
-                                                                    embedded
-                                                                    initialBase={selectedDeal.base}
-                                                                    initialStartDate={selectedDeal.startDate}
-                                                                    initialEndDate={selectedDeal.endDate}
-                                                                    onSyncValue={(val) => {
-                                                                        onSyncCalculatorValue(val, "ON_BASE");
-                                                                        setIsCalculatorOpen(false);
-                                                                    }}
-                                                                />
-                                                            </TabsContent>
-
-                                                            <TabsContent value="off-base">
-                                                                <OffBaseLodgingCalculator
-                                                                    embedded
-                                                                    initialBase={selectedDeal.base}
-                                                                    initialStartDate={selectedDeal.startDate}
-                                                                    initialEndDate={selectedDeal.endDate}
-                                                                    onSyncValue={(val) => {
-                                                                        onSyncCalculatorValue(val, "OFF_BASE");
-                                                                        setIsCalculatorOpen(false);
-                                                                    }}
-                                                                />
-                                                            </TabsContent>
-                                                        </Tabs>
-                                                    </DialogContent>
-                                                </Dialog>
+                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Deal Value</h3>
                                             </div>
                                             <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-3">
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-muted-foreground">Opportunity Value</span>
-                                                    <span className="font-mono font-medium">${(Number(selectedDeal.value) || 0).toLocaleString()}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted-foreground">Expected Profit Margin</span>
-                                                        <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-tighter">(25% DEFAULT)</span>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="text-muted-foreground text-xs">Total value</label>
+                                                        <div className="relative">
+                                                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                                                            <Input
+                                                                type="number"
+                                                                inputMode="decimal"
+                                                                step="0.01"
+                                                                min="0"
+                                                                // Treat 0 as empty for display so the placeholder shows
+                                                                // and typing "5000" doesn't render as "05000".
+                                                                value={selectedDeal.value ? selectedDeal.value : ""}
+                                                                onChange={(e) => {
+                                                                    const next = e.target.value
+                                                                    const num = next === "" ? 0 : Number(next)
+                                                                    setSelectedDeal((prev: any) => prev ? {
+                                                                        ...prev,
+                                                                        value: Number.isFinite(num) ? num : 0,
+                                                                        // Auto-update margin to the workspace's default % only if user hasn't set a custom margin yet
+                                                                        margin: prev.marginIsCustom ? prev.margin : Math.round((Number.isFinite(num) ? num : 0) * (defaultMarginPct / 100) * 100) / 100,
+                                                                    } : null)
+                                                                }}
+                                                                placeholder="0.00"
+                                                                className="h-8 text-sm pl-5 font-mono"
+                                                            />
+                                                        </div>
                                                     </div>
-                                                    <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400 font-bold">${(Number(selectedDeal.margin) || 0).toLocaleString()}</span>
+                                                    <div className="space-y-1">
+                                                        <label className="text-muted-foreground text-xs flex items-center justify-between">
+                                                            <span>Profit margin</span>
+                                                            {!selectedDeal.marginIsCustom && (Number(selectedDeal.value) || 0) > 0 && (
+                                                                <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-tighter">{defaultMarginPct}% AUTO</span>
+                                                            )}
+                                                        </label>
+                                                        <div className="relative">
+                                                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                                                            <Input
+                                                                type="number"
+                                                                inputMode="decimal"
+                                                                step="0.01"
+                                                                min="0"
+                                                                value={selectedDeal.margin ? selectedDeal.margin : ""}
+                                                                onChange={(e) => {
+                                                                    const next = e.target.value
+                                                                    const num = next === "" ? 0 : Number(next)
+                                                                    setSelectedDeal((prev: any) => prev ? {
+                                                                        ...prev,
+                                                                        margin: Number.isFinite(num) ? num : 0,
+                                                                        marginIsCustom: true,
+                                                                    } : null)
+                                                                }}
+                                                                placeholder="0.00"
+                                                                className="h-8 text-sm pl-5 font-mono text-emerald-700 dark:text-emerald-400"
+                                                            />
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1009,6 +1018,42 @@ export function DealDetailSheet({
                                                             </div>
                                                         );
                                                     }
+                                                    if (item.kind === "call") {
+                                                        const outcomeLabel: Record<string, string> = {
+                                                            connected: "Connected",
+                                                            voicemail: "Voicemail",
+                                                            no_answer: "No answer",
+                                                            wrong_number: "Wrong number",
+                                                        }
+                                                        return (
+                                                            <div key={item.id} className="relative flex items-center gap-4">
+                                                                <div className="absolute left-0 mt-1 flex h-10 w-10 items-center justify-center rounded-full border bg-background shadow-sm z-10">
+                                                                    <Phone className="h-4 w-4 text-amber-500" />
+                                                                </div>
+                                                                <div className="ml-12 lg:ml-14 flex-1 space-y-1">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-sm font-bold">
+                                                                            {item.direction === "inbound" ? "Inbound call" : "Outbound call"}
+                                                                            <span className="text-muted-foreground font-normal"> · {outcomeLabel[item.outcome] || item.outcome}</span>
+                                                                            {typeof item.durationMinutes === "number" && item.durationMinutes > 0 && (
+                                                                                <span className="text-muted-foreground font-normal"> · {item.durationMinutes}m</span>
+                                                                            )}
+                                                                        </span>
+                                                                        <span className="text-xs text-muted-foreground tabular-nums">
+                                                                            {new Date(item.createdAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}
+                                                                        </span>
+                                                                    </div>
+                                                                    {item.notes && (
+                                                                        <div className="p-3 rounded-xl border bg-muted/30 text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+                                                                            {item.notes}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    // note_deleted (last remaining kind)
+                                                    if (item.kind !== "note_deleted") return null;
                                                     return (
                                                         <div key={item.id} className="relative flex items-center gap-4">
                                                             <div className="absolute left-0 mt-1 flex h-10 w-10 items-center justify-center rounded-full border bg-background shadow-sm z-10">
@@ -1035,79 +1080,131 @@ export function DealDetailSheet({
                                     </TabsContent>
 
                                     <TabsContent value="documents" className="flex-1 p-4 sm:p-6 m-0 outline-none overflow-y-auto space-y-6">
-                                        <div className="space-y-4">
-                                            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Required Documentation</h3>
-                                            <p className="text-xs text-muted-foreground">Check off each document once it has been uploaded and verified.</p>
-                                            <div className="space-y-3">
-                                                {[
-                                                    { key: "lease" as const, label: "Homeowner Lease" },
-                                                    { key: "tc" as const, label: "Terms & Conditions" },
-                                                    { key: "payment" as const, label: "Payment Authorization" },
-                                                ].map((doc) => {
-                                                    const isChecked = selectedDeal.requiredDocs?.[doc.key] ?? false;
-                                                    return (
-                                                        <label key={doc.key} className="flex items-center gap-3 p-4 rounded-lg border bg-card cursor-pointer hover:bg-muted/30 transition-colors">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={isChecked}
-                                                                onChange={async (e) => {
-                                                                    const val = e.target.checked;
-                                                                    setSelectedDeal((prev: any) => prev ? {
-                                                                        ...prev,
-                                                                        requiredDocs: { ...prev.requiredDocs, [doc.key]: val }
-                                                                    } : null);
-                                                                    if (selectedDeal.id !== "new") {
-                                                                        try {
-                                                                            await updateRequiredDocs(selectedDeal.id, doc.key, val);
-                                                                        } catch {
-                                                                            toast.error("Failed to update document status");
+                                        {requiredDocsList.length > 0 && (
+                                            <div className="space-y-4">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                                                        Required Documentation
+                                                    </h3>
+                                                    <Link
+                                                        href="/settings/workspace/required-docs"
+                                                        className="text-[10px] uppercase tracking-wider text-muted-foreground/60 hover:text-foreground"
+                                                        title="Manage the workspace-wide checklist"
+                                                    >
+                                                        Manage
+                                                    </Link>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Check off each document once it has been uploaded and verified.
+                                                </p>
+                                                <div className="space-y-3">
+                                                    {requiredDocsList.map((doc) => {
+                                                        const isChecked = selectedDeal.requiredDocs?.[doc.id] ?? false
+                                                        return (
+                                                            <label key={doc.id} className="flex items-center gap-3 p-4 rounded-lg border bg-card cursor-pointer hover:bg-muted/30 transition-colors">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    onChange={async (e) => {
+                                                                        const val = e.target.checked
+                                                                        setSelectedDeal((prev: any) => prev ? {
+                                                                            ...prev,
+                                                                            requiredDocs: { ...prev.requiredDocs, [doc.id]: val },
+                                                                        } : null)
+                                                                        if (selectedDeal.id !== "new") {
+                                                                            try {
+                                                                                await updateRequiredDocs(selectedDeal.id, doc.id, val)
+                                                                            } catch {
+                                                                                toast.error("Failed to update document status")
+                                                                            }
                                                                         }
-                                                                    }
-                                                                }}
-                                                                className="h-5 w-5 rounded border-2 border-muted-foreground/30 text-primary accent-primary cursor-pointer"
-                                                            />
-                                                            <div className="flex items-center gap-3 flex-1">
-                                                                <div className={`flex items-center justify-center h-8 w-8 rounded-full ${isChecked ? "bg-emerald-500/10 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
-                                                                    {isChecked ? <CheckCircle2 className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                                                                    }}
+                                                                    className="h-5 w-5 rounded border-2 border-muted-foreground/30 text-primary accent-primary cursor-pointer"
+                                                                />
+                                                                <div className="flex items-center gap-3 flex-1">
+                                                                    <div className={`flex items-center justify-center h-8 w-8 rounded-full ${isChecked ? "bg-emerald-500/10 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
+                                                                        {isChecked ? <CheckCircle2 className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className={`text-sm font-medium ${isChecked ? "line-through text-muted-foreground" : ""}`}>{doc.label}</p>
+                                                                        <p className="text-xs text-muted-foreground">{isChecked ? "Complete" : "Awaiting upload"}</p>
+                                                                    </div>
                                                                 </div>
-                                                                <div>
-                                                                    <p className={`text-sm font-medium ${isChecked ? "line-through text-muted-foreground" : ""}`}>{doc.label}</p>
-                                                                    <p className="text-xs text-muted-foreground">{isChecked ? "Uploaded" : "Awaiting upload"}</p>
-                                                                </div>
-                                                            </div>
-                                                        </label>
-                                                    );
-                                                })}
+                                                            </label>
+                                                        )
+                                                    })}
+                                                </div>
                                             </div>
-                                            {selectedDeal.requiredDocs?.lease && selectedDeal.requiredDocs?.tc && selectedDeal.requiredDocs?.payment && selectedDeal.id !== "new" && (
-                                                <Button
-                                                    className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                                    onClick={async () => {
-                                                        const res = await moveToLeaseSigned(selectedDeal.id);
-                                                        if (res.success) {
-                                                            setSelectedDeal((prev: any) => prev ? { ...prev, stage: "Lease Signed" } : null);
-                                                            fetchPipelines();
-                                                        }
-                                                    }}
-                                                >
-                                                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                                                    Move to Lease Signed
-                                                </Button>
+                                        )}
+                                        {requiredDocsLoaded && requiredDocsList.length === 0 && (
+                                            <div className="rounded-lg border border-dashed bg-muted/10 p-4 flex items-start gap-3">
+                                                <FileText className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-xs font-medium">No required-doc checklist configured</p>
+                                                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                                                        Set up a workspace-wide checklist (e.g. NDA, Statement of Work, W-9)
+                                                        in <Link href="/settings/workspace/required-docs" className="text-primary hover:underline">
+                                                            Workspace settings
+                                                        </Link>
+                                                        {" "}to track contract progress on every deal.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {requiredDocsList.length > 0 && <Separator />}
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                                                    Files
+                                                </h3>
+                                                {selectedDeal.contactId && (
+                                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                                                        Shared with {selectedDeal.name?.split(" ")[0] || "contact"}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {selectedDeal.contactId ? (
+                                                <DocumentManager contactId={selectedDeal.contactId} />
+                                            ) : (
+                                                <div className="rounded-xl border-2 border-dashed border-border py-10 px-6 text-center space-y-3">
+                                                    <div className="w-12 h-12 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                                                        <FileText className="h-5 w-5" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-semibold">No contact linked yet</p>
+                                                        <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto leading-relaxed">
+                                                            Documents are tied to a contact so they show up everywhere
+                                                            that contact appears. Link one to start uploading.
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center justify-center gap-2 flex-wrap">
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => setActiveTab("details")}
+                                                        >
+                                                            <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+                                                            Link a contact
+                                                        </Button>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => router.push("/documents")}
+                                                            className="gap-1.5"
+                                                        >
+                                                            Upload to Documents
+                                                            <ArrowRight className="h-3 w-3" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
                                             )}
                                         </div>
-                                        <Separator />
-                                        {selectedDeal.contactId ? (
-                                            <DocumentManager contactId={selectedDeal.contactId} />
-                                        ) : (
-                                            <div className="py-8 text-sm text-muted-foreground">Link a contact to this opportunity to upload or view documents.</div>
-                                        )}
                                     </TabsContent>
 
                                     {/* Finance Tab */}
                                     <TabsContent value="finance" className="flex-1 p-4 sm:p-6 m-0 outline-none overflow-y-auto space-y-6">
                                         {/* Expenses Section */}
                                         <div className="space-y-4">
-                                            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Host Expenses</h3>
+                                            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Cost of Sale</h3>
                                             {expensesLoading ? (
                                                 <div className="flex items-center justify-center py-6">
                                                     <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full" />
@@ -1116,7 +1213,7 @@ export function DealDetailSheet({
                                                 <div className="rounded-lg border bg-card p-4 space-y-3">
                                                     <div className="grid grid-cols-2 gap-3">
                                                         <div className="space-y-1">
-                                                            <label className="text-xs text-muted-foreground">Monthly Host Rent ($)</label>
+                                                            <label className="text-xs text-muted-foreground">Recurring Cost / mo ($)</label>
                                                             <Input
                                                                 type="number"
                                                                 step="0.01"
@@ -1128,7 +1225,7 @@ export function DealDetailSheet({
                                                             />
                                                         </div>
                                                         <div className="space-y-1">
-                                                            <label className="text-xs text-muted-foreground">Cleaning Fee ($)</label>
+                                                            <label className="text-xs text-muted-foreground">Service Fee ($)</label>
                                                             <Input
                                                                 type="number"
                                                                 step="0.01"
@@ -1140,7 +1237,7 @@ export function DealDetailSheet({
                                                             />
                                                         </div>
                                                         <div className="space-y-1">
-                                                            <label className="text-xs text-muted-foreground">Pet Fee ($)</label>
+                                                            <label className="text-xs text-muted-foreground">Other Variable Cost ($)</label>
                                                             <Input
                                                                 type="number"
                                                                 step="0.01"
@@ -1152,7 +1249,7 @@ export function DealDetailSheet({
                                                             />
                                                         </div>
                                                         <div className="space-y-1">
-                                                            <label className="text-xs text-muted-foreground">Non-refundable Deposit ($)</label>
+                                                            <label className="text-xs text-muted-foreground">Fixed Setup Cost ($)</label>
                                                             <Input
                                                                 type="number"
                                                                 step="0.01"
@@ -1188,7 +1285,7 @@ export function DealDetailSheet({
                                                             onClick={() => setShowRentBreakdown(!showRentBreakdown)}
                                                         >
                                                             <span className="text-muted-foreground flex items-center gap-1">
-                                                                Prorated Rent
+                                                                Prorated Recurring Cost
                                                                 <span className="text-[10px]">({proratedRent.months.length} {proratedRent.months.length === 1 ? "month" : "months"})</span>
                                                             </span>
                                                             <span className="font-semibold text-rose-500">-${proratedRent.totalRent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -1207,19 +1304,19 @@ export function DealDetailSheet({
                                                 )}
                                                 {expensesData.cleaningFee > 0 && (
                                                     <div className="flex justify-between text-sm">
-                                                        <span className="text-muted-foreground">Cleaning Fee</span>
+                                                        <span className="text-muted-foreground">Service Fee</span>
                                                         <span className="font-semibold text-rose-500">-${expensesData.cleaningFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                     </div>
                                                 )}
                                                 {expensesData.petFee > 0 && (
                                                     <div className="flex justify-between text-sm">
-                                                        <span className="text-muted-foreground">Pet Fee</span>
+                                                        <span className="text-muted-foreground">Other Variable Cost</span>
                                                         <span className="font-semibold text-rose-500">-${expensesData.petFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                     </div>
                                                 )}
                                                 {expensesData.nonrefundableDeposit > 0 && (
                                                     <div className="flex justify-between text-sm">
-                                                        <span className="text-muted-foreground">Non-refundable Deposit</span>
+                                                        <span className="text-muted-foreground">Fixed Setup Cost</span>
                                                         <span className="font-semibold text-rose-500">-${expensesData.nonrefundableDeposit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                     </div>
                                                 )}
@@ -1234,10 +1331,22 @@ export function DealDetailSheet({
                                                         ${(dealValue - totalExpenses).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </span>
                                                 </div>
-                                                <div className="flex justify-between text-xs text-muted-foreground">
-                                                    <span>Expected Profit (25%)</span>
-                                                    <span>${(dealValue * 0.25).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                                </div>
+                                                {(() => {
+                                                    // Use the deal's saved margin if it's been set; otherwise fall
+                                                    // back to the workspace's default profit margin %.
+                                                    const expected = Number(selectedDeal.margin) > 0
+                                                        ? Number(selectedDeal.margin)
+                                                        : dealValue * (defaultMarginPct / 100)
+                                                    const label = Number(selectedDeal.margin) > 0
+                                                        ? "Expected Profit (margin)"
+                                                        : `Expected Profit (${defaultMarginPct}% default)`
+                                                    return (
+                                                        <div className="flex justify-between text-xs text-muted-foreground">
+                                                            <span>{label}</span>
+                                                            <span>${expected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                        </div>
+                                                    )
+                                                })()}
                                             </div>
                                         </div>
 

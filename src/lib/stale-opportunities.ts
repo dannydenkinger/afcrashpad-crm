@@ -1,21 +1,22 @@
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 import { createNotification } from "@/app/notifications/actions"
 
-export async function checkStaleOpportunities() {
+export async function checkStaleOpportunities(workspaceId: string) {
     let staleCount = 0
+    const db = tenantDb(workspaceId)
 
     try {
-        const settingsDoc = await adminDb.collection("settings").doc("automations").get()
+        const settingsDoc = await db.settingsDoc("automations").get()
         if (!settingsDoc.exists || !settingsDoc.data()?.staleOpportunityEnabled) {
             return { staleCount: 0 }
         }
 
-        const pipelinesSnap = await adminDb.collection("pipelines").get()
+        const pipelinesSnap = await db.collection("pipelines").get()
         const today = new Date()
         const todayStr = today.toISOString().slice(0, 10)
 
         for (const pDoc of pipelinesSnap.docs) {
-            const stagesSnap = await pDoc.ref.collection("stages").get()
+            const stagesSnap = await db.subcollection("pipelines", pDoc.id, "stages").get()
 
             for (const sDoc of stagesSnap.docs) {
                 const threshold = sDoc.data().stalenessThresholdDays
@@ -23,7 +24,7 @@ export async function checkStaleOpportunities() {
 
                 const cutoff = new Date(today.getTime() - threshold * 86400000)
 
-                const oppsSnap = await adminDb.collection("opportunities")
+                const oppsSnap = await db.collection("opportunities")
                     .where("pipelineStageId", "==", sDoc.id)
                     .get()
 

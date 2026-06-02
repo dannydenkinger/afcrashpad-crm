@@ -113,22 +113,11 @@ export function DocumentManager({ contactId }: { contactId: string }) {
     const handleFilesSelected = async (files: File[]) => {
         setIsUploading(true)
         setUploadError(null)
+        const { uploadDocument } = await import("@/lib/upload-document")
         for (const file of files) {
-            const formData = new FormData()
-            formData.append("file", file)
-            formData.append("name", file.name)
-            try {
-                const res = await fetch(`/api/contacts/${contactId}/documents/upload`, {
-                    method: "POST",
-                    body: formData,
-                })
-                const data = await res.json()
-                if (!res.ok) {
-                    setUploadError(data.error || `Upload failed for ${file.name}`)
-                    break
-                }
-            } catch {
-                setUploadError(`Upload failed for ${file.name}`)
+            const res = await uploadDocument(file, { contactId })
+            if (!res.success) {
+                setUploadError(`${file.name}: ${res.error}`)
                 break
             }
         }

@@ -1,9 +1,9 @@
-import React, { useMemo } from "react"
+import React, { useMemo, useRef, useState, useEffect, useCallback } from "react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { MapPin, DollarSign, CalendarIcon, Phone, MessageSquare, FileText, CheckSquare, ChevronRight, User, Ban, Clock, Palette, Briefcase } from "lucide-react"
+import { MapPin, DollarSign, CalendarIcon, Phone, MessageSquare, FileText, CheckSquare, ChevronRight, ChevronLeft, User, Ban, Clock, Palette, Briefcase, Tag } from "lucide-react"
 import { getLengthOfStay, formatDisplayDate, getAgingInfo } from "./utils"
 
 // Use the Calendar icon under an alias to match the original import name
@@ -19,6 +19,10 @@ interface DealCardProps {
     showLengthOfStay: boolean
     showQuickActions: boolean
     priorityRanges: { urgentDays: number; soonDays: number }
+    /** From the stage's `stalenessThresholdDays` setting. When the deal has
+     *  been in this stage longer than this number of days, we render a
+     *  red "STALE" pill on the card. null disables the indicator. */
+    stageThresholdDays?: number | null
     isDragged: boolean
     onDragStart: (e: React.DragEvent, dealId: string) => void
     onDragEnd: () => void
@@ -39,6 +43,7 @@ const DealCard = React.memo(function DealCard({
     showLengthOfStay: showLengthOfStayProp,
     showQuickActions,
     priorityRanges,
+    stageThresholdDays,
     isDragged,
     onDragStart,
     onDragEnd,
@@ -74,21 +79,29 @@ const DealCard = React.memo(function DealCard({
             onDragStart={(e) => onDragStart(e, deal.id)}
             onDragEnd={onDragEnd}
             onClick={() => onOpenDeal(deal)}
-            className={`bg-card cursor-grab border hover:border-primary/40 active:scale-[0.98] transition-all rounded-xl p-4 shadow-sm group relative overflow-hidden flex flex-col gap-3 touch-manipulation min-h-[44px] ${isDragged ? "opacity-50 scale-95" : ""} ${isNewInquiry ? "border-primary/80 ring-2 ring-primary bg-primary/10 shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse" : "border-border/60 hover:shadow-lg"}`}
+            className={`bg-card cursor-grab border hover:border-primary/40 active:scale-[0.98] transition-all rounded-xl p-4 shadow-sm group relative overflow-hidden flex flex-col gap-3 touch-manipulation min-h-[44px] ${isDragged ? "opacity-50 scale-95" : ""} ${isNewInquiry ? "border-primary/60 ring-1 ring-primary/40 bg-primary/[0.03]" : "border-border/60 hover:shadow-md"}`}
         >
             {/* Colored accent bar on the left based on priority */}
             <div className={`absolute left-0 top-0 bottom-0 w-1 ${deal.startDate && deal.startDate !== "-" ? priorityColorClass : (deal.priority === "HIGH" ? "bg-red-500" : deal.priority === "MEDIUM" ? "bg-amber-500" : "bg-blue-500")}`}></div>
 
             <div className="flex items-start justify-between pl-1">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                     <Avatar className="h-9 w-9 border-2 border-background shadow-sm shrink-0">
-                        <AvatarFallback className="bg-gradient-to-br from-muted to-muted/80 text-muted-foreground text-xs font-medium">{deal.name.charAt(6)}</AvatarFallback>
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                            {(deal.name || "?").charAt(0).toUpperCase()}
+                        </AvatarFallback>
                     </Avatar>
-                    <div className="flex flex-col gap-0.5">
+                    <div className="flex flex-col gap-0.5 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-sm group-hover:text-primary transition-colors tracking-tight">{deal.name}</span>
+                            <span className="font-semibold text-sm group-hover:text-primary transition-colors tracking-tight truncate">{deal.name}</span>
                             {isNewInquiry && (
-                                <Badge className="shrink-0 text-xs font-bold tracking-wider bg-primary text-primary-foreground border-0 px-1.5 py-0">New</Badge>
+                                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                    <span className="relative flex h-1.5 w-1.5">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
+                                    </span>
+                                    New
+                                </span>
                             )}
                         </div>
                         {showBase && (
@@ -157,67 +170,76 @@ const DealCard = React.memo(function DealCard({
 
             {deal.claimedByName && (
                 <div className="flex items-center gap-1.5 pl-1">
-                    <Badge variant="outline" className="text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
-                        <User className="h-2.5 w-2.5 mr-1" />
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                        <User className="h-2.5 w-2.5" />
                         {deal.claimedByName}
-                    </Badge>
+                    </span>
                 </div>
             )}
 
+            {/* Stale-deal indicator: only renders when the workspace has set a
+                staleness threshold for this stage AND the deal has been here
+                longer than that. Tunable in Settings → Workspace → Pipeline. */}
+            {(() => {
+                if (!stageThresholdDays || stageThresholdDays <= 0) return null
+                if (!deal.stageEnteredAt) return null
+                const daysInStage = Math.floor(
+                    (Date.now() - new Date(deal.stageEnteredAt).getTime()) / 86_400_000,
+                )
+                if (daysInStage <= stageThresholdDays) return null
+                return (
+                    <div className="flex items-center gap-1.5 pl-1">
+                        <span
+                            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded"
+                            title={`Stuck here for ${daysInStage} days (threshold: ${stageThresholdDays})`}
+                        >
+                            <Clock className="h-2.5 w-2.5" />
+                            Stale · {daysInStage}d
+                        </span>
+                    </div>
+                )
+            })()}
+
             {(showValue || showPriority) && (
-                <div className="grid grid-cols-2 gap-2 text-xs pl-1">
+                <div className="flex items-center justify-between gap-2 pl-1">
                     {showValue && (
-                        <div className="flex flex-col gap-1">
-                            <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Value</span>
-                            <div className="flex items-center gap-1">
-                                <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
-                                <span className="font-mono font-semibold text-sm">${deal.value.toLocaleString()}</span>
-                            </div>
+                        <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                            <DollarSign className="h-3.5 w-3.5" />
+                            <span className="font-semibold text-sm tabular-nums">{deal.value.toLocaleString()}</span>
                         </div>
                     )}
                     {showPriority && (
-                        <div className="flex flex-col items-end gap-1">
-                            <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Priority</span>
-                            <Badge
-                                variant="outline"
-                                className={`text-xs font-bold tracking-wider rounded-sm
-                                    ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-red-500") || (!deal.startDate && deal.priority === "HIGH") ? "bg-red-500/10 text-red-600 border-red-500/20" : ""}
-                                    ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-yellow-500") || (!deal.startDate && deal.priority === "MEDIUM") ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : ""}
-                                    ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-blue-500") || (!deal.startDate && deal.priority === "LOW") ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : ""}
-                                    ${priorityColorClass === "bg-emerald-500" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : ""}
-                                    ${priorityColorClass === "bg-gray-500" ? "bg-gray-500/10 text-gray-500 border-gray-500/20" : ""}
-                                `}
-                            >
-                                {deal.startDate && deal.startDate !== "-" ? priorityLabel : deal.priority}
-                            </Badge>
-                        </div>
+                        <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded
+                                ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-red-500") || (!deal.startDate && deal.priority === "HIGH") ? "bg-red-500/10 text-red-600 dark:text-red-400" : ""}
+                                ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-yellow-500") || (!deal.startDate && deal.priority === "MEDIUM") ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" : ""}
+                                ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-blue-500") || (!deal.startDate && deal.priority === "LOW") ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : ""}
+                                ${priorityColorClass === "bg-emerald-500" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : ""}
+                                ${priorityColorClass === "bg-gray-500" ? "bg-zinc-500/10 text-muted-foreground" : ""}
+                            `}
+                        >
+                            {deal.startDate && deal.startDate !== "-" ? priorityLabel : deal.priority}
+                        </span>
                     )}
                 </div>
             )}
 
             {(showDates || showEndDate || showLengthOfStayProp) && (
-                <div className="flex items-stretch justify-between pt-3 border-t border-border/50 pl-1 gap-2">
+                <div className="flex items-center justify-between pt-3 border-t border-border/50 pl-1 gap-3 text-xs">
                     {(showDates || showEndDate) && (
-                        <div className="flex flex-col gap-1.5 flex-1 bg-muted/20 border border-border/40 p-2 rounded-md justify-center">
-                            {showDates && (
-                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                                    <CalendarIcon className="h-3.5 w-3.5 text-primary/70 shrink-0" />
-                                    <span className="truncate"><span className="opacity-70 font-normal mr-1">Start:</span>{formatDisplayDate(deal.startDate)}</span>
-                                </div>
-                            )}
-                            {showEndDate && (
-                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                                    <CalendarIcon className="h-3.5 w-3.5 text-primary/70 shrink-0" />
-                                    <span className="truncate"><span className="opacity-70 font-normal mr-1">End:</span>{formatDisplayDate(deal.endDate)}</span>
-                                </div>
-                            )}
+                        <div className="flex items-center gap-2 flex-1 min-w-0 text-muted-foreground">
+                            <CalendarIcon className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+                            <span className="truncate tabular-nums">
+                                {showDates && formatDisplayDate(deal.startDate)}
+                                {showDates && showEndDate && <span className="text-muted-foreground/50 mx-1">→</span>}
+                                {showEndDate && formatDisplayDate(deal.endDate)}
+                            </span>
                         </div>
                     )}
                     {showLengthOfStayProp && (
-                        <div className="flex flex-col items-center justify-center bg-muted/20 border border-border/40 p-2 rounded-md shrink-0 min-w-[70px]">
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-0.5">Duration</span>
-                            <span className="text-xs font-bold text-primary/80">{getLengthOfStay(deal.startDate, deal.endDate)}</span>
-                        </div>
+                        <span className="shrink-0 inline-flex items-center text-[10px] font-medium uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded tabular-nums">
+                            {getLengthOfStay(deal.startDate, deal.endDate)}
+                        </span>
                     )}
                 </div>
             )}
@@ -245,6 +267,28 @@ const DealCard = React.memo(function DealCard({
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted/50 hover:text-primary shrink-0 transition-colors" onClick={(e) => { e.stopPropagation(); onOpenTasks(deal); }}>
                         <CheckSquare className="h-3.5 w-3.5" />
                     </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:bg-muted/50 hover:text-primary shrink-0 transition-colors relative"
+                                onClick={(e) => { e.stopPropagation(); onOpenDeal(deal); }}
+                            >
+                                <Tag className="h-3.5 w-3.5" />
+                                {Array.isArray(deal.tags) && deal.tags.length > 0 && (
+                                    <span className="absolute -top-0.5 -right-0.5 flex h-3 min-w-[12px] px-0.5 items-center justify-center rounded-full bg-violet-500 text-[8px] text-white font-bold ring-2 ring-card tabular-nums">
+                                        {deal.tags.length}
+                                    </span>
+                                )}
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[200px]">
+                            {Array.isArray(deal.tags) && deal.tags.length > 0
+                                ? deal.tags.map((t: any) => t.name).filter(Boolean).join(", ") || `${deal.tags.length} tag${deal.tags.length === 1 ? "" : "s"}`
+                                : "No tags — click to add"}
+                        </TooltipContent>
+                    </Tooltip>
                 </div>
             )}
         </div>
@@ -308,6 +352,12 @@ interface KanbanViewProps {
     currentPipeline: any
     mobileSelectedStage: string
     setMobileSelectedStage: (stage: string) => void
+    /**
+     * Column density. Controls the smallest each kanban column can shrink
+     * to. Columns flex-grow above this so the whole pipeline fills wide
+     * monitors; below this, the kanban scrolls horizontally.
+     */
+    density?: "comfortable" | "cozy" | "compact"
     showBase: boolean
     showValue: boolean
     showPriority: boolean
@@ -330,6 +380,12 @@ interface KanbanViewProps {
     onOpenTasks: (deal: any) => void
 }
 
+const COLUMN_MIN_WIDTH: Record<NonNullable<KanbanViewProps["density"]>, number> = {
+    compact: 200,
+    cozy: 260,
+    comfortable: 320,
+}
+
 const STAGE_COLORS = [
     "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444",
     "#06b6d4", "#ec4899", "#f97316", "#14b8a6", "#6366f1",
@@ -339,6 +395,7 @@ export const KanbanView = React.memo(function KanbanView({
     currentPipeline,
     mobileSelectedStage,
     setMobileSelectedStage,
+    density = "comfortable",
     showBase,
     showValue,
     showPriority,
@@ -360,6 +417,43 @@ export const KanbanView = React.memo(function KanbanView({
     onMessageContact,
     onOpenTasks,
 }: KanbanViewProps) {
+    const columnMinWidth = COLUMN_MIN_WIDTH[density]
+
+    // ── Horizontal scroll affordance ────────────────────────────────
+    // Long pipelines (many stages) overflow the viewport. We track
+    // scroll position so we can show fade gradients + chevron buttons
+    // only when there's content off-screen in that direction.
+    const scrollRef = useRef<HTMLDivElement | null>(null)
+    const [canScrollLeft, setCanScrollLeft] = useState(false)
+    const [canScrollRight, setCanScrollRight] = useState(false)
+
+    const updateScrollState = useCallback(() => {
+        const el = scrollRef.current
+        if (!el) return
+        // 1px tolerance for sub-pixel rounding
+        setCanScrollLeft(el.scrollLeft > 1)
+        setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
+    }, [])
+
+    useEffect(() => {
+        const el = scrollRef.current
+        if (!el) return
+        updateScrollState()
+        el.addEventListener("scroll", updateScrollState, { passive: true })
+        // Re-evaluate on resize too — viewport may change without scroll
+        const ro = new ResizeObserver(updateScrollState)
+        ro.observe(el)
+        return () => {
+            el.removeEventListener("scroll", updateScrollState)
+            ro.disconnect()
+        }
+    }, [updateScrollState, currentPipeline.stages.length, density])
+
+    const scrollByAmount = (amount: number) => {
+        scrollRef.current?.scrollBy({ left: amount, behavior: "smooth" })
+    }
+    // Scroll roughly one column at a time
+    const scrollStep = columnMinWidth + 16
     // Memoize deals grouped by stage to avoid re-filtering on every render
     const dealsByStage = useMemo(() => {
         const map: Record<string, any[]> = {};
@@ -430,8 +524,54 @@ export const KanbanView = React.memo(function KanbanView({
             </div>
         </div>
 
-        {/* Desktop kanban */}
-        <div className="hidden md:flex min-h-[calc(100vh-220px)] h-[calc(100vh-220px)] gap-4 pb-4 w-max">
+        {/* Desktop kanban — flex columns auto-fit to viewport. Each column
+            takes an equal share of available width (flex-1 basis-0) but never
+            shrinks below the density-controlled min-width. When the total
+            min-width exceeds the viewport, the parent overflows horizontally
+            with edge-fade gradients + chevron buttons so users notice they
+            can scroll to more stages. */}
+        <div className="hidden md:block relative min-h-[calc(100vh-220px)] h-[calc(100vh-220px)]">
+            {/* Left scroll affordance — chevron button + fade gradient,
+                visible only when there's hidden content to the left. */}
+            <div
+                aria-hidden={!canScrollLeft}
+                className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-background to-transparent transition-opacity duration-200 ${
+                    canScrollLeft ? "opacity-100" : "opacity-0"
+                }`}
+            />
+            {canScrollLeft && (
+                <button
+                    type="button"
+                    onClick={() => scrollByAmount(-scrollStep)}
+                    aria-label="Scroll pipeline left"
+                    title="Scroll left"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-background border shadow-md flex items-center justify-center text-foreground hover:bg-muted hover:scale-105 active:scale-95 transition-all"
+                >
+                    <ChevronLeft className="h-4 w-4" />
+                </button>
+            )}
+
+            {/* Right scroll affordance */}
+            <div
+                aria-hidden={!canScrollRight}
+                className={`pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-background to-transparent transition-opacity duration-200 ${
+                    canScrollRight ? "opacity-100" : "opacity-0"
+                }`}
+            />
+            {canScrollRight && (
+                <button
+                    type="button"
+                    onClick={() => scrollByAmount(scrollStep)}
+                    aria-label="Scroll pipeline right"
+                    title="Scroll right"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-background border shadow-md flex items-center justify-center text-foreground hover:bg-muted hover:scale-105 active:scale-95 transition-all"
+                >
+                    <ChevronRight className="h-4 w-4" />
+                </button>
+            )}
+
+            <div ref={scrollRef} className="h-full pb-4 overflow-x-auto custom-scrollbar">
+            <div className="flex h-full gap-4 min-w-full">
             {currentPipeline.stages.map((stage: any, index: number) => {
                 const isString = typeof stage === 'string';
                 const stageName = isString ? stage : stage.name;
@@ -441,7 +581,8 @@ export const KanbanView = React.memo(function KanbanView({
                 return (
                     <div
                         key={stageId}
-                        className={`flex flex-col w-[340px] shrink-0 bg-muted/40 rounded-xl pb-2 border h-full overflow-hidden transition-all duration-200 ${dragOverStageId === stageId ? "border-dashed border-primary/60 bg-primary/5 ring-2 ring-primary/30 shadow-lg" : ""
+                        style={{ minWidth: `${columnMinWidth}px` }}
+                        className={`flex flex-col flex-1 basis-0 bg-muted/40 rounded-xl pb-2 border h-full overflow-hidden transition-all duration-200 ${dragOverStageId === stageId ? "border-dashed border-primary/60 bg-primary/5 ring-2 ring-primary/30 shadow-lg" : ""
                             }`}
                         onDragOver={(e) => onDragOver(e, stageId)}
                         onDragLeave={onDragLeave}
@@ -487,6 +628,7 @@ export const KanbanView = React.memo(function KanbanView({
                                     showLengthOfStay={showLengthOfStayProp}
                                     showQuickActions={showQuickActions}
                                     priorityRanges={priorityRanges}
+                                    stageThresholdDays={(stage as any).stalenessThresholdDays || null}
                                     isDragged={draggedDealId === deal.id}
                                     onDragStart={onDragStart}
                                     onDragEnd={onDragEnd}
@@ -508,6 +650,8 @@ export const KanbanView = React.memo(function KanbanView({
                     </div>
                 )
             })}
+            </div>
+            </div>
         </div>
         </>
     )

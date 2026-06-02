@@ -1,21 +1,24 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { getAuthSession } from "@/lib/auth-guard"
 import { revalidatePath } from "next/cache"
 import type { LeaderboardAgent, LeaderboardData, DashboardData, ActivityItem } from "./types"
 import { getCachedPipelines, getCachedStageMap, getCachedUsers } from "@/lib/cached-queries"
+import { SMART_PROBABILITY_MIN_SAMPLES } from "@/app/settings/pipeline/types"
 
 const STAGE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4']
-const BASE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4']
-
 function formatShortDate(d: Date): string {
     return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
 export async function getDashboardData(startDate?: string, endDate?: string): Promise<{ success: boolean; data?: DashboardData; error?: string }> {
-    const session = await auth()
+    const session = await getAuthSession()
     if (!session?.user) return { success: false, error: "Not authenticated" }
+    if (!session.user.workspaceId) return { success: false, error: "No workspace selected" }
+
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     // Parse date range filter
     const rangeStart = startDate ? new Date(startDate + 'T00:00:00') : null
@@ -24,21 +27,23 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
     try {
         // Use cached pipelines/stages/users to avoid redundant Firestore reads
         const [cachedPipelines, cachedStageMapData, oppsSnap, contactsSnap, tasksSnap, cachedUsersData] = await Promise.all([
-            getCachedPipelines(),
-            getCachedStageMap(),
-            adminDb.collection('opportunities').get(),
-            adminDb.collection('contacts').get(),
-            adminDb.collection('tasks').orderBy('dueDate', 'asc').get(),
-            getCachedUsers(),
+            getCachedPipelines(workspaceId),
+            getCachedStageMap(workspaceId),
+            db.collection('opportunities').get(),
+            db.collection('contacts').get(),
+            db.collection('tasks').orderBy('dueDate', 'asc').get(),
+            getCachedUsers(workspaceId),
         ])
 
         // Build maps from cached data
         const pipelinesList = cachedPipelines.map(p => ({ id: p.id, name: p.name }))
         const stageMap: Record<string, { pipelineId: string; name: string; order: number }> = {}
-        const stageProbMap: Record<string, number> = {}
+        const stageManualProbMap: Record<string, number> = {}
+        const stageProbModeMap: Record<string, "manual" | "smart"> = {}
         for (const [id, info] of Object.entries(cachedStageMapData)) {
             stageMap[id] = { pipelineId: info.pipelineId, name: info.name, order: info.order }
-            stageProbMap[id] = info.probability
+            stageManualProbMap[id] = info.probability
+            stageProbModeMap[id] = info.probabilityMode
         }
 
         // Build users snapshot equivalent from cache
@@ -58,12 +63,44 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 .map(([id]) => id)
         )
 
-        // Contact base map for fallback
-        const contactBaseMap: Record<string, string> = {}
-        contactsSnap.docs.forEach(doc => {
-            const base = doc.data().militaryBase
-            if (base) contactBaseMap[doc.id] = base
-        })
+        // Compute smart probabilities from historical opportunities. For each
+        // stage, count how many deals ever entered it and what fraction reached
+        // a booked stage. We require SMART_PROBABILITY_MIN_SAMPLES historical
+        // deals before trusting the smart number — below that we silently fall
+        // back to the manual % (the editor surfaces the warning to the user).
+        const stageSamples: Record<string, { entered: number; wins: number }> = {}
+        for (const sDoc of oppsSnap.docs) {
+            const od = sDoc.data()
+            const history = Array.isArray(od.stageHistory) ? od.stageHistory : []
+            const enteredStageIds = new Set<string>()
+            for (const h of history) {
+                if (h && typeof h.stageId === "string") enteredStageIds.add(h.stageId)
+            }
+            if (typeof od.pipelineStageId === "string") enteredStageIds.add(od.pipelineStageId)
+
+            const finalStageId = (od.pipelineStageId as string) || ''
+            const finalStatus = (od.status as string) || 'open'
+            const isWon = finalStatus === 'closed_won' || bookedStageIds.has(finalStageId)
+
+            for (const sid of enteredStageIds) {
+                if (!stageSamples[sid]) stageSamples[sid] = { entered: 0, wins: 0 }
+                stageSamples[sid].entered++
+                if (isWon) stageSamples[sid].wins++
+            }
+        }
+
+        // Effective probability per stage = smart if mode=smart and enough
+        // samples; otherwise the saved manual %.
+        const stageProbMap: Record<string, number> = {}
+        for (const [id, manualProb] of Object.entries(stageManualProbMap)) {
+            const mode = stageProbModeMap[id] || 'manual'
+            const sample = stageSamples[id]
+            if (mode === 'smart' && sample && sample.entered >= SMART_PROBABILITY_MIN_SAMPLES) {
+                stageProbMap[id] = (sample.wins / sample.entered) * 100
+            } else {
+                stageProbMap[id] = manualProb
+            }
+        }
 
         // Helper to convert Firestore timestamps to Date
         const toDate = (v: unknown): Date => {
@@ -84,7 +121,6 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 stageName: stageInfo?.name || 'Unknown',
                 status: (d.status as string) || 'open',
                 value: Number(d.opportunityValue) || 0,
-                militaryBase: d.militaryBase || (d.contactId ? contactBaseMap[d.contactId] : null) || null,
                 utmSource: (d.utmSource as string) || null,
                 createdAt: toDate(d.createdAt),
                 estimatedProfit: Number(doc.data().estimatedProfit) || 0,
@@ -92,8 +128,6 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
         })
 
         // Fallback: non-open deals with no valid pipeline assignment go to the first pipeline
-        // (mirrors pipeline page logic where closed/lost/archived deals with deleted stages
-        //  are still counted under the first pipeline)
         const firstPipelineId = pipelinesList[0]?.id || null
         for (const opp of allOpps) {
             if (!opp.pipelineId && opp.status !== 'open' && firstPipelineId) {
@@ -137,12 +171,11 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
         const activeStayCount = filteredContactDocs.filter(doc => doc.data().status === 'Active Stay').length
         const totalContacts = filteredContactDocs.length
         const totalPipelineValue = opps.reduce((sum, o) => sum + o.value, 0)
-        // Open inquiries = opportunities with open status OR not in a closed stage
         const openInquiries = opps.filter(o => o.status === "open" && !closedStageIds.has(o.stageId)).length
         const bookedCount = opps.filter(o => o.status === "closed_won" || bookedStageIds.has(o.stageId)).length
         const conversionRate = opps.length > 0 ? Math.round((bookedCount / opps.length) * 1000) / 10 : 0
 
-        // Monthly revenue (booked opps created this month vs last month)
+        // Monthly revenue
         const now2 = new Date()
         const thisMonthStart = new Date(now2.getFullYear(), now2.getMonth(), 1)
         const lastMonthStart = new Date(now2.getFullYear(), now2.getMonth() - 1, 1)
@@ -158,7 +191,7 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
             ? Math.round(((monthlyRevenue - previousMonthRevenue) / previousMonthRevenue) * 1000) / 10
             : null
 
-        // Lead velocity (new contacts last 30 days vs prior 30 days, within date range)
+        // Lead velocity
         const thirtyDaysAgo = new Date(now2.getTime() - 30 * 86400000)
         const sixtyDaysAgo = new Date(now2.getTime() - 60 * 86400000)
         const contactsForVelocity = (rangeStart || rangeEnd) ? filteredContactDocs : contactsSnap.docs
@@ -178,16 +211,30 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
         const bookedOpps = opps.filter(o => bookedStageIds.has(o.stageId))
         const avgDealValue = bookedOpps.length > 0 ? Math.round(bookedOpps.reduce((s, o) => s + o.value, 0) / bookedOpps.length) : 0
 
-        // Closed profit metrics (from filtered opps)
+        // Closed profit metrics
         const totalClosedProfit = opps
             .filter(o => bookedStageIds.has(o.stageId))
             .reduce((sum, o) => sum + o.estimatedProfit, 0)
         const avgProfitPerDeal = bookedCount > 0 ? Math.round(totalClosedProfit / bookedCount) : 0
 
-        // Weighted forecast (open opps * stage probability)
-        const weightedForecast = opps
-            .filter(o => !closedStageIds.has(o.stageId))
-            .reduce((sum, o) => sum + o.value * ((stageProbMap[o.stageId] ?? 0) / 100), 0)
+        // Weighted forecast
+        // Each open deal contributes value × probability to the forecast.
+        // For the confidence band, we treat each deal as an independent
+        // Bernoulli outcome — Var(value × X) = value² × p × (1-p) where
+        // X is the close outcome (0 or 1). Summing across deals and taking
+        // the square root gives a 1-σ range we can display as `± stddev`.
+        // Not a hard statistical bound (deals aren't fully independent and
+        // probabilities are themselves noisy), but a useful "how spread
+        // out could the actual outcome be" intuition for the operator.
+        const openDeals = opps.filter(o => !closedStageIds.has(o.stageId))
+        let weightedForecast = 0
+        let forecastVariance = 0
+        for (const o of openDeals) {
+            const p = (stageProbMap[o.stageId] ?? 0) / 100
+            weightedForecast += o.value * p
+            forecastVariance += (o.value * o.value) * p * (1 - p)
+        }
+        const forecastStdDev = Math.sqrt(forecastVariance)
 
         // Per-pipeline data
         const pipelineData: DashboardData['pipelineData'] = {}
@@ -218,8 +265,6 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
             })).filter(s => s.count > 0)
 
             // --- Value over time ---
-
-            // 1m: daily for last 30 days
             const daily: { name: string; value: number }[] = []
             for (let i = 29; i >= 0; i--) {
                 const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
@@ -230,7 +275,6 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 })
             }
 
-            // 6m: weekly for last 26 weeks
             const weekly: { name: string; value: number }[] = []
             for (let i = 25; i >= 0; i--) {
                 const weekEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i * 7)
@@ -241,7 +285,6 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 })
             }
 
-            // 1y: monthly for last 12 months
             const monthly: { name: string; value: number }[] = []
             for (let i = 11; i >= 0; i--) {
                 const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1)
@@ -253,19 +296,7 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 })
             }
 
-            // Deals by base
-            const baseCounts: Record<string, number> = {}
-            for (const opp of pipelineOpps) {
-                if (opp.militaryBase) baseCounts[opp.militaryBase] = (baseCounts[opp.militaryBase] || 0) + 1
-            }
-            const dealsByBase = Object.entries(baseCounts)
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 8)
-                .map(([name, deals], i) => ({ name, deals, color: BASE_COLORS[i % BASE_COLORS.length] }))
-
-            // Status distribution (open/won/lost/archived)
-            // Use explicit status field first, then fall back to stage membership.
-            // Any closed stage that isn't a booked/won stage is considered lost.
+            // Status distribution
             const pipelineClosedNotWon = new Set(
                 [...closedStageIds].filter(id => !bookedStageIds.has(id))
             )
@@ -289,7 +320,7 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 stageDistribution,
                 statusDistribution,
                 valueOverTime: { "1m": daily, "6m": weekly, "1y": monthly },
-                dealsByBase,
+                dealsByBase: [],
                 totalValue: pipelineOpps.reduce((s, o) => s + o.value, 0),
                 totalDeals: pipelineOpps.length,
             }
@@ -331,6 +362,7 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                     monthlyRevenue, revenueTrend,
                     leadVelocity, leadVelocityTrend, avgDealValue,
                     weightedForecast: Math.round(weightedForecast),
+                    forecastStdDev: Math.round(forecastStdDev),
                     totalClosedProfit: Math.round(totalClosedProfit),
                     avgProfitPerDeal,
                 },
@@ -353,8 +385,12 @@ export async function invalidateDashboardCache() {
 // ── Activity Feed ─────────────────────────────────────────────────────────────
 
 export async function getRecentActivity(): Promise<{ success: boolean; data?: ActivityItem[]; error?: string }> {
-    const session = await auth()
+    const session = await getAuthSession()
     if (!session?.user) return { success: false, error: "Not authenticated" }
+    if (!session.user.workspaceId) return { success: false, error: "No workspace selected" }
+
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         const activities: ActivityItem[] = []
@@ -368,23 +404,25 @@ export async function getRecentActivity(): Promise<{ success: boolean; data?: Ac
             return new Date()
         }
 
-        // Build stage name lookup (parallel reads)
-        const pipelinesSnap = await adminDb.collection('pipelines').get()
+        // Parallelize all independent Firestore reads
+        const [pipelinesSnap, oppsSnap, contactsSnap, tasksSnap] = await Promise.all([
+            db.collection('pipelines').get(),
+            db.collection('opportunities').orderBy('updatedAt', 'desc').limit(30).get(),
+            db.collection('contacts').orderBy('createdAt', 'desc').limit(20).get(),
+            db.collection('tasks').where('completed', '==', true).orderBy('updatedAt', 'desc').limit(20).get(),
+        ])
+
+        // Build stage name lookup — use subcollection helper for tenant-safe access
         const stageNameMap: Record<string, string> = {}
         await Promise.all(pipelinesSnap.docs.map(pDoc =>
-            pDoc.ref.collection('stages').get().then(stagesSnap => {
+            db.subcollection('pipelines', pDoc.id, 'stages').get().then(stagesSnap => {
                 for (const sDoc of stagesSnap.docs) {
                     stageNameMap[sDoc.id] = sDoc.data().name || 'Unknown Stage'
                 }
             })
         ))
 
-        // 1. Recent deal stage changes (opportunities with stageHistory, sorted by latest entry)
-        const oppsSnap = await adminDb.collection('opportunities')
-            .orderBy('updatedAt', 'desc')
-            .limit(30)
-            .get()
-
+        // 1. Recent deal stage changes
         for (const doc of oppsSnap.docs) {
             const d = doc.data()
             const history = Array.isArray(d.stageHistory) ? d.stageHistory : []
@@ -405,11 +443,6 @@ export async function getRecentActivity(): Promise<{ success: boolean; data?: Ac
         }
 
         // 2. Recent contacts added
-        const contactsSnap = await adminDb.collection('contacts')
-            .orderBy('createdAt', 'desc')
-            .limit(20)
-            .get()
-
         for (const doc of contactsSnap.docs) {
             const d = doc.data()
             const name = d.name || d.email || 'Unknown Contact'
@@ -425,12 +458,6 @@ export async function getRecentActivity(): Promise<{ success: boolean; data?: Ac
         }
 
         // 3. Recent tasks completed
-        const tasksSnap = await adminDb.collection('tasks')
-            .where('completed', '==', true)
-            .orderBy('updatedAt', 'desc')
-            .limit(20)
-            .get()
-
         for (const doc of tasksSnap.docs) {
             const d = doc.data()
             const title = d.title || 'Untitled Task'
@@ -445,13 +472,12 @@ export async function getRecentActivity(): Promise<{ success: boolean; data?: Ac
             })
         }
 
-        // 4. Recent communications sent — messages are subcollections on contacts
-        //    Fetch in parallel (avoid sequential N+1 queries)
+        // 4. Recent communications sent
         const messageResults = await Promise.all(
             contactsSnap.docs.map(async (contactDoc) => {
                 const contactName = contactDoc.data().name || contactDoc.data().email || 'Unknown'
                 try {
-                    const messagesSnap = await contactDoc.ref.collection('messages')
+                    const messagesSnap = await db.subcollection('contacts', contactDoc.id, 'messages')
                         .orderBy('createdAt', 'desc')
                         .limit(3)
                         .get()
@@ -489,20 +515,144 @@ export async function getRecentActivity(): Promise<{ success: boolean; data?: Ac
     }
 }
 
-export async function getLeaderboardData(): Promise<{ success: boolean; data?: LeaderboardData; error?: string }> {
-    const session = await auth()
+// ── Hot deals + recent contacts ─────────────────────────────────────────────
+
+export interface HotDeal {
+    id: string
+    name: string
+    value: number
+    stageName: string
+    contactName: string
+    contactId: string | null
+}
+
+export interface RecentContact {
+    id: string
+    name: string
+    email: string
+    phone: string
+    createdAt: string // ISO
+}
+
+export async function getHotDeals(limit: number = 5): Promise<{ success: boolean; data?: HotDeal[]; error?: string }> {
+    const session = await getAuthSession()
     if (!session?.user) return { success: false, error: "Not authenticated" }
+    if (!session.user.workspaceId) return { success: false, error: "No workspace selected" }
+
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
+
+    try {
+        const [cachedStageMapData, oppsSnap, contactsSnap] = await Promise.all([
+            getCachedStageMap(workspaceId),
+            db.collection('opportunities').get(),
+            db.collection('contacts').get(),
+        ])
+
+        // Build closed stage IDs
+        const closedNames = new Set(['Booked', 'Closed', 'Signed', 'Closed Won', 'Lost', 'Abandoned'])
+        const closedStageIds = new Set<string>()
+        for (const [id, info] of Object.entries(cachedStageMapData)) {
+            if (closedNames.has(info.name)) closedStageIds.add(id)
+        }
+
+        // Build contact name lookup
+        const contactNames: Record<string, string> = {}
+        for (const cDoc of contactsSnap.docs) {
+            const c = cDoc.data()
+            contactNames[cDoc.id] = c.name || c.email || 'Unknown'
+        }
+
+        const open = oppsSnap.docs
+            .map(doc => {
+                const d = doc.data()
+                const stageId = (d.pipelineStageId as string) || ''
+                const info = cachedStageMapData[stageId]
+                return {
+                    id: doc.id,
+                    name: (d.dealName as string) || (d.name as string) || 'Untitled deal',
+                    value: Number(d.opportunityValue) || 0,
+                    stageId,
+                    stageName: info?.name || 'Unknown',
+                    status: (d.status as string) || 'open',
+                    contactId: (d.contactId as string) || null,
+                }
+            })
+            .filter(o => o.status === 'open' && !closedStageIds.has(o.stageId))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, limit)
+
+        const data: HotDeal[] = open.map(o => ({
+            id: o.id,
+            name: o.name,
+            value: o.value,
+            stageName: o.stageName,
+            contactId: o.contactId,
+            contactName: o.contactId ? (contactNames[o.contactId] || 'Unknown') : '',
+        }))
+
+        return { success: true, data }
+    } catch (error) {
+        console.error("Hot deals error:", error)
+        return { success: false, error: "Failed to fetch hot deals" }
+    }
+}
+
+export async function getRecentContacts(limit: number = 5): Promise<{ success: boolean; data?: RecentContact[]; error?: string }> {
+    const session = await getAuthSession()
+    if (!session?.user) return { success: false, error: "Not authenticated" }
+    if (!session.user.workspaceId) return { success: false, error: "No workspace selected" }
+
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
+
+    try {
+        const snap = await db.collection('contacts').orderBy('createdAt', 'desc').limit(limit).get()
+
+        const toDate = (v: unknown): Date => {
+            if (v && typeof v === 'object' && 'toDate' in v && typeof (v as any).toDate === 'function') return (v as any).toDate()
+            if (v instanceof Date) return v
+            if (typeof v === 'string') return new Date(v)
+            if (v && typeof v === 'object' && '_seconds' in v && typeof (v as any)._seconds === 'number') return new Date((v as any)._seconds * 1000)
+            return new Date()
+        }
+
+        const data: RecentContact[] = snap.docs.map(doc => {
+            const d = doc.data()
+            return {
+                id: doc.id,
+                name: (d.name as string) || (d.email as string) || 'Unknown',
+                email: (d.email as string) || '',
+                phone: (d.phone as string) || '',
+                createdAt: toDate(d.createdAt).toISOString(),
+            }
+        })
+
+        return { success: true, data }
+    } catch (error) {
+        console.error("Recent contacts error:", error)
+        return { success: false, error: "Failed to fetch recent contacts" }
+    }
+}
+
+export async function getLeaderboardData(): Promise<{ success: boolean; data?: LeaderboardData; error?: string }> {
+    const session = await getAuthSession()
+    if (!session?.user) return { success: false, error: "Not authenticated" }
+    if (!session.user.workspaceId) return { success: false, error: "No workspace selected" }
+
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         // Use cached pipelines/users to avoid redundant Firestore reads
         const [cachedUsersLb, oppsSnap, cachedPipelinesLb] = await Promise.all([
-            getCachedUsers(),
-            adminDb.collection('opportunities').get(),
-            getCachedPipelines(),
+            getCachedUsers(workspaceId),
+            db.collection('opportunities').get(),
+            getCachedPipelines(workspaceId),
         ])
 
-        // Build stage lookup from cache — identify booked/won stages
-        const bookedNames = new Set(['Booked', 'Closed', 'Signed', 'Closed Won', 'Lease Signed'])
+        // Build stage lookup from cache — identify won stages
+        const bookedNames = new Set(['Closed Won', 'Won', 'Booked', 'Signed', 'Closed'])
         const bookedStageIds = new Set<string>()
         for (const p of cachedPipelinesLb) {
             for (const s of p.stages) {
@@ -513,7 +663,7 @@ export async function getLeaderboardData(): Promise<{ success: boolean; data?: L
         // Create usersSnap-compatible structure from cache
         const usersSnap = { docs: cachedUsersLb.map(u => ({ id: u.id, data: () => u })) }
 
-        // Calculate metrics per user (by assigneeId AND claimedBy)
+        // Calculate metrics per user
         const agentMetrics: Record<string, {
             totalDeals: number
             bookedDeals: number
@@ -549,7 +699,6 @@ export async function getLeaderboardData(): Promise<{ success: boolean; data?: L
             if (claimedBy) {
                 initAgent(claimedBy)
                 agentMetrics[claimedBy].claimedDeals++
-                // If claimedBy is different from assignee, also count for claimed user
                 if (claimedBy !== assigneeId) {
                     agentMetrics[claimedBy].totalDeals++
                     if (isBooked) {

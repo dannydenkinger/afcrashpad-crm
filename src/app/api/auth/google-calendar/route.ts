@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { google } from "googleapis"
-import { auth } from "@/auth"
+import { getAuthSession } from "@/lib/auth-guard"
 
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -10,7 +10,7 @@ const oauth2Client = new google.auth.OAuth2(
 
 export async function GET() {
     try {
-        const session = await auth()
+        const session = await getAuthSession()
         if (!session?.user) return new NextResponse("Unauthorized", { status: 401 })
 
         // Generate a URL that asks permissions for Google Calendar scope

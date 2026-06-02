@@ -46,7 +46,11 @@ import {
     getTrackedKeywords,
     getTrackedCompetitors,
     getBacklinkEntries,
+    getSeoConnectionStatus,
 } from "./actions"
+import { Card, CardContent } from "@/components/ui/card"
+import { AlertCircle, X } from "lucide-react"
+import Link from "next/link"
 
 import type {
     GSCSiteMetrics,
@@ -56,12 +60,27 @@ import type {
     BacklinkEntry,
 } from "./types"
 
-const DEFAULT_DOMAIN = "afcrashpad.com"
-const DEFAULT_SITE_URL = "https://afcrashpad.com"
+/**
+ * The dashboard derives its display domain + PageSpeed URL from the
+ * workspace's branding `websiteUrl` (Settings → Branding). We deliberately
+ * do NOT fall back to env vars — that would hardcode the operator's site
+ * for every workspace. When the workspace hasn't set a websiteUrl yet,
+ * we surface a "Set your website in Branding" message instead.
+ */
+function deriveDomainAndUrl(websiteUrl?: string): { domain: string; siteUrl: string } {
+    const trimmed = (websiteUrl || "").trim().replace(/\/+$/, "")
+    if (!trimmed) return { domain: "", siteUrl: "" }
+    const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    let host = withProto
+    try { host = new URL(withProto).hostname } catch {}
+    return { domain: host, siteUrl: withProto }
+}
 
 export default function SEODashboard() {
     const [activeTab, setActiveTab] = useState("overview")
     const [timeframe, setTimeframe] = useState("Last 28 Days")
+    const [siteDomain, setSiteDomain] = useState<string>("")
+    const [siteUrl, setSiteUrl] = useState<string>("")
 
     // Data states
     const [gscData, setGscData] = useState<GSCSiteMetrics | null>(null)
@@ -74,6 +93,33 @@ export default function SEODashboard() {
     const [isLoadingGSC, setIsLoadingGSC] = useState(false)
     const [isLoadingPageSpeed, setIsLoadingPageSpeed] = useState(false)
     const [isLoadingInitial, setIsLoadingInitial] = useState(true)
+    const [gscConnected, setGscConnected] = useState<boolean | null>(null)
+    const [gscBannerDismissed, setGscBannerDismissed] = useState(false)
+
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            setGscBannerDismissed(window.localStorage.getItem("seo:gsc-banner-dismissed") === "1")
+        }
+        // Pull the workspace's website URL once so the domain badge + the
+        // PageSpeed audit target are workspace-scoped, not operator-scoped.
+        let cancelled = false
+        import("@/app/settings/branding/actions").then(({ getBrandingSettings }) =>
+            getBrandingSettings().then((b) => {
+                if (cancelled) return
+                const { domain, siteUrl: url } = deriveDomainAndUrl(b?.websiteUrl)
+                setSiteDomain(domain)
+                setSiteUrl(url)
+            }).catch(() => {})
+        )
+        return () => { cancelled = true }
+    }, [])
+
+    function dismissGscBanner() {
+        setGscBannerDismissed(true)
+        if (typeof window !== "undefined") {
+            window.localStorage.setItem("seo:gsc-banner-dismissed", "1")
+        }
+    }
 
     // Load initial data
     useEffect(() => {
@@ -87,7 +133,8 @@ export default function SEODashboard() {
 
             try {
                 // Load everything in parallel
-                const [gscResult, kwResult, compResult, blResult] = await Promise.all([
+                const [statusResult, gscResult, kwResult, compResult, blResult] = await Promise.all([
+                    getSeoConnectionStatus().catch(() => ({ gsc: false })),
                     fetchGSCData(days).catch(() => ({ success: false as const })),
                     getTrackedKeywords().catch(() => ({ success: false as const })),
                     getTrackedCompetitors().catch(() => ({ success: false as const })),
@@ -95,6 +142,8 @@ export default function SEODashboard() {
                 ])
 
                 if (cancelled) return
+
+                setGscConnected(!!statusResult.gsc)
 
                 if (gscResult.success && "data" in gscResult && gscResult.data) {
                     setGscData(gscResult.data)
@@ -123,12 +172,16 @@ export default function SEODashboard() {
     }, [timeframe])
 
     async function handleRefreshPageSpeed() {
+        if (!siteUrl) {
+            toast.error("Set your website URL in Settings → Branding before running PageSpeed")
+            return
+        }
         setIsLoadingPageSpeed(true)
         try {
             const res = await fetch("/api/seo/pagespeed", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url: DEFAULT_SITE_URL, strategy: "mobile" }),
+                body: JSON.stringify({ url: siteUrl, strategy: "mobile" }),
             })
 
             if (!res.ok) throw new Error("PageSpeed failed")
@@ -172,9 +225,37 @@ export default function SEODashboard() {
                 </DropdownMenu>
 
                 <Badge variant="outline" className="text-[10px] h-7 px-2">
-                    {DEFAULT_DOMAIN}
+                    {siteDomain || "set website in branding"}
                 </Badge>
             </div>
+
+            {gscConnected === false && !gscBannerDismissed && (
+                <Card className="border-amber-500/40 bg-amber-500/5 mb-6">
+                    <CardContent className="pt-4 pb-4 flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="flex-1 text-sm">
+                            <div className="font-medium">Connect Google Search Console for traffic & ranking data</div>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                                Site Overview shows clicks, impressions, and top queries from GSC. Keywords, competitors, and backlinks work without it.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <Link href="/settings/integrations">
+                                <Button size="sm">Connect</Button>
+                            </Link>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                onClick={dismissGscBanner}
+                                aria-label="Dismiss"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Section Tabs */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -217,7 +298,7 @@ export default function SEODashboard() {
                     <KeywordTracker
                         keywords={keywords}
                         onKeywordsChange={setKeywords}
-                        defaultDomain={DEFAULT_DOMAIN}
+                        defaultDomain={siteDomain}
                     />
                 </TabsContent>
 

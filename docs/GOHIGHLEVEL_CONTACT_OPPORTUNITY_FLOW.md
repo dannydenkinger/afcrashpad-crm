@@ -1,6 +1,6 @@
-# GoHighLevel Contact vs Opportunity Flow (Reference for AFCrashpad CRM)
+# GoHighLevel Contact vs Opportunity Flow (Reference for Vesta CRM)
 
-This doc summarizes how **GoHighLevel (GHL)** structures contacts and opportunities so you can align AFCrashpad CRM with the same mental model.
+This doc summarizes how **GoHighLevel (GHL)** structures contacts and opportunities so you can align Vesta CRM with the same mental model.
 
 ---
 
@@ -19,7 +19,7 @@ So: **Contact** (person) → can have one or more **Opportunities** (deals) in o
 
 Each opportunity in GHL bundles:
 
-| Concept | GHL | AFCrashpad CRM |
+| Concept | GHL | Vesta CRM |
 |--------|-----|-----------------|
 | **Contact** | Linked contact (person) | `contactId` on opportunity; contact doc has name, email, phone, etc. |
 | **Pipeline** | Which sales process | Pipelines (e.g. "Traveler Placement") with configurable stages |
@@ -37,7 +37,7 @@ Your CRM already has this: one **contact** doc, many **opportunity** docs with `
 - **Different pipelines:** One contact can have opportunities in multiple pipelines (e.g. "Traveler" and "Marketing").
 - **Same pipeline:** GHL has a setting *"Allow Multiple Opportunities per Contact"* (per pipeline). When ON, the same contact can have multiple opportunities in the **same** pipeline (renewals, upsells, multi-location, etc.).
 
-**AFCrashpad:** Your data model already supports this: each opportunity has `contactId` and `pipelineStageId`. You can have multiple opportunity docs with the same `contactId` in the same or different pipelines. No schema change needed; it’s the same as GHL when “multiple per contact” is allowed.
+**Vesta:** Your data model already supports this: each opportunity has `contactId` and `pipelineStageId`. You can have multiple opportunity docs with the same `contactId` in the same or different pipelines. No schema change needed; it’s the same as GHL when “multiple per contact” is allowed.
 
 ---
 
@@ -47,7 +47,7 @@ Your CRM already has this: one **contact** doc, many **opportunity** docs with `
 - **Opportunity card (in pipeline):** Deal-specific fields (value, stage, status) plus **linked contact** and **shared context** (notes, tasks, communications).
 - **Notes/tasks:** In GHL, notes on an opportunity also show on the contact so there are no silos.
 
-**AFCrashpad alignment:**
+**Vesta alignment:**
 
 - **Contacts page** = contact-centric view; you can show “Opportunities” for that contact (you already have opportunity data via `contactId`).
 - **Pipeline page** = opportunity-centric view; each card shows contact (name, email, phone) and deal (stage, value, dates). You already do this by loading contact for each opportunity in `getPipelines`.
@@ -61,7 +61,7 @@ Your CRM already has this: one **contact** doc, many **opportunity** docs with `
 - **Stages** are ordered; opportunities move from stage to stage (e.g. drag-and-drop).
 - **Status** (Open / Won / Lost / Abandoned) is separate from stage; typically “Won”/“Lost” map to end stages.
 
-**AFCrashpad:** You already have pipelines with ordered stages and drag-and-drop. Optional: add an explicit **opportunity status** (Open / Won / Lost / Abandoned) if you want reporting/filters like GHL, and map “Closed Won” / “Closed Lost” stages to those statuses.
+**Vesta:** You already have pipelines with ordered stages and drag-and-drop. Optional: add an explicit **opportunity status** (Open / Won / Lost / Abandoned) if you want reporting/filters like GHL, and map “Closed Won” / “Closed Lost” stages to those statuses.
 
 ---
 
@@ -70,13 +70,13 @@ Your CRM already has this: one **contact** doc, many **opportunity** docs with `
 - Opportunities can be **created** by workflows (e.g. form submit, tag added).
 - Triggers: opportunity created, **stage changed**, **status changed**, stale (no activity for X days).
 
-**AFCrashpad:** Your webhook already creates contacts and opportunities. You could add server-side or queue-based “automations” that react to opportunity created / stage changed / status changed to mirror GHL.
+**Vesta:** Your webhook already creates contacts and opportunities. You could add server-side or queue-based “automations” that react to opportunity created / stage changed / status changed to mirror GHL.
 
 ---
 
-## 7. Summary: GHL-style flow in AFCrashpad
+## 7. Summary: GHL-style flow in Vesta
 
-| GHL concept | How to mirror in AFCrashpad |
+| GHL concept | How to mirror in Vesta |
 |------------|-----------------------------|
 | Contact = person | Keep `contacts` collection; one doc per person. |
 | Opportunity = deal linked to contact | Keep `opportunities` with `contactId`; support multiple opportunities per contact (same or different pipelines). |
@@ -118,7 +118,7 @@ So: **contact vs opportunity flow is already the same as GoHighLevel** (one cont
 - Notes and tasks added on the opportunity **also appear on the linked contact**; the system treats the opportunity as a view into the same person.
 - So in practice: **editing name/email/phone on the opportunity updates the linked contact** (or the opportunity simply displays and edits the contact record). Either way, there is one source of truth for the person.
 
-**AFCrashpad:** You already mirror this. When the user saves the opportunity details form, `updateOpportunity` updates both the opportunity and the linked contact’s `name`, `email`, `phone`, `militaryBase`, and stay dates. So changing the name (or any contact info) on the opportunity **does** update the contact record, same idea as GHL.
+**Vesta:** You already mirror this. When the user saves the opportunity details form, `updateOpportunity` updates both the opportunity and the linked contact’s `name`, `email`, `phone`, `militaryBase`, and stay dates. So changing the name (or any contact info) on the opportunity **does** update the contact record, same idea as GHL.
 
 ---
 
@@ -130,7 +130,7 @@ So: **contact vs opportunity flow is already the same as GoHighLevel** (one cont
 
 So: **contact-first**. The person must exist as a contact before they can be the “primary contact” on an opportunity.
 
-**AFCrashpad options (to match GHL):**
+**Vesta options (to match GHL):**
 
 1. **Strict GHL-style (contact-first)**  
    - “Add opportunity” always requires **choosing an existing contact** (search/select).  

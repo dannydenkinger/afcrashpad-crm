@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
     Send, Trash2, ChevronDown, ChevronUp, FileText, AtSign, Pencil, X, Check,
 } from "lucide-react"
+import { VoiceDictationButton } from "./VoiceDictationButton"
 
 interface MentionUser {
     userId: string
@@ -412,15 +413,26 @@ export function NotesEditor({
                     )}
                 </div>
 
-                <Button
-                    size="sm"
-                    className="absolute right-4 bottom-4 h-8 gap-2 shadow-lg shadow-primary/20 transition-all active:scale-95"
-                    onClick={handleSubmit}
-                    disabled={isSaving || !content.trim()}
-                >
-                    <Send className="h-3.5 w-3.5" />
-                    {isSaving ? "Saving..." : "Save Note"}
-                </Button>
+                <div className="absolute right-4 bottom-4 flex items-center gap-1.5">
+                    {/* Voice dictation — appends transcribed text to whatever's
+                        already in the note. Hidden in browsers that don't
+                        support SpeechRecognition (Firefox today). */}
+                    <VoiceDictationButton
+                        compact
+                        currentValue={content}
+                        onTranscript={(t) => setContent(t)}
+                        className="h-8 w-8 p-0"
+                    />
+                    <Button
+                        size="sm"
+                        className="h-8 gap-2 shadow-lg shadow-primary/20 transition-all active:scale-95"
+                        onClick={handleSubmit}
+                        disabled={isSaving || !content.trim()}
+                    >
+                        <Send className="h-3.5 w-3.5" />
+                        {isSaving ? "Saving..." : "Save Note"}
+                    </Button>
+                </div>
             </div>
         </div>
     )

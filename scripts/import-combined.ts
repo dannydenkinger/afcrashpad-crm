@@ -363,7 +363,6 @@ async function main() {
                 estimatedProfit: 0,
                 priority: "MEDIUM",
                 assigneeId: null,
-                specialAccommodationId: null,
                 militaryBase,
                 stayStartDate: startDate,
                 stayEndDate: endDate,

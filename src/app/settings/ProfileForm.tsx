@@ -75,13 +75,13 @@ export function ProfileForm({ initialName, initialPhone, email, role, initialIma
     }
 
     return (
-        <div className="space-y-6 max-w-xl">
+        <div className="space-y-6">
             {/* Profile Photo */}
             <div className="flex items-center gap-4">
                 <div className="relative group">
-                    <Avatar className="h-20 w-20 border-2">
+                    <Avatar className="h-16 w-16 border">
                         <AvatarImage src={imageUrl || undefined} alt={name || "Profile"} />
-                        <AvatarFallback className="text-2xl">{name?.charAt(0) || "U"}</AvatarFallback>
+                        <AvatarFallback className="text-xl">{name?.charAt(0) || "U"}</AvatarFallback>
                     </Avatar>
                     <button
                         className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
@@ -89,9 +89,9 @@ export function ProfileForm({ initialName, initialPhone, email, role, initialIma
                         disabled={isUploading}
                     >
                         {isUploading ? (
-                            <Loader2 className="h-6 w-6 text-white animate-spin" />
+                            <Loader2 className="h-5 w-5 text-white animate-spin" />
                         ) : (
-                            <Camera className="h-6 w-6 text-white" />
+                            <Camera className="h-5 w-5 text-white" />
                         )}
                     </button>
                     <input
@@ -103,33 +103,33 @@ export function ProfileForm({ initialName, initialPhone, email, role, initialIma
                     />
                 </div>
                 <div>
-                    <p className="text-sm font-semibold">Profile Photo</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Click the avatar to upload a new photo. Max 5MB.</p>
+                    <p className="text-xs font-medium">Profile photo</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Click the avatar to upload. Max 5MB.</p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-muted/20 p-4 border rounded-lg mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 border rounded-lg bg-muted/20">
                 <div>
-                    <div className="font-semibold text-muted-foreground uppercase tracking-wider text-xs">Email Address</div>
-                    <div className="font-medium text-muted-foreground mt-1">{email}</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Email</div>
+                    <div className="text-sm text-muted-foreground mt-1">{email}</div>
                 </div>
                 <div>
-                    <div className="font-semibold text-muted-foreground uppercase tracking-wider text-xs">System Role</div>
-                    <div className="font-medium text-primary bg-primary/10 inline-flex px-2 py-0.5 rounded-md font-bold text-xs mt-1">{role}</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Role</div>
+                    <div className="mt-1 inline-flex items-center px-2 py-0.5 rounded-md bg-primary/10 text-primary font-semibold text-[11px] uppercase tracking-wider">{role}</div>
                 </div>
             </div>
 
             <div className="space-y-4">
-                <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">Display Name</label>
+                <div className="space-y-1.5">
+                    <label className="text-xs">Display name</label>
                     <Input
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder="John Doe"
                     />
                 </div>
-                <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">Phone Number</label>
+                <div className="space-y-1.5">
+                    <label className="text-xs">Phone number</label>
                     <Input
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
@@ -138,10 +138,10 @@ export function ProfileForm({ initialName, initialPhone, email, role, initialIma
                 </div>
             </div>
 
-            <div className="pt-4 flex justify-end">
-                <Button onClick={handleSave} disabled={isSaving || (!name && !phone)}>
-                    {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Save Changes
+            <div className="pt-2 flex justify-end">
+                <Button onClick={handleSave} disabled={isSaving || (!name && !phone)} size="sm">
+                    {isSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                    Save changes
                 </Button>
             </div>
         </div>

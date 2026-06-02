@@ -1,17 +1,17 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
 import { revalidatePath } from "next/cache"
-import { requireAdmin } from "@/lib/auth-guard"
+import { requireAdmin, requireAuth } from "@/lib/auth-guard"
 import type { FollowUpConfig } from "./types"
 
 export async function getFollowUpConfig(): Promise<{ success: boolean; config?: FollowUpConfig; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const doc = await adminDb.collection("settings").doc("follow_up_reminders").get()
+        const doc = await db.settingsDoc("follow_up_reminders").get()
         if (!doc.exists) {
             return {
                 success: true,
@@ -43,14 +43,18 @@ export async function updateFollowUpConfig(updates: {
     daysThreshold?: number
     pipelineIds?: string[]
 }): Promise<{ success: boolean; error?: string }> {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        await adminDb.collection("settings").doc("follow_up_reminders").set(
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        await db.settingsDoc("follow_up_reminders").set(
             { ...updates, updatedAt: new Date() },
             { merge: true }
         )

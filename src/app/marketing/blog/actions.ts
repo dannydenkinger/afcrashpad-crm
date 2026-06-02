@@ -1,9 +1,10 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 import { revalidatePath } from "next/cache"
-import { auth } from "@/auth"
+import { requireAuth } from "@/lib/auth-guard"
 import { FieldValue } from "firebase-admin/firestore"
+import { getIntegrationStatus } from "@/lib/integration-status"
 import type {
     BlogArticle,
     ContentCluster,
@@ -155,7 +156,7 @@ export async function calculateSEOScore(article: Partial<BlogArticle>): Promise<
         id: "internal-links",
         category: "technical",
         label: "Has internal links",
-        passed: /\[.*?\]\(\/.*?\)/.test(content) || content.includes("afcrashpad.com"),
+        passed: /\[.*?\]\(\/.*?\)/.test(content),
         weight: 4,
     })
 
@@ -163,7 +164,7 @@ export async function calculateSEOScore(article: Partial<BlogArticle>): Promise<
         id: "external-links",
         category: "technical",
         label: "Has external citation links",
-        passed: /\[.*?\]\(https?:\/\/(?!.*afcrashpad).*?\)/.test(content),
+        passed: /\[.*?\]\(https?:\/\/.*?\)/.test(content),
         weight: 4,
     })
 
@@ -265,11 +266,11 @@ export async function calculateSEOScore(article: Partial<BlogArticle>): Promise<
 
 export async function getArticles(): Promise<{ success: boolean; data?: BlogArticle[]; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const snapshot = await adminDb
-            .collection("blog_articles")
+        const snapshot = await db.collection("blog_articles")
             .orderBy("updatedAt", "desc")
             .get()
 
@@ -293,10 +294,11 @@ export async function getArticles(): Promise<{ success: boolean; data?: BlogArti
 
 export async function getArticle(id: string): Promise<{ success: boolean; data?: BlogArticle; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const doc = await adminDb.collection("blog_articles").doc(id).get()
+        const doc = await db.doc("blog_articles", id).get()
         if (!doc.exists) return { success: false, error: "Article not found" }
 
         const d = doc.data()!
@@ -319,8 +321,9 @@ export async function createArticle(
     data: Partial<BlogArticle>
 ): Promise<{ success: boolean; data?: BlogArticle; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         const now = new Date().toISOString()
         const wordCount = countWords(data.content || "")
@@ -366,7 +369,7 @@ export async function createArticle(
         ]
 
         const cleanArticle = stripUndefined(article)
-        const docRef = await adminDb.collection("blog_articles").add(cleanArticle)
+        const docRef = await db.add("blog_articles", cleanArticle)
 
         revalidatePath("/marketing")
         return {
@@ -384,8 +387,9 @@ export async function updateArticle(
     data: Partial<BlogArticle>
 ): Promise<{ success: boolean; data?: BlogArticle; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         const now = new Date().toISOString()
         const wordCount = data.content ? countWords(data.content) : undefined
@@ -405,7 +409,7 @@ export async function updateArticle(
 
         // Recalculate SEO score if content-related fields changed
         if (data.content || data.title || data.metaTitle || data.metaDescription || data.focusKeyword || data.keyTakeaways || data.faqs || data.schemaMarkup) {
-            const doc = await adminDb.collection("blog_articles").doc(id).get()
+            const doc = await db.doc("blog_articles", id).get()
             const existing = doc.data() || {}
             const merged = { ...existing, ...updateData }
             const scoreBreakdown = await calculateSEOScore(merged as BlogArticle)
@@ -419,10 +423,10 @@ export async function updateArticle(
         }
 
         const cleanUpdateData = stripUndefined(updateData)
-        await adminDb.collection("blog_articles").doc(id).update(cleanUpdateData)
+        await db.doc("blog_articles", id).update(cleanUpdateData)
 
         // Get the updated article
-        const updatedDoc = await adminDb.collection("blog_articles").doc(id).get()
+        const updatedDoc = await db.doc("blog_articles", id).get()
         const d = updatedDoc.data()!
 
         revalidatePath("/marketing")
@@ -444,15 +448,16 @@ export async function updateArticle(
 
 export async function deleteArticle(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         // Clean up cluster references before deleting
-        const articleDoc = await adminDb.collection("blog_articles").doc(id).get()
+        const articleDoc = await db.doc("blog_articles", id).get()
         const articleData = articleDoc.data()
 
         if (articleData?.clusterId) {
-            const clusterRef = adminDb.collection("blog_clusters").doc(articleData.clusterId)
+            const clusterRef = db.doc("blog_clusters", articleData.clusterId)
             const clusterDoc = await clusterRef.get()
             if (clusterDoc.exists) {
                 const updateData: Record<string, any> = {
@@ -467,7 +472,7 @@ export async function deleteArticle(id: string): Promise<{ success: boolean; err
             }
         }
 
-        await adminDb.collection("blog_articles").doc(id).delete()
+        await db.doc("blog_articles", id).delete()
         revalidatePath("/marketing")
         return { success: true }
     } catch (error: any) {
@@ -479,10 +484,11 @@ export async function deleteArticle(id: string): Promise<{ success: boolean; err
 
 export async function getClusters(): Promise<{ success: boolean; data?: ContentCluster[]; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const snapshot = await adminDb
+        const snapshot = await db
             .collection("blog_clusters")
             .orderBy("updatedAt", "desc")
             .get()
@@ -507,8 +513,9 @@ export async function createCluster(
     data: Partial<ContentCluster>
 ): Promise<{ success: boolean; data?: ContentCluster; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         const now = new Date().toISOString()
         const cluster: Omit<ContentCluster, "id"> = {
@@ -523,7 +530,7 @@ export async function createCluster(
         }
 
         const cleanCluster = stripUndefined(cluster)
-        const docRef = await adminDb.collection("blog_clusters").add(cleanCluster)
+        const docRef = await db.add("blog_clusters", cleanCluster)
         revalidatePath("/marketing")
         return { success: true, data: { id: docRef.id, ...cleanCluster } as ContentCluster }
     } catch (error: any) {
@@ -536,13 +543,14 @@ export async function updateCluster(
     data: Partial<ContentCluster>
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         const updateData: Record<string, any> = { ...data, updatedAt: new Date().toISOString() }
         delete updateData.id
 
-        await adminDb.collection("blog_clusters").doc(id).update(updateData)
+        await db.doc("blog_clusters", id).update(updateData)
         revalidatePath("/marketing")
         return { success: true }
     } catch (error: any) {
@@ -552,19 +560,19 @@ export async function updateCluster(
 
 export async function deleteCluster(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         // Remove clusterId from any articles linked to this cluster
-        const articlesSnap = await adminDb
-            .collection("blog_articles")
+        const articlesSnap = await db.collection("blog_articles")
             .where("clusterId", "==", id)
             .get()
-        const batch = adminDb.batch()
+        const batch = db.batch()
         articlesSnap.docs.forEach((doc) => {
             batch.update(doc.ref, { clusterId: FieldValue.delete(), updatedAt: new Date().toISOString() })
         })
-        batch.delete(adminDb.collection("blog_clusters").doc(id))
+        batch.delete(db.doc("blog_clusters", id))
         await batch.commit()
 
         revalidatePath("/marketing")
@@ -582,19 +590,20 @@ export async function setPillarArticle(
     articleId: string
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         const now = new Date().toISOString()
 
         // Update the cluster with the pillar article ID
-        await adminDb.collection("blog_clusters").doc(clusterId).update({
+        await db.doc("blog_clusters", clusterId).update({
             pillarArticleId: articleId,
             updatedAt: now,
         })
 
         // Update the article to mark it as pillar type and link to cluster
-        await adminDb.collection("blog_articles").doc(articleId).update({
+        await db.doc("blog_articles", articleId).update({
             type: "pillar",
             clusterId: clusterId,
             updatedAt: now,
@@ -614,20 +623,21 @@ export async function addArticleToCluster(
     articleId: string
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         const now = new Date().toISOString()
 
         // Add article ID to the cluster's article list
-        await adminDb.collection("blog_clusters").doc(clusterId).update({
+        await db.doc("blog_clusters", clusterId).update({
             clusterArticleIds: FieldValue.arrayUnion(articleId),
             updatedAt: now,
         })
 
         // Only change article type if it's currently standalone.
         // Preserve "pillar" type — don't overwrite it to "cluster".
-        const articleDoc = await adminDb.collection("blog_articles").doc(articleId).get()
+        const articleDoc = await db.doc("blog_articles", articleId).get()
         const currentType = articleDoc.data()?.type
         const articleUpdate: Record<string, any> = {
             clusterId: clusterId,
@@ -637,7 +647,7 @@ export async function addArticleToCluster(
             articleUpdate.type = "cluster"
         }
 
-        await adminDb.collection("blog_articles").doc(articleId).update(articleUpdate)
+        await db.doc("blog_articles", articleId).update(articleUpdate)
 
         revalidatePath("/marketing")
         return { success: true }
@@ -653,10 +663,11 @@ export async function ensureArticleInCluster(
     articleId: string
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        await adminDb.collection("blog_clusters").doc(clusterId).update({
+        await db.doc("blog_clusters", clusterId).update({
             clusterArticleIds: FieldValue.arrayUnion(articleId),
             updatedAt: new Date().toISOString(),
         })
@@ -674,13 +685,14 @@ export async function removeArticleFromCluster(
     articleId: string
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         const now = new Date().toISOString()
 
         // Check if this article is the pillar
-        const clusterDoc = await adminDb.collection("blog_clusters").doc(clusterId).get()
+        const clusterDoc = await db.doc("blog_clusters", clusterId).get()
         const clusterData = clusterDoc.data()
         const updateData: Record<string, any> = {
             clusterArticleIds: FieldValue.arrayRemove(articleId),
@@ -690,10 +702,10 @@ export async function removeArticleFromCluster(
             updateData.pillarArticleId = FieldValue.delete()
         }
 
-        await adminDb.collection("blog_clusters").doc(clusterId).update(updateData)
+        await db.doc("blog_clusters", clusterId).update(updateData)
 
         // Unlink the article from the cluster
-        await adminDb.collection("blog_articles").doc(articleId).update({
+        await db.doc("blog_articles", articleId).update({
             type: "standalone",
             clusterId: FieldValue.delete(),
             updatedAt: now,
@@ -712,10 +724,11 @@ export async function getClusterContext(
     clusterId: string
 ): Promise<{ success: boolean; data?: { clusterName: string; keywords: string[]; pillarTitle: string; pillarExcerpt: string; pillarKeyword: string; pillarHeadings: string[]; existingTopics: string[] }; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const clusterDoc = await adminDb.collection("blog_clusters").doc(clusterId).get()
+        const clusterDoc = await db.doc("blog_clusters", clusterId).get()
         if (!clusterDoc.exists) return { success: false, error: "Cluster not found" }
         const cluster = clusterDoc.data() as ContentCluster
 
@@ -726,7 +739,7 @@ export async function getClusterContext(
 
         // Get pillar article context if it exists
         if (cluster.pillarArticleId) {
-            const pillarDoc = await adminDb.collection("blog_articles").doc(cluster.pillarArticleId).get()
+            const pillarDoc = await db.doc("blog_articles", cluster.pillarArticleId).get()
             if (pillarDoc.exists) {
                 const pillar = pillarDoc.data() as BlogArticle
                 pillarTitle = pillar.title || ""
@@ -744,7 +757,7 @@ export async function getClusterContext(
         const existingTopics: string[] = []
         if (cluster.clusterArticleIds?.length > 0) {
             for (const artId of cluster.clusterArticleIds) {
-                const artDoc = await adminDb.collection("blog_articles").doc(artId).get()
+                const artDoc = await db.doc("blog_articles", artId).get()
                 if (artDoc.exists) {
                     existingTopics.push(artDoc.data()?.title || "")
                 }
@@ -829,19 +842,27 @@ export async function publishToWordPress(
     imageBase64?: string
 ): Promise<{ success: boolean; data?: WPPublishResult; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const wpUrl = process.env.WORDPRESS_URL
-        const wpUser = process.env.WORDPRESS_USERNAME
-        const wpPass = process.env.WORDPRESS_APP_PASSWORD
+        // Per-workspace credentials saved by Settings → Integrations.
+        // Falls back to env vars only when nothing is saved (kept for
+        // single-tenant deploys + dev environments).
+        const integrationsDoc = await db.settingsDoc("integrations").get()
+        const wpData = integrationsDoc.exists
+            ? (integrationsDoc.data()?.wordpress as { url?: string; username?: string; appPassword?: string } | undefined)
+            : undefined
+        const wpUrl = wpData?.url || process.env.WORDPRESS_URL
+        const wpUser = wpData?.username || process.env.WORDPRESS_USERNAME
+        const wpPass = wpData?.appPassword || process.env.WORDPRESS_APP_PASSWORD
 
         if (!wpUrl || !wpUser || !wpPass) {
-            return { success: false, error: "WordPress credentials not configured. Add WORDPRESS_URL, WORDPRESS_USERNAME, and WORDPRESS_APP_PASSWORD to your environment." }
+            return { success: false, error: "Connect WordPress in Settings → Integrations before publishing." }
         }
 
         // Get article
-        const doc = await adminDb.collection("blog_articles").doc(articleId).get()
+        const doc = await db.doc("blog_articles", articleId).get()
         if (!doc.exists) return { success: false, error: "Article not found" }
         const article = doc.data() as BlogArticle
 
@@ -941,7 +962,7 @@ export async function publishToWordPress(
         if (featuredMediaId) {
             updatePayload.wpFeaturedMediaId = featuredMediaId
         }
-        await adminDb.collection("blog_articles").doc(articleId).update(updatePayload)
+        await db.doc("blog_articles", articleId).update(updatePayload)
 
         revalidatePath("/marketing")
         return {
@@ -962,10 +983,11 @@ export async function publishToWordPress(
 
 export async function markArticleAsReviewed(articleId: string) {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        await adminDb.collection("blog_articles").doc(articleId).update({
+        await db.doc("blog_articles", articleId).update({
             lastContentReviewDate: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         })
@@ -979,10 +1001,11 @@ export async function markArticleAsReviewed(articleId: string) {
 
 export async function getStaleArticles(): Promise<{ success: boolean; articles?: { id: string; title: string; publishedAt: string; lastReview: string | null; monthsSinceReview: number }[] }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const snap = await adminDb.collection("blog_articles")
+        const snap = await db.collection("blog_articles")
             .where("status", "==", "published")
             .get()
 
@@ -1014,15 +1037,23 @@ export async function getStaleArticles(): Promise<{ success: boolean; articles?:
     }
 }
 
+// ─── Integration Status ─────────────────────────────────────────────────────
+
+export async function getBlogConnectionStatus() {
+    const status = await getIntegrationStatus()
+    return { wordpress: status.wordpress }
+}
+
 // ─── Blog Stats ─────────────────────────────────────────────────────────────
 
 export async function getBlogStats(): Promise<{ success: boolean; data?: BlogStats; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const articlesSnap = await adminDb.collection("blog_articles").get()
-        const clustersSnap = await adminDb.collection("blog_clusters").get()
+        const articlesSnap = await db.collection("blog_articles").get()
+        const clustersSnap = await db.collection("blog_clusters").get()
 
         let totalArticles = 0
         let publishedArticles = 0
@@ -1303,10 +1334,11 @@ export async function getArticleExportData(id: string): Promise<{
     error?: string;
 }> {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const doc = await adminDb.collection("blog_articles").doc(id).get()
+        const doc = await db.doc("blog_articles", id).get()
         if (!doc.exists) return { success: false, error: "Article not found" }
 
         const article = doc.data() as BlogArticle

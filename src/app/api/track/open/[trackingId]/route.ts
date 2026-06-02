@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { recordOpen } from "@/lib/email-tracking";
+import { adminDb } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,15 @@ export async function GET(
         || request.headers.get("x-real-ip")
         || null;
 
-    // Don't await — let it happen in the background so the pixel loads fast
-    recordOpen(trackingId, userAgent, ip).catch(() => {});
+    // Look up workspaceId from the tracking record, then record the open
+    adminDb.collection("email_tracking").doc(trackingId).get()
+        .then(doc => {
+            const workspaceId = doc.data()?.workspaceId;
+            if (workspaceId) {
+                return recordOpen(workspaceId, trackingId, userAgent, ip);
+            }
+        })
+        .catch(() => {});
 
     return new Response(TRANSPARENT_GIF, {
         status: 200,

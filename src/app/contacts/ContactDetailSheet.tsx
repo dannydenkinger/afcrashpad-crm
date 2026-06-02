@@ -7,12 +7,15 @@ import { Button } from "@/components/ui/button"
 import {
     Phone, Mail, MoreVertical, Plus, FileText, MessageSquare,
     Trash2, ListTodo, Briefcase, ExternalLink, FileDown, Upload, Loader2, Pencil, Check,
+    Send, Share2, Eye, MousePointerClick, CalendarDays,
 } from "lucide-react"
 import { exportToPDF } from "@/lib/export-pdf"
 import { buildContactProfileHtml } from "@/components/PrintableProfile"
 import { CustomFieldsSection } from "@/components/CustomFieldsSection"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { PhoneActions } from "./PhoneActions"
+import { RequestReviewButton } from "./RequestReviewButton"
 import {
     Sheet,
     SheetContent,
@@ -182,6 +185,19 @@ export function ContactDetailSheet({
     const [isRemovingRelated, setIsRemovingRelated] = useState<string | null>(null)
     const [isDragOverSheet, setIsDragOverSheet] = useState(false)
     const [isUploadingDrop, setIsUploadingDrop] = useState(false)
+    /** Workspace booking link from Branding settings. When set, the
+     *  contact action row shows a "Booking link" quick-share button. */
+    const [bookingLink, setBookingLink] = useState<string | null>(null)
+    useEffect(() => {
+        let cancelled = false
+        import("@/app/settings/branding/actions").then(({ getBrandingSettings }) =>
+            getBrandingSettings().then((b) => {
+                if (cancelled) return
+                if (b?.bookingLinkUrl) setBookingLink(b.bookingLinkUrl)
+            }).catch(() => {})
+        )
+        return () => { cancelled = true }
+    }, [])
     const dragCounterRef = useRef(0)
 
     // Duplicate detection (lightweight client-side)
@@ -281,11 +297,18 @@ export function ContactDetailSheet({
         }
     }, [selectedContact])
 
-    const handleSheetDragLeave = useCallback((e: React.DragEvent) => {
+    const handleSheetDragLeave = useCallback((e: React.DragEvent<HTMLElement>) => {
         e.preventDefault()
         e.stopPropagation()
-        dragCounterRef.current -= 1
-        if (dragCounterRef.current === 0) {
+        dragCounterRef.current = Math.max(0, dragCounterRef.current - 1)
+        // Backstop: if the drag is leaving the entire sheet element (relatedTarget
+        // is null or outside the current target), force-clear regardless of counter
+        // state. Fixes the "stuck overlay" case where nested children miscounted.
+        const ct = e.currentTarget as HTMLElement
+        const rt = e.relatedTarget as Node | null
+        const leftSheet = !rt || !ct.contains(rt)
+        if (leftSheet || dragCounterRef.current === 0) {
+            dragCounterRef.current = 0
             setIsDragOverSheet(false)
         }
     }, [])
@@ -306,32 +329,22 @@ export function ContactDetailSheet({
         if (files.length === 0) return
 
         setIsUploadingDrop(true)
-        let errorOccurred = false
+        const { uploadDocument } = await import("@/lib/upload-document")
+        let succeeded = 0
+        const failed: string[] = []
         for (const file of files) {
-            const formData = new FormData()
-            formData.append("file", file)
-            formData.append("name", file.name)
-            try {
-                const res = await fetch(`/api/contacts/${selectedContact.id}/documents/upload`, {
-                    method: "POST",
-                    body: formData,
-                })
-                if (!res.ok) {
-                    const data = await res.json()
-                    toast.error(data.error || `Upload failed for ${file.name}`)
-                    errorOccurred = true
-                    break
-                }
-            } catch {
-                toast.error(`Upload failed for ${file.name}`)
-                errorOccurred = true
-                break
-            }
-        }
-        if (!errorOccurred) {
-            toast.success(`${files.length} file${files.length !== 1 ? "s" : ""} uploaded`)
+            const res = await uploadDocument(file, { contactId: selectedContact.id })
+            if (res.success) succeeded++
+            else failed.push(`${file.name}: ${res.error}`)
         }
         setIsUploadingDrop(false)
+        if (failed.length === 0) {
+            toast.success(`${succeeded} file${succeeded !== 1 ? "s" : ""} uploaded`)
+        } else if (succeeded === 0) {
+            toast.error(`Upload failed: ${failed[0]}${failed.length > 1 ? ` (and ${failed.length - 1} more)` : ""}`)
+        } else {
+            toast.warning(`Uploaded ${succeeded} of ${files.length}. ${failed.length} failed.`, { duration: 6000 })
+        }
         onRefreshContact?.()
     }, [selectedContact, onRefreshContact])
 
@@ -371,21 +384,43 @@ export function ContactDetailSheet({
                     return (
                         <>
                             <div className="p-4 sm:p-6 bg-muted/30 border-b" style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))' }}>
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className="flex items-center gap-3 sm:gap-4">
-                                        <Avatar className="h-12 w-12 sm:h-16 sm:w-16 border-2 border-background shadow-sm">
-                                            <AvatarFallback className="text-lg sm:text-xl bg-primary/10 text-primary">{contact.name.charAt(0)}</AvatarFallback>
+                                <div className="flex items-start justify-between mb-4 gap-3">
+                                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                                        <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-background shadow-sm shrink-0">
+                                            <AvatarFallback className="text-lg sm:text-xl bg-primary/10 text-primary font-semibold">
+                                                {contact.name.charAt(0).toUpperCase()}
+                                            </AvatarFallback>
                                         </Avatar>
-                                        <div>
-                                            <SheetTitle className="text-xl sm:text-2xl">{contact.name}</SheetTitle>
-                                            <SheetDescription className="flex items-center gap-2 mt-1 flex-wrap">
-                                                <Badge variant="outline" className="font-normal">{contact.status}</Badge>
-                                                {contact.utmSource && (
-                                                    <Badge variant="secondary" className="text-[10px] font-normal">
-                                                        via {contact.utmSource}
-                                                    </Badge>
+                                        <div className="min-w-0">
+                                            <SheetTitle className="text-xl sm:text-2xl tracking-tight truncate">
+                                                {contact.name}
+                                            </SheetTitle>
+                                            <SheetDescription className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                                {contact.status && (
+                                                    <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border ${
+                                                        contact.status === "Customer" || contact.status === "Active Stay" || contact.status === "Active Client"
+                                                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                                            : contact.status === "Lead"
+                                                              ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
+                                                              : contact.status === "Past Customer" || contact.status === "Past Tenant"
+                                                                ? "bg-zinc-500/10 text-muted-foreground border-zinc-500/20"
+                                                                : "bg-muted text-muted-foreground border-border"
+                                                    }`}>
+                                                        <span className={`h-1.5 w-1.5 rounded-full ${
+                                                            contact.status === "Customer" || contact.status === "Active Stay" || contact.status === "Active Client"
+                                                                ? "bg-emerald-500"
+                                                                : contact.status === "Lead"
+                                                                  ? "bg-blue-500"
+                                                                  : "bg-muted-foreground/40"
+                                                        }`} />
+                                                        {contact.status}
+                                                    </span>
                                                 )}
-                                                <span className="text-xs text-muted-foreground">Tenant Record</span>
+                                                {contact.utmSource && (
+                                                    <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                                                        via {contact.utmSource}
+                                                    </span>
+                                                )}
                                             </SheetDescription>
                                         </div>
                                     </div>
@@ -429,106 +464,164 @@ export function ContactDetailSheet({
 
                                 {/* Duplicate detection banner */}
                                 {duplicates.length > 0 && (
-                                    <div className="mt-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2">
-                                        <div className="flex items-center gap-2">
-                                            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-                                            <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-                                                Potential Duplicate{duplicates.length > 1 ? "s" : ""} Found
+                                    <div className="mt-4 p-3 rounded-xl border border-amber-500/30 bg-amber-500/5">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                            <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                                                Possible duplicate{duplicates.length > 1 ? "s" : ""}
                                             </span>
                                         </div>
-                                        {duplicates.map((dup) => (
-                                            <div key={dup.id} className="flex items-center justify-between gap-2">
-                                                <span className="text-sm">
-                                                    <span className="font-medium">{dup.name}</span>
-                                                    <span className="text-xs text-muted-foreground ml-1.5">
-                                                        ({dup.matchType} match)
+                                        <div className="space-y-1.5">
+                                            {duplicates.map((dup) => (
+                                                <div key={dup.id} className="flex items-center justify-between gap-2">
+                                                    <span className="text-sm min-w-0 truncate">
+                                                        <span className="font-medium">{dup.name}</span>
+                                                        <span className="text-xs text-muted-foreground ml-1.5">
+                                                            · {dup.matchType} match
+                                                        </span>
                                                     </span>
-                                                </span>
-                                                {onMergeWith && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="h-7 text-xs border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
-                                                        onClick={() => onMergeWith(dup.id)}
-                                                    >
-                                                        Review & Merge
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        ))}
+                                                    {onMergeWith && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="h-7 text-xs border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 shrink-0"
+                                                            onClick={() => onMergeWith(dup.id)}
+                                                        >
+                                                            Review &amp; merge
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
 
                                 {/* Opportunity attachment */}
-                                <div className="mt-4 p-3 rounded-xl border bg-background/60 space-y-2">
-                                    {contact.opportunities?.length > 0 ? (
-                                        <>
-                                            <div className="flex items-center gap-2">
-                                                <Briefcase className="h-4 w-4 text-emerald-600" />
-                                                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Attached to opportunity</span>
+                                {contact.opportunities?.length > 0 ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => router.push(`/pipeline?deal=${contact.opportunities[0].id}`)}
+                                        className="relative w-full mt-4 p-3 rounded-xl border bg-card hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-colors text-left group overflow-hidden"
+                                    >
+                                        <div
+                                            aria-hidden
+                                            className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-emerald-500/40 to-emerald-500/0"
+                                        />
+                                        <div className="flex items-start gap-3">
+                                            <div className="w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                                                <Briefcase className="h-4 w-4" />
                                             </div>
-                                            <div className="flex items-center justify-between gap-2 flex-wrap">
-                                                <span className="text-sm font-medium truncate">{contact.opportunities[0].name || "Deal"}</span>
-                                                <Button
-                                                    size="sm"
-                                                    variant="secondary"
-                                                    className="shrink-0 gap-1.5 h-8"
-                                                    onClick={() => router.push(`/pipeline?deal=${contact.opportunities[0].id}`)}
-                                                >
-                                                    <ExternalLink className="h-3.5 w-3.5" />
-                                                    View in Pipeline
-                                                </Button>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+                                                    Opportunity
+                                                </div>
+                                                <div className="text-sm font-semibold truncate">
+                                                    {contact.opportunities[0].name || "Untitled deal"}
+                                                </div>
+                                                {contact.opportunities[0].opportunityValue != null && (
+                                                    <div className="text-xs text-muted-foreground tabular-nums mt-0.5">
+                                                        ${Number(contact.opportunities[0].opportunityValue).toLocaleString()}
+                                                    </div>
+                                                )}
                                             </div>
-                                            {contact.opportunities[0].opportunityValue != null && (
-                                                <p className="text-xs text-muted-foreground">Value: ${Number(contact.opportunities[0].opportunityValue).toLocaleString()}</p>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <>
-                                            <div className="flex items-center gap-2">
-                                                <Briefcase className="h-4 w-4 text-muted-foreground" />
-                                                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">No opportunity</span>
+                                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0 mt-1" />
+                                        </div>
+                                    </button>
+                                ) : (
+                                    <div className="mt-4 p-3 rounded-xl border border-dashed bg-card/50 flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-lg bg-muted text-muted-foreground flex items-center justify-center shrink-0">
+                                            <Briefcase className="h-4 w-4" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-medium">No opportunity yet</div>
+                                            <div className="text-xs text-muted-foreground">
+                                                {contact.id !== 'new'
+                                                    ? "Create one to track this contact through your pipeline."
+                                                    : "Save the contact first, then create an opportunity."}
                                             </div>
-                                            {contact.id !== 'new' ? (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="w-full gap-1.5 h-8"
-                                                    onClick={onCreateOpportunity}
-                                                    disabled={isSaving}
-                                                >
-                                                    <Plus className="h-3.5 w-3.5" />
-                                                    {isSaving ? "Creating..." : "Create opportunity"}
-                                                </Button>
-                                            ) : (
-                                                <p className="text-xs text-muted-foreground">Save the contact first, then create an opportunity.</p>
-                                            )}
-                                        </>
-                                    )}
-                                </div>
+                                        </div>
+                                        {contact.id !== 'new' && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="shrink-0 gap-1.5 h-8"
+                                                onClick={onCreateOpportunity}
+                                                disabled={isSaving}
+                                            >
+                                                <Plus className="h-3.5 w-3.5" />
+                                                {isSaving ? "Creating…" : "Create"}
+                                            </Button>
+                                        )}
+                                    </div>
+                                )}
 
-                                <div className="flex items-center gap-3 lg:gap-6 mt-4 lg:mt-6">
+                                {/* Quick contact-info chips — at-a-glance email + phone */}
+                                {(selectedContact?.email || selectedContact?.phone) && (
+                                    <div className="mt-4 flex items-center gap-2 flex-wrap text-xs">
+                                        {selectedContact?.email && (
+                                            <a
+                                                href={`mailto:${selectedContact.email}`}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border bg-card hover:bg-muted/40 hover:border-primary/30 transition-colors max-w-full min-w-0"
+                                                title={selectedContact.email}
+                                            >
+                                                <Mail className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                <span className="truncate">{selectedContact.email}</span>
+                                            </a>
+                                        )}
+                                        {selectedContact?.phone && (
+                                            <a
+                                                href={`tel:${selectedContact.phone}`}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border bg-card hover:bg-muted/40 hover:border-primary/30 transition-colors"
+                                                title="Call"
+                                            >
+                                                <Phone className="h-3 w-3 text-muted-foreground" />
+                                                <span className="tabular-nums">{selectedContact.phone}</span>
+                                            </a>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-2 mt-4">
                                     <Button
                                         size="sm"
-                                        className="w-full"
+                                        className="flex-1 gap-1.5 shadow-sm"
                                         disabled={!selectedContact?.phone}
                                         onClick={() => selectedContact?.phone && window.open(`tel:${selectedContact.phone}`)}
                                         title={selectedContact?.phone || "No phone number"}
                                     >
-                                        <Phone className="mr-2 h-4 w-4" />
+                                        <Phone className="h-4 w-4" />
                                         Call
                                     </Button>
                                     <Button
                                         size="sm"
                                         variant="outline"
-                                        className="w-full"
+                                        className="flex-1 gap-1.5"
                                         disabled={!selectedContact?.email}
                                         onClick={() => selectedContact?.email && window.open(`mailto:${selectedContact.email}`)}
                                         title={selectedContact?.email || "No email address"}
                                     >
-                                        <Mail className="mr-2 h-4 w-4" />
+                                        <Mail className="h-4 w-4" />
                                         Email
                                     </Button>
+                                    {bookingLink && (
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="flex-1 gap-1.5"
+                                            title={`Copy booking link: ${bookingLink}`}
+                                            onClick={async () => {
+                                                try {
+                                                    await navigator.clipboard.writeText(bookingLink)
+                                                    toast.success("Booking link copied")
+                                                } catch {
+                                                    toast.error("Couldn't copy — your browser blocked clipboard access")
+                                                }
+                                            }}
+                                        >
+                                            <CalendarDays className="h-4 w-4" />
+                                            Booking link
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
 
@@ -559,39 +652,48 @@ export function ContactDetailSheet({
                                                     error={formErrors.name}
                                                     colSpan
                                                 />
-                                                <InlineField
-                                                    label="Email Address"
-                                                    value={editingContact?.email || ""}
-                                                    onChange={(val) => {
-                                                        setEditingContact((prev: any) => prev ? { ...prev, email: val } : null)
-                                                        if (formErrors.email) setFormErrors(prev => { const next = {...prev}; delete next.email; return next })
-                                                    }}
-                                                    onBlurSave={handleValidatedSave}
-                                                    error={formErrors.email}
-                                                />
-                                                <InlineField
-                                                    label="Phone Number"
-                                                    value={editingContact?.phone || ""}
-                                                    onChange={(val) => {
-                                                        setEditingContact((prev: any) => prev ? { ...prev, phone: val } : null)
-                                                        if (formErrors.phone) setFormErrors(prev => { const next = {...prev}; delete next.phone; return next })
-                                                    }}
-                                                    onBlurSave={handleValidatedSave}
-                                                    error={formErrors.phone}
-                                                />
+                                                <div>
+                                                    <InlineField
+                                                        label="Email Address"
+                                                        value={editingContact?.email || ""}
+                                                        onChange={(val) => {
+                                                            setEditingContact((prev: any) => prev ? { ...prev, email: val } : null)
+                                                            if (formErrors.email) setFormErrors(prev => { const next = {...prev}; delete next.email; return next })
+                                                        }}
+                                                        onBlurSave={handleValidatedSave}
+                                                        error={formErrors.email}
+                                                    />
+                                                    {editingContact?.id && editingContact.id !== "new" && editingContact?.email && (
+                                                        <RequestReviewButton
+                                                            contactId={editingContact.id}
+                                                            onSent={() => onRefreshContact?.()}
+                                                        />
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <InlineField
+                                                        label="Phone Number"
+                                                        value={editingContact?.phone || ""}
+                                                        onChange={(val) => {
+                                                            setEditingContact((prev: any) => prev ? { ...prev, phone: val } : null)
+                                                            if (formErrors.phone) setFormErrors(prev => { const next = {...prev}; delete next.phone; return next })
+                                                        }}
+                                                        onBlurSave={handleValidatedSave}
+                                                        error={formErrors.phone}
+                                                    />
+                                                    {editingContact?.id && editingContact.id !== "new" && editingContact?.phone && (
+                                                        <PhoneActions
+                                                            contactId={editingContact.id}
+                                                            phone={editingContact.phone}
+                                                            onLogged={() => onRefreshContact?.()}
+                                                        />
+                                                    )}
+                                                </div>
                                                 <InlineField
                                                     label="Business Name"
                                                     value={editingContact?.businessName || ""}
                                                     onChange={(val) => setEditingContact((prev: any) => prev ? { ...prev, businessName: val } : null)}
                                                     onBlurSave={handleValidatedSave}
-                                                    colSpan
-                                                />
-                                                <InlineField
-                                                    label="Military Base"
-                                                    value={editingContact?.militaryBase || ""}
-                                                    onChange={(val) => setEditingContact((prev: any) => prev ? { ...prev, militaryBase: val } : null)}
-                                                    onBlurSave={handleValidatedSave}
-                                                    placeholder="e.g. Luke AFB"
                                                     colSpan
                                                 />
                                             </div>
@@ -612,9 +714,8 @@ export function ContactDetailSheet({
                                                         {contactStatuses.length === 0 ? (
                                                             <>
                                                                 <option value="Lead">Lead</option>
-                                                                <option value="Forms Pending">Forms Pending</option>
-                                                                <option value="Booked">Booked</option>
-                                                                <option value="Active Stay">Active Stay</option>
+                                                                <option value="Customer">Customer</option>
+                                                                <option value="Past Customer">Past Customer</option>
                                                             </>
                                                         ) : (
                                                             contactStatuses.map((s) => (
@@ -624,21 +725,89 @@ export function ContactDetailSheet({
                                                     </select>
                                                 </div>
                                                 <InlineField
-                                                    label="Stay Start (optional)"
+                                                    label="Period Start (optional)"
                                                     type="date"
                                                     value={editingContact?.stayStartDate?.split?.('T')?.[0] || editingContact?.stayStartDate || ""}
                                                     onChange={(val) => setEditingContact((prev: any) => prev ? { ...prev, stayStartDate: val || null } : null)}
                                                     onBlurSave={handleValidatedSave}
                                                 />
                                                 <InlineField
-                                                    label="Stay End (optional)"
+                                                    label="Period End (optional)"
                                                     type="date"
                                                     value={editingContact?.stayEndDate?.split?.('T')?.[0] || editingContact?.stayEndDate || ""}
                                                     onChange={(val) => setEditingContact((prev: any) => prev ? { ...prev, stayEndDate: val || null } : null)}
                                                     onBlurSave={handleValidatedSave}
                                                 />
                                             </div>
-                                            <p className="text-xs text-muted-foreground">Stay dates are used when creating an opportunity and will pre-fill the deal form.</p>
+                                            <p className="text-xs text-muted-foreground">Period dates pre-fill new opportunities — useful for engagement, project, or service durations.</p>
+                                        </div>
+
+                                        {/* Do Not Disturb */}
+                                        <Separator />
+                                        <div className="space-y-3">
+                                            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                                                Do not disturb
+                                                {editingContact?.dndUntil && new Date(editingContact.dndUntil) > new Date() && (
+                                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-rose-500/10 text-rose-600 border-rose-500/20">
+                                                        Active
+                                                    </Badge>
+                                                )}
+                                            </h3>
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <span className="text-muted-foreground text-xs">Quiet until</span>
+                                                    <select
+                                                        value={(() => {
+                                                            const v = editingContact?.dndUntil
+                                                            if (!v) return "off"
+                                                            const d = new Date(v)
+                                                            if (d <= new Date()) return "off"
+                                                            return "custom"
+                                                        })()}
+                                                        onChange={(e) => {
+                                                            const opt = e.target.value
+                                                            const now = new Date()
+                                                            let next: string | null = null
+                                                            if (opt === "1h") next = new Date(now.getTime() + 60 * 60 * 1000).toISOString()
+                                                            else if (opt === "today") {
+                                                                const eod = new Date(now)
+                                                                eod.setHours(23, 59, 59, 999)
+                                                                next = eod.toISOString()
+                                                            }
+                                                            else if (opt === "3d") next = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString()
+                                                            else if (opt === "7d") next = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                                                            else if (opt === "off") next = null
+                                                            else return // custom — leave existing value alone
+                                                            setEditingContact((prev: any) => prev ? { ...prev, dndUntil: next } : null)
+                                                        }}
+                                                        className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                                    >
+                                                        <option value="off">Off</option>
+                                                        <option value="1h">1 hour</option>
+                                                        <option value="today">End of day</option>
+                                                        <option value="3d">3 days</option>
+                                                        <option value="7d">1 week</option>
+                                                        <option value="custom">Custom…</option>
+                                                    </select>
+                                                </div>
+                                                <InlineField
+                                                    label="Or pick a date/time"
+                                                    type="datetime-local"
+                                                    value={(() => {
+                                                        const v = editingContact?.dndUntil
+                                                        if (!v) return ""
+                                                        const d = new Date(v)
+                                                        if (isNaN(d.getTime())) return ""
+                                                        const pad = (n: number) => String(n).padStart(2, "0")
+                                                        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+                                                    })()}
+                                                    onChange={(val) => setEditingContact((prev: any) => prev ? { ...prev, dndUntil: val ? new Date(val).toISOString() : null } : null)}
+                                                    onBlurSave={handleValidatedSave}
+                                                />
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                When DND is active, the contact list shows a moon icon and bulk-message actions skip this contact. Manual messages still work.
+                                            </p>
                                         </div>
 
                                         {/* Custom Fields */}
@@ -755,8 +924,8 @@ export function ContactDetailSheet({
 
                                             <div className="space-y-3 mt-4">
                                                 {[
-                                                    { label: "Homeowner Lease", field: "homeownerLeaseSigned" },
-                                                    { label: "AF Crashpad Terms & Conditions", field: "termsConditionsSigned" },
+                                                    { label: "Master Agreement", field: "homeownerLeaseSigned" },
+                                                    { label: "Terms & Conditions", field: "termsConditionsSigned" },
                                                     { label: "Payment Authorization Form", field: "paymentAuthSigned" }
                                                 ].map((doc) => (
                                                     <div key={doc.field} className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-muted/10 hover:bg-muted/20 transition-colors">
@@ -787,10 +956,13 @@ export function ContactDetailSheet({
                                                 const messages = selectedContact.messages ?? []
                                                 const notes = selectedContact.notes ?? []
                                                 const timelineEvents = selectedContact.timelineEvents ?? []
-                                                const merged: { id: string; type: 'message' | 'note' | 'note_deleted'; createdAt: string; data: any }[] = [
+                                                const activities = (selectedContact as any).activities ?? []
+                                                const merged: { id: string; type: 'message' | 'note' | 'note_deleted' | 'activity' | 'call'; createdAt: string; data: any }[] = [
                                                     ...messages.map((m: any) => ({ id: `msg-${m.id}`, type: 'message' as const, createdAt: m.createdAt ?? '', data: m })),
                                                     ...notes.map((n: any) => ({ id: `note-${n.id}`, type: 'note' as const, createdAt: n.createdAt ?? '', data: n })),
                                                     ...timelineEvents.filter((e: any) => e.type === 'note_deleted').map((e: any) => ({ id: `ev-${e.id}`, type: 'note_deleted' as const, createdAt: e.createdAt ?? '', data: e })),
+                                                    ...timelineEvents.filter((e: any) => e.type === 'call').map((e: any) => ({ id: `call-${e.id}`, type: 'call' as const, createdAt: e.createdAt ?? '', data: e })),
+                                                    ...activities.map((a: any) => ({ id: `act-${a.id}`, type: 'activity' as const, createdAt: a.createdAt ?? '', data: a })),
                                                 ]
                                                 merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
@@ -842,6 +1014,84 @@ export function ContactDetailSheet({
                                                                     <div className="p-3 rounded-xl border bg-muted/30 text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
                                                                         {note.content}
                                                                     </div>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    }
+                                                    if (item.type === 'activity') {
+                                                        const act = item.data
+                                                        const isEmailEvent = typeof act.type === 'string' && act.type.startsWith('email_')
+                                                        const isSocialEvent = typeof act.type === 'string' && act.type.startsWith('social_')
+                                                        const icon = act.type === 'email_bounced'
+                                                            ? <AlertTriangle className="h-4 w-4 text-red-500" />
+                                                            : act.type === 'email_opened'
+                                                            ? <Eye className="h-4 w-4 text-emerald-500" />
+                                                            : act.type === 'email_clicked'
+                                                            ? <MousePointerClick className="h-4 w-4 text-emerald-600" />
+                                                            : isEmailEvent
+                                                            ? <Send className="h-4 w-4 text-blue-500" />
+                                                            : isSocialEvent
+                                                            ? <Share2 className="h-4 w-4 text-purple-500" />
+                                                            : <FileText className="h-4 w-4 text-primary" />
+                                                        const typeLabel = String(act.type || 'activity').replace(/_/g, ' ')
+                                                        return (
+                                                            <div key={item.id} className="relative flex items-center gap-4">
+                                                                <div className="absolute left-0 mt-1 flex h-10 w-10 items-center justify-center rounded-full border bg-background shadow-sm z-10">
+                                                                    {icon}
+                                                                </div>
+                                                                <div className="ml-12 lg:ml-14 flex-1 space-y-1">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-sm font-bold capitalize">
+                                                                            {typeLabel}
+                                                                        </span>
+                                                                        <span className="text-xs text-muted-foreground tabular-nums">
+                                                                            {act.createdAt ? new Date(act.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="p-3 rounded-xl border bg-muted/30 text-sm text-muted-foreground leading-relaxed">
+                                                                        <div>{act.subject}</div>
+                                                                        {act.body && (
+                                                                            <div className="mt-1 text-xs opacity-80 whitespace-pre-line">{act.body}</div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    }
+                                                    if (item.type === 'call') {
+                                                        const c = item.data
+                                                        const outcomeLabel: Record<string, string> = {
+                                                            connected: "Connected",
+                                                            voicemail: "Voicemail",
+                                                            no_answer: "No answer",
+                                                            wrong_number: "Wrong number",
+                                                        }
+                                                        return (
+                                                            <div key={item.id} className="relative flex items-center gap-4">
+                                                                <div className="absolute left-0 mt-1 flex h-10 w-10 items-center justify-center rounded-full border bg-background shadow-sm z-10">
+                                                                    <Phone className="h-4 w-4 text-amber-500" />
+                                                                </div>
+                                                                <div className="ml-12 lg:ml-14 flex-1 space-y-1">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-sm font-bold capitalize">
+                                                                            {c.direction === "inbound" ? "Inbound call" : "Outbound call"}
+                                                                            <span className="text-muted-foreground font-normal"> · {outcomeLabel[c.outcome] || c.outcome}</span>
+                                                                            {typeof c.durationMinutes === "number" && c.durationMinutes > 0 && (
+                                                                                <span className="text-muted-foreground font-normal"> · {c.durationMinutes}m</span>
+                                                                            )}
+                                                                        </span>
+                                                                        <span className="text-xs text-muted-foreground tabular-nums">
+                                                                            {new Date(item.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                                                        </span>
+                                                                    </div>
+                                                                    {c.notes && (
+                                                                        <div className="p-3 rounded-xl border bg-muted/30 text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+                                                                            {c.notes}
+                                                                        </div>
+                                                                    )}
+                                                                    {c.loggedByName && (
+                                                                        <div className="text-[10px] text-muted-foreground/60">Logged by {c.loggedByName}</div>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         )

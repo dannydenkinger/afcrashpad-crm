@@ -1,14 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Trash2, Edit2, GripVertical, X, Layers } from "lucide-react"
+import { Plus, Trash2, Edit2, GripVertical, X } from "lucide-react"
 import {
     Dialog,
     DialogContent,
@@ -194,87 +193,74 @@ export function CustomFieldsManager() {
 
     return (
         <>
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Layers className="h-4 w-4" />
-                        Custom Fields
-                    </CardTitle>
-                    <CardDescription>
-                        Define custom data fields for contacts and deals. These fields appear in detail views.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {/* Tab selector */}
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant={activeTab === "contact" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setActiveTab("contact")}
-                        >
-                            Contacts ({contactFields.length})
-                        </Button>
-                        <Button
-                            variant={activeTab === "deal" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setActiveTab("deal")}
-                        >
-                            Deals ({dealFields.length})
-                        </Button>
-                        <div className="flex-1" />
-                        <Button size="sm" onClick={openCreateDialog}>
-                            <Plus className="mr-1.5 h-3.5 w-3.5" />
-                            Add Field
+            <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant={activeTab === "contact" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setActiveTab("contact")}
+                    >
+                        Contacts ({contactFields.length})
+                    </Button>
+                    <Button
+                        variant={activeTab === "deal" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setActiveTab("deal")}
+                    >
+                        Deals ({dealFields.length})
+                    </Button>
+                    <div className="flex-1" />
+                    <Button size="sm" onClick={openCreateDialog}>
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                        Add field
+                    </Button>
+                </div>
+
+                {loading ? (
+                    <div className="text-center py-8 text-sm text-muted-foreground">Loading custom fields…</div>
+                ) : displayedFields.length === 0 ? (
+                    <div className="text-center py-8 border rounded-lg border-dashed">
+                        <p className="text-sm text-muted-foreground">No custom fields defined for {activeTab === "contact" ? "contacts" : "deals"}.</p>
+                        <Button variant="link" size="sm" onClick={openCreateDialog} className="mt-2">
+                            Create your first custom field
                         </Button>
                     </div>
-
-                    {/* Field list */}
-                    {loading ? (
-                        <div className="text-center py-8 text-sm text-muted-foreground">Loading custom fields...</div>
-                    ) : displayedFields.length === 0 ? (
-                        <div className="text-center py-8 border rounded-lg border-dashed">
-                            <p className="text-sm text-muted-foreground">No custom fields defined for {activeTab === "contact" ? "contacts" : "deals"}.</p>
-                            <Button variant="link" size="sm" onClick={openCreateDialog} className="mt-2">
-                                Create your first custom field
-                            </Button>
-                        </div>
-                    ) : (
-                        <div className="space-y-2">
-                            {displayedFields.map((field) => (
-                                <div key={field.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-muted/30 transition-colors group">
-                                    <GripVertical className="h-4 w-4 text-muted-foreground/30" />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-sm font-medium">{field.name}</span>
-                                            {field.required && (
-                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">Required</Badge>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <Badge className={`text-[10px] px-1.5 py-0 border-0 ${FIELD_TYPE_COLORS[field.type] || ""}`}>
-                                                {FIELD_TYPES.find((t) => t.value === field.type)?.label || field.type}
-                                            </Badge>
-                                            {field.type === "dropdown" && field.options.length > 0 && (
-                                                <span className="text-[10px] text-muted-foreground">
-                                                    {field.options.length} option{field.options.length !== 1 ? "s" : ""}
-                                                </span>
-                                            )}
-                                        </div>
+                ) : (
+                    <div className="space-y-2">
+                        {displayedFields.map((field) => (
+                            <div key={field.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-muted/30 transition-colors group">
+                                <GripVertical className="h-4 w-4 text-muted-foreground/30" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium">{field.name}</span>
+                                        {field.required && (
+                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">Required</Badge>
+                                        )}
                                     </div>
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(field)}>
-                                            <Edit2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteTarget(field)}>
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <Badge className={`text-[10px] px-1.5 py-0 border-0 ${FIELD_TYPE_COLORS[field.type] || ""}`}>
+                                            {FIELD_TYPES.find((t) => t.value === field.type)?.label || field.type}
+                                        </Badge>
+                                        {field.type === "dropdown" && field.options.length > 0 && (
+                                            <span className="text-[10px] text-muted-foreground">
+                                                {field.options.length} option{field.options.length !== 1 ? "s" : ""}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(field)}>
+                                        <Edit2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteTarget(field)}>
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
 
             {/* Create/Edit Dialog */}
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

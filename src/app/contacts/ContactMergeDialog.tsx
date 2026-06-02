@@ -38,11 +38,8 @@ const MERGE_FIELDS = [
     { key: "name", label: "Name" },
     { key: "email", label: "Email" },
     { key: "phone", label: "Phone" },
-    { key: "militaryBase", label: "Military Base" },
     { key: "businessName", label: "Business Name" },
     { key: "status", label: "Status" },
-    { key: "stayStartDate", label: "Stay Start Date" },
-    { key: "stayEndDate", label: "Stay End Date" },
 ]
 
 export function ContactMergeDialog({
@@ -66,15 +63,8 @@ export function ContactMergeDialog({
 
     if (!contactA || !contactB) return null
 
-    const formatValue = (val: any, key: string): string => {
+    const formatValue = (val: any, _key: string): string => {
         if (!val) return "--"
-        if (key === "stayStartDate" || key === "stayEndDate") {
-            try {
-                return new Date(val).toLocaleDateString()
-            } catch {
-                return String(val)
-            }
-        }
         return String(val)
     }
 

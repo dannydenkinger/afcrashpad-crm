@@ -21,10 +21,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { Wand2, Loader2, Sparkles, Network, Crown } from "lucide-react"
+import { Wand2, Loader2, Sparkles, Network, Crown, Lock } from "lucide-react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { getClusterContext } from "./actions"
 import type { ArticleType, ContentCluster, AIGenerateResponse } from "./types"
+import { useWorkspacePlan } from "@/hooks/useWorkspacePlan"
 
 interface AIGenerateDialogProps {
     open: boolean
@@ -51,6 +53,8 @@ export default function AIGenerateDialog({
     const [targetWordCount, setTargetWordCount] = useState("")
     const [additionalInstructions, setAdditionalInstructions] = useState("")
     const [generating, setGenerating] = useState(false)
+    const { hasFeature, loading: planLoading } = useWorkspacePlan()
+    const blogAIUnlocked = hasFeature("aiBlogGeneration")
 
     // Cluster context
     const [selectedClusterId, setSelectedClusterId] = useState(preselectedClusterId || "")
@@ -199,6 +203,52 @@ export default function AIGenerateDialog({
         setGenerating(false)
     }
 
+    // Max-only feature — show upgrade promo for Free + Pro workspaces
+    if (!planLoading && !blogAIUnlocked) {
+        return (
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Sparkles className="h-5 w-5 text-indigo-500" />
+                            AI blog generation is a Max feature
+                        </DialogTitle>
+                        <DialogDescription>
+                            Generate a full 1,500+ word SEO-optimized article in 60 seconds —
+                            with E-E-A-T signals, internal linking, and proper structure.
+                            Available exclusively on the Max plan.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="rounded-lg border bg-gradient-to-br from-indigo-500/5 to-indigo-500/10 p-4 space-y-2 text-sm">
+                        <div className="flex items-start gap-2">
+                            <Sparkles className="h-3.5 w-3.5 text-indigo-500 mt-0.5 shrink-0" />
+                            <span>Standalone articles, pillar pages, or topic clusters</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                            <Sparkles className="h-3.5 w-3.5 text-indigo-500 mt-0.5 shrink-0" />
+                            <span>Auto-imports cluster context for internal linking</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                            <Sparkles className="h-3.5 w-3.5 text-indigo-500 mt-0.5 shrink-0" />
+                            <span>2026 SEO best practices — BLUF, E-E-A-T, structured data</span>
+                        </div>
+                    </div>
+                    <DialogFooter className="gap-2">
+                        <Button variant="outline" onClick={() => onOpenChange(false)}>
+                            Maybe later
+                        </Button>
+                        <Link href="/settings/billing" onClick={() => onOpenChange(false)}>
+                            <Button>
+                                <Crown className="h-3.5 w-3.5 mr-1.5" />
+                                Upgrade to Max
+                            </Button>
+                        </Link>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        )
+    }
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[550px]">
@@ -316,7 +366,7 @@ export default function AIGenerateDialog({
                         <Input
                             value={secondaryKeywords}
                             onChange={(e) => setSecondaryKeywords(e.target.value)}
-                            placeholder="Comma-separated: military housing, TDY lodging, crashpad"
+                            placeholder="Comma-separated: keyword one, keyword two, keyword three"
                             className="mt-1"
                         />
                     </div>

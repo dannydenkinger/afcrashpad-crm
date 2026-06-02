@@ -36,7 +36,7 @@ export function SessionTimeoutWarning() {
         }, TIMEOUT_MS - WARNING_MS)
 
         timeoutRef.current = setTimeout(() => {
-            signOut({ callbackUrl: "/" })
+            signOut({ callbackUrl: "/login" })
         }, TIMEOUT_MS)
     }, [])
 
@@ -75,7 +75,7 @@ export function SessionTimeoutWarning() {
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                    <AlertDialogCancel onClick={() => signOut({ callbackUrl: "/" })}>
+                    <AlertDialogCancel onClick={() => signOut({ callbackUrl: "/login" })}>
                         Sign Out
                     </AlertDialogCancel>
                     <AlertDialogAction onClick={handleStaySignedIn}>

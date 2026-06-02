@@ -2,7 +2,7 @@ export interface HaroSettings {
     // Bio & credentials
     name: string
     businessName: string
-    businessIntro: string // e.g. "a successful military lodging provider doing over 300k/yr"
+    businessIntro: string // e.g. "a successful business owner in the [industry] space"
     linkedIn: string
     instagram: string
     twitter: string
@@ -111,28 +111,16 @@ export interface HaroMetrics {
 }
 
 export const DEFAULT_HARO_SETTINGS: HaroSettings = {
-    name: "Daniel Denkinger",
-    businessName: "Air Force Crashpad",
-    businessIntro: "a successful military lodging provider that does over 300k/yr",
-    linkedIn: "https://www.linkedin.com/in/danny-denkinger-549171130/",
+    name: "",
+    businessName: "",
+    businessIntro: "",
+    linkedIn: "",
     instagram: "",
     twitter: "",
-    website: "https://afcrashpad.com",
+    website: "",
     headshotUrl: "",
-    signoff: "Will be in the office for the rest of the day - if you need anything just shout & I'll take care of it.\n\nCheers,\nDaniel",
-    expertiseTopics: [
-        "military",
-        "real estate",
-        "entrepreneurship",
-        "small business",
-        "aviation",
-        "finance",
-        "AI",
-        "lodging",
-        "property management",
-        "veteran",
-        "Air Force",
-    ],
+    signoff: "",
+    expertiseTopics: [],
     responseTone: 65,
     responseLength: "medium",
     responseStyle: "friendly_expert",

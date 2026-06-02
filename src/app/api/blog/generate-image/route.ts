@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/auth"
+import { getAuthSession } from "@/lib/auth-guard"
 import { rateLimit } from "@/lib/rate-limit"
 
 const GEMINI_MODEL = "gemini-3.1-flash-image-preview"
@@ -7,7 +7,7 @@ const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models
 
 export async function POST(request: NextRequest) {
     try {
-        const session = await auth()
+        const session = await getAuthSession()
         if (!session?.user) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
         }
@@ -138,7 +138,7 @@ CRITICAL RULES:
 - Absolutely NO text, words, letters, numbers, watermarks, or logos anywhere in the image
 - NO artificial frames, vignettes, or decorative borders
 - High detail, sharp focus, professional color grading
-- Suitable for a military/aviation housing and travel website`
+- Suitable for a professional business blog`
 }
 
 /**

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/auth"
-import Anthropic from "@anthropic-ai/sdk"
+import { getAuthSession } from "@/lib/auth-guard"
 import type { AIGenerateRequest } from "@/app/marketing/blog/types"
 import { rateLimit, getRateLimitKey } from "@/lib/rate-limit"
+import { runAI, AIKeyMissingError } from "@/lib/ai/run-ai"
+import { requirePlan } from "@/lib/billing/plans-server"
+import { PlanNotAllowedError } from "@/lib/billing/plans"
 
 export async function POST(request: NextRequest) {
     try {
-        const session = await auth()
+        const session = await getAuthSession()
         if (!session?.user) {
             return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
         }
@@ -17,12 +19,22 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: "Rate limit exceeded. Please wait a moment." }, { status: 429 })
         }
 
-        const apiKey = process.env.ANTHROPIC_API_KEY
-        if (!apiKey) {
-            return NextResponse.json(
-                { success: false, error: "ANTHROPIC_API_KEY not configured" },
-                { status: 500 }
-            )
+        const workspaceId = (session.user as { workspaceId?: string }).workspaceId
+        if (!workspaceId) {
+            return NextResponse.json({ success: false, error: "No workspace selected" }, { status: 400 })
+        }
+
+        // AI blog generation is Max-only.
+        try {
+            await requirePlan(workspaceId, "max", "AI blog generation")
+        } catch (err) {
+            if (err instanceof PlanNotAllowedError) {
+                return NextResponse.json(
+                    { success: false, error: err.message, requiredPlan: "max" },
+                    { status: 402 },
+                )
+            }
+            throw err
         }
 
         const body: AIGenerateRequest = await request.json()
@@ -58,31 +70,31 @@ Important: Return ONLY the JSON object, no markdown code fences or other text.`
 Focus keyword: "${focusKeyword}"
 ${secondaryKeywords.length > 0 ? `Secondary keywords: ${secondaryKeywords.join(", ")}` : ""}
 Target word count: ~${wordTarget} words
-${tone ? `Tone: ${tone}` : "Tone: Professional but approachable, written for military service members"}
+${tone ? `Tone: ${tone}` : "Tone: Professional but approachable"}
 ${clusterContext ? `\nContext from pillar article:\n${clusterContext}` : ""}
 ${additionalInstructions ? `\nAdditional instructions:\n${additionalInstructions}` : ""}
 
-The article is for afcrashpad.com, a service providing crashpad housing for Air Force personnel during temporary duty (TDY) and permanent change of station (PCS).`
+Write the article in a professional but approachable style suitable for a business blog.`
 
-        const client = new Anthropic({ apiKey })
-
-        const message = await client.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 8000,
-            messages: [
-                {
-                    role: "user",
-                    content: userPrompt,
-                },
-            ],
-            system: systemPrompt,
-        })
-
-        // Extract text from response
-        const responseText = message.content
-            .filter((block): block is Anthropic.TextBlock => block.type === "text")
-            .map((block) => block.text)
-            .join("")
+        let responseText: string
+        try {
+            const ai = await runAI({
+                workspaceId,
+                feature: "blog_generation",
+                system: systemPrompt,
+                prompt: userPrompt,
+                maxTokens: 8000,
+            })
+            responseText = ai.text
+        } catch (err) {
+            if (err instanceof AIKeyMissingError) {
+                return NextResponse.json(
+                    { success: false, error: "Add an API key in Settings → Integrations to enable AI content generation." },
+                    { status: 400 },
+                )
+            }
+            throw err
+        }
 
         // Parse the JSON response
         let parsed

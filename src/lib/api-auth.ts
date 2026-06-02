@@ -7,10 +7,14 @@ import { adminDb } from "@/lib/firebase-admin"
  * Updates the `lastUsedAt` timestamp on successful validation.
  *
  * Returns the API key document data if valid, null otherwise.
+ *
+ * NOTE: API keys are global (not workspace-scoped) since they identify
+ * the caller. The returned data includes workspaceId so callers can
+ * scope subsequent queries.
  */
 export async function validateApiKey(
     request: Request
-): Promise<{ id: string; name: string; userId: string } | null> {
+): Promise<{ id: string; name: string; userId: string; workspaceId: string } | null> {
     // Extract key from headers
     let apiKey = request.headers.get("x-api-key")
 
@@ -26,7 +30,7 @@ export async function validateApiKey(
     // Hash the provided key
     const keyHash = crypto.createHash("sha256").update(apiKey).digest("hex")
 
-    // Look up the key in Firestore
+    // Look up the key in Firestore (global lookup — not tenant-scoped)
     const snapshot = await adminDb
         .collection("api_keys")
         .where("keyHash", "==", keyHash)
@@ -50,5 +54,6 @@ export async function validateApiKey(
         id: doc.id,
         name: data.name,
         userId: data.userId,
+        workspaceId: data.workspaceId,
     }
 }

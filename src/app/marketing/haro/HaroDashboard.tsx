@@ -81,7 +81,10 @@ import {
     regenerateHaroResponse,
     markPlacement,
     deleteHaroBatch,
+    getHaroConnectionStatus,
 } from "./actions"
+import { AlertCircle, X } from "lucide-react"
+import Link from "next/link"
 import { HaroSettings as HaroSettingsPanel } from "./HaroSettings"
 
 type View = "dashboard" | "settings" | "batch"
@@ -143,18 +146,37 @@ export function HaroDashboard() {
     // Delete confirmation
     const [deleteBatchId, setDeleteBatchId] = useState<string | null>(null)
 
+    // Gmail connection status
+    const [gmailConnected, setGmailConnected] = useState<boolean | null>(null)
+    const [gmailBannerDismissed, setGmailBannerDismissed] = useState(false)
+
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            setGmailBannerDismissed(window.localStorage.getItem("haro:gmail-banner-dismissed") === "1")
+        }
+    }, [])
+
+    function dismissGmailBanner() {
+        setGmailBannerDismissed(true)
+        if (typeof window !== "undefined") {
+            window.localStorage.setItem("haro:gmail-banner-dismissed", "1")
+        }
+    }
+
     const fetchData = useCallback(async () => {
         try {
-            const [s, m, b, q] = await Promise.all([
+            const [s, m, b, q, conn] = await Promise.all([
                 getHaroSettings(),
                 getHaroMetrics(),
                 getHaroBatches(),
                 getHaroQueries({ isRelevant: true, limit: 100 }),
+                getHaroConnectionStatus().catch(() => ({ gmail: false })),
             ])
             setSettings(s)
             setMetrics(m)
             setBatches(b)
             setQueries(q)
+            setGmailConnected(!!conn.gmail)
         } catch (err) {
             console.error("Failed to fetch HARO data:", err)
         } finally {
@@ -294,6 +316,34 @@ export function HaroDashboard() {
 
     return (
         <div className="space-y-6">
+            {gmailConnected === false && !gmailBannerDismissed && (
+                <Card className="border-amber-500/40 bg-amber-500/5">
+                    <CardContent className="pt-4 pb-4 flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="flex-1 text-sm">
+                            <div className="font-medium">Connect Gmail to fetch HARO emails</div>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                                HARO works by reading queries from your inbox. Sign in with Google in your profile to enable fetching.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <Link href="/settings/integrations">
+                                <Button size="sm">Connect Gmail</Button>
+                            </Link>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                onClick={dismissGmailBanner}
+                                aria-label="Dismiss"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>

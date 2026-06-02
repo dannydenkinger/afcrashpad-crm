@@ -1,19 +1,21 @@
 "use server"
 
+import { tenantDb } from "@/lib/tenant-db"
+import { requireAuth } from "@/lib/auth-guard"
 import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
 import { revalidatePath } from "next/cache"
 import { logAudit } from "@/lib/audit"
 import type { CommissionEntry, CommissionSummary, CommissionsData } from "./types"
 
 export async function getCommissionsData(): Promise<{ success: boolean; data?: CommissionsData; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         const [commissionsSnap, settingsDoc] = await Promise.all([
-            adminDb.collection("commissions").orderBy("earnedAt", "desc").get(),
-            adminDb.collection("settings").doc("commissions").get(),
+            db.collection("commissions").orderBy("earnedAt", "desc").get(),
+            db.settingsDoc("commissions").get(),
         ])
 
         const defaultRate = settingsDoc.exists ? (settingsDoc.data()?.defaultRate ?? 10) : 10
@@ -85,12 +87,13 @@ export async function getCommissionsData(): Promise<{ success: boolean; data?: C
 }
 
 export async function recordCommission(opportunityId: string, agentId: string) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         // Get opportunity data
-        const oppDoc = await adminDb.collection("opportunities").doc(opportunityId).get()
+        const oppDoc = await db.doc("opportunities", opportunityId).get()
         if (!oppDoc.exists) return { success: false, error: "Opportunity not found" }
 
         const oppData = oppDoc.data()!
@@ -99,20 +102,20 @@ export async function recordCommission(opportunityId: string, agentId: string) {
         // Get contact name
         let contactName = "Unknown"
         if (contactId) {
-            const contactDoc = await adminDb.collection("contacts").doc(contactId).get()
+            const contactDoc = await db.doc("contacts", contactId).get()
             if (contactDoc.exists) contactName = contactDoc.data()?.name || "Unknown"
         }
 
-        // Get agent name
+        // Get agent name (users are global)
         const agentDoc = await adminDb.collection("users").doc(agentId).get()
         const agentName = agentDoc.exists ? agentDoc.data()?.name || "Unknown" : "Unknown"
 
         // Get commission rate
-        const settingsDoc = await adminDb.collection("settings").doc("commissions").get()
+        const settingsDoc = await db.settingsDoc("commissions").get()
         const defaultRate = settingsDoc.exists ? (settingsDoc.data()?.defaultRate ?? 10) : 10
 
         // Check for agent-specific rate
-        const agentRatesDoc = await adminDb.collection("settings").doc("commission_rates").get()
+        const agentRatesDoc = await db.settingsDoc("commission_rates").get()
         const agentRates = agentRatesDoc.exists ? agentRatesDoc.data() || {} : {}
         const rate = agentRates[agentId] ?? defaultRate
 
@@ -120,7 +123,7 @@ export async function recordCommission(opportunityId: string, agentId: string) {
         const commissionAmount = Math.round((dealValue * rate) / 100 * 100) / 100
 
         // Check if already recorded
-        const existing = await adminDb.collection("commissions")
+        const existing = await db.collection("commissions")
             .where("opportunityId", "==", opportunityId)
             .where("agentId", "==", agentId)
             .limit(1)
@@ -130,11 +133,11 @@ export async function recordCommission(opportunityId: string, agentId: string) {
             return { success: false, error: "Commission already recorded for this deal and agent" }
         }
 
-        await adminDb.collection("commissions").add({
+        await db.add("commissions", {
             opportunityId,
             dealName: oppData.name || `${contactName}'s Deal`,
             contactName,
-            base: oppData.militaryBase || null,
+            base: null,
             agentId,
             agentName,
             dealValue,
@@ -146,8 +149,8 @@ export async function recordCommission(opportunityId: string, agentId: string) {
             createdAt: new Date(),
         })
 
-        logAudit({
-            userId: (session.user as any).id || "",
+        logAudit(workspaceId, {
+            userId: session.user.id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
             action: "create",
@@ -165,11 +168,12 @@ export async function recordCommission(opportunityId: string, agentId: string) {
 }
 
 export async function markCommissionPaid(commissionId: string) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        await adminDb.collection("commissions").doc(commissionId).update({
+        await db.doc("commissions", commissionId).update({
             status: "paid",
             paidAt: new Date(),
         })
@@ -183,12 +187,13 @@ export async function markCommissionPaid(commissionId: string) {
 }
 
 export async function updateDefaultCommissionRate(rate: number) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        await adminDb.collection("settings").doc("commissions").set(
-            { defaultRate: rate, updatedAt: new Date() },
+        await db.settingsDoc("commissions").set(
+            { defaultRate: rate, updatedAt: new Date(), workspaceId },
             { merge: true }
         )
 
@@ -201,12 +206,13 @@ export async function updateDefaultCommissionRate(rate: number) {
 }
 
 export async function updateAgentCommissionRate(agentId: string, rate: number) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        await adminDb.collection("settings").doc("commission_rates").set(
-            { [agentId]: rate, updatedAt: new Date() },
+        await db.settingsDoc("commission_rates").set(
+            { [agentId]: rate, updatedAt: new Date(), workspaceId },
             { merge: true }
         )
 

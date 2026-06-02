@@ -14,6 +14,10 @@ import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog"
+import { Field } from "@/components/ui/Field"
+import {
     getAllDocuments, updateDocumentContent, createDraftDocument,
     sendForSignatures, bulkDeleteDocuments, bulkUpdateStatus,
     getContactList, type DocRecord,
@@ -24,6 +28,7 @@ import { FolderBreadcrumb } from "./components/FolderBreadcrumb"
 import { DndContext, type DragEndEvent } from "@dnd-kit/core"
 import { useIsMobile } from "@/hooks/useIsMobile"
 import { toast } from "sonner"
+import { sanitizeHtml } from "@/lib/sanitize-html"
 
 type StatusFilter = "ALL" | "DRAFT" | "LINK" | "PENDING" | "SIGNED"
 
@@ -311,41 +316,38 @@ export default function DocumentsPage() {
         setUploading(true)
 
         const folderPath = activeFolderPath !== "/" ? activeFolderPath : undefined
+        const total = files.length
+        let succeeded = 0
+        const failed: string[] = []
+
+        const { uploadDocument } = await import("@/lib/upload-document")
 
         for (const file of Array.from(files)) {
-            const formData = new FormData()
-            formData.append("file", file)
-            if (folderPath) formData.append("folderPath", folderPath)
-            try {
-                if (uploadContact) {
-                    const res = await fetch(`/api/contacts/${uploadContact}/documents/upload`, {
-                        method: "POST",
-                        body: formData,
-                    })
-                    if (!res.ok) {
-                        const data = await res.json()
-                        toast.error(data.error || `Failed to upload ${file.name}`)
-                    }
-                } else {
-                    const res = await fetch("/api/documents/upload", {
-                        method: "POST",
-                        body: formData,
-                    })
-                    if (!res.ok) {
-                        const data = await res.json()
-                        toast.error(data.error || `Failed to upload ${file.name}`)
-                    }
-                }
-            } catch {
-                toast.error(`Failed to upload ${file.name}`)
+            const res = await uploadDocument(file, {
+                contactId: uploadContact || undefined,
+                folderPath,
+            })
+            if (res.success) {
+                succeeded++
+            } else {
+                failed.push(`${file.name}: ${res.error}`)
             }
         }
 
-        toast.success("Upload complete")
         setUploading(false)
-        setShowUpload(false)
-        setUploadContact("")
         fetchDocuments()
+
+        if (failed.length === 0) {
+            toast.success(total === 1 ? "Upload complete" : `Uploaded ${succeeded} files`)
+            setShowUpload(false)
+            setUploadContact("")
+        } else if (succeeded === 0) {
+            toast.error(`Upload failed: ${failed[0]}${failed.length > 1 ? ` (and ${failed.length - 1} more)` : ""}`)
+            // Keep the dialog open so the user can retry
+        } else {
+            toast.warning(`Uploaded ${succeeded} of ${total}. ${failed.length} failed — try again.`, { duration: 6000 })
+            // Keep the dialog open so the user can retry the failed batch
+        }
     }
 
     const selectDoc = (doc: DocRecord) => {
@@ -629,7 +631,7 @@ export default function DocumentsPage() {
                         <div className="p-6 max-w-3xl mx-auto">
                             <div
                                 className="prose prose-sm dark:prose-invert max-w-none"
-                                dangerouslySetInnerHTML={{ __html: selectedDoc.generatedContent }}
+                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedDoc.generatedContent) }}
                             />
                             {selectedDoc.signatureUrl && (
                                 <div className="mt-8 pt-4 border-t">
@@ -775,7 +777,9 @@ export default function DocumentsPage() {
                                     {showFolders ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
                                 </Button>
                             )}
-                            <h2 className="text-lg font-bold">Documents</h2>
+                            <h2 className="text-lg font-semibold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                                Documents
+                            </h2>
                         </div>
                         <div className="flex items-center gap-2">
                             <Button size="sm" variant="outline" onClick={() => setShowUpload(true)} className="h-8 text-xs">
@@ -845,23 +849,24 @@ export default function DocumentsPage() {
                 </div>
 
                 {/* New Draft Dialog */}
-                {showNewDraft && (
-                    <div className="p-4 border-b bg-muted/20 shrink-0">
-                        <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm font-semibold">New Draft Document</p>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowNewDraft(false)}>
-                                <X className="h-3.5 w-3.5" />
-                            </Button>
-                        </div>
-                        <div className="space-y-2">
-                            <Input
-                                placeholder="Document name..."
-                                value={newDraftName}
-                                onChange={e => setNewDraftName(e.target.value)}
-                                className="h-8 text-xs"
-                            />
-                            <div>
-                                <p className="text-xs text-muted-foreground mb-1">Attach to contact (optional):</p>
+                <Dialog open={showNewDraft} onOpenChange={setShowNewDraft}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>New draft document</DialogTitle>
+                            <DialogDescription>
+                                Drafts can be edited freely before sending for signatures or sharing as a link.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-2">
+                            <Field label="Document name" required>
+                                <Input
+                                    placeholder="e.g. NDA, Service Agreement"
+                                    value={newDraftName}
+                                    onChange={e => setNewDraftName(e.target.value)}
+                                    autoFocus
+                                />
+                            </Field>
+                            <Field label="Attach to contact" hint="Optional. Leave blank for a standalone draft.">
                                 <ContactSelector
                                     value={newDraftContact}
                                     onChange={setNewDraftContact}
@@ -870,41 +875,47 @@ export default function DocumentsPage() {
                                     showDropdown={showContactDropdown}
                                     setShowDropdown={setShowContactDropdown}
                                 />
-                            </div>
-                            <textarea
-                                placeholder="Document content (HTML)..."
-                                value={newDraftContent}
-                                onChange={e => setNewDraftContent(e.target.value)}
-                                className="w-full h-24 p-2 rounded-md border bg-background text-xs font-mono resize-none"
-                            />
-                            <Button size="sm" onClick={handleCreateDraft} className="h-8 text-xs">
-                                Create Draft
-                            </Button>
+                            </Field>
+                            <Field label="Initial content" hint="HTML supported. You can format and edit it after creating the draft.">
+                                <textarea
+                                    placeholder="<h1>Title</h1><p>Body…</p>"
+                                    value={newDraftContent}
+                                    onChange={e => setNewDraftContent(e.target.value)}
+                                    className="w-full h-32 p-2 rounded-md border bg-background text-xs font-mono resize-none"
+                                />
+                            </Field>
                         </div>
-                    </div>
-                )}
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setShowNewDraft(false)}>Cancel</Button>
+                            <Button onClick={handleCreateDraft} disabled={!newDraftName.trim()}>
+                                Create draft
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
                 {/* Upload Dialog */}
-                {showUpload && (
-                    <div className="p-4 border-b bg-muted/20 shrink-0">
-                        <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm font-semibold">Upload Document</p>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowUpload(false)}>
-                                <X className="h-3.5 w-3.5" />
-                            </Button>
-                        </div>
-                        <div className="space-y-2">
-                            <p className="text-xs text-muted-foreground">Optionally attach to a contact, or leave blank for a standalone document:</p>
-                            <ContactSelector
-                                value={uploadContact}
-                                onChange={setUploadContact}
-                                searchValue={uploadContactSearch}
-                                onSearchChange={setUploadContactSearch}
-                                showDropdown={showUploadContactDropdown}
-                                setShowDropdown={setShowUploadContactDropdown}
-                            />
+                <Dialog open={showUpload} onOpenChange={setShowUpload}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>Upload document</DialogTitle>
+                            <DialogDescription>
+                                Files appear in the document list and can be sent for e-signature.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-2">
+                            <Field label="Attach to contact" hint="Optional. Leave blank for a standalone document.">
+                                <ContactSelector
+                                    value={uploadContact}
+                                    onChange={setUploadContact}
+                                    searchValue={uploadContactSearch}
+                                    onSearchChange={setUploadContactSearch}
+                                    showDropdown={showUploadContactDropdown}
+                                    setShowDropdown={setShowUploadContactDropdown}
+                                />
+                            </Field>
                             <div
-                                className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                                className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
                                 onClick={() => fileInputRef.current?.click()}
                                 onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add("border-primary") }}
                                 onDragLeave={e => e.currentTarget.classList.remove("border-primary")}
@@ -915,12 +926,15 @@ export default function DocumentsPage() {
                                 }}
                             >
                                 {uploading ? (
-                                    <Loader2 className="h-6 w-6 mx-auto animate-spin text-muted-foreground" />
+                                    <>
+                                        <Loader2 className="h-7 w-7 mx-auto mb-2 animate-spin text-primary" />
+                                        <p className="text-sm text-muted-foreground">Uploading…</p>
+                                    </>
                                 ) : (
                                     <>
-                                        <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground/40" />
-                                        <p className="text-xs text-muted-foreground">Drop files here or click to browse</p>
-                                        <p className="text-xs text-muted-foreground/60 mt-1">PDF, DOC, XLS, images — max 25MB</p>
+                                        <Upload className="h-7 w-7 mx-auto mb-2 text-muted-foreground/50" />
+                                        <p className="text-sm font-medium">Drop files here or click to browse</p>
+                                        <p className="text-xs text-muted-foreground mt-1">PDF, DOC, XLS, images — max 25 MB each</p>
                                     </>
                                 )}
                             </div>
@@ -933,8 +947,13 @@ export default function DocumentsPage() {
                                 onChange={e => handleFileUpload(e.target.files)}
                             />
                         </div>
-                    </div>
-                )}
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setShowUpload(false)} disabled={uploading}>
+                                Done
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
                 {/* Content */}
                 <div className={`flex-1 min-h-0 ${isMobile ? "" : "flex"}`}>

@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-    Loader2, Users, DollarSign, Plus, Share2, ArrowRight, Banknote, CheckCircle2, Send, CreditCard, Mail, Calendar,
+    Loader2, Users, DollarSign, Plus, Share2, ArrowRight, Banknote, CheckCircle2, Send, CreditCard, Mail, Calendar, AlertCircle, RefreshCw,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -20,6 +20,7 @@ import {
     sendPayoutFormEmail,
 } from "./actions"
 import type { ReferralsData, ReferralStatus } from "./types"
+import { EmptyState } from "@/components/ui/EmptyState"
 
 function formatCurrency(value: number) {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
@@ -34,8 +35,10 @@ function getInitials(name: string) {
 const STATUS_CONFIG: Record<ReferralStatus, { label: string; color: string; accent: string }> = {
     pending: { label: "Pending", color: "bg-slate-500/10 text-slate-400 border-slate-500/20", accent: "bg-slate-400" },
     contacted: { label: "Contacted", color: "bg-blue-500/10 text-blue-500 border-blue-500/20", accent: "bg-blue-500" },
-    booked: { label: "Booked", color: "bg-violet-500/10 text-violet-500 border-violet-500/20", accent: "bg-violet-500" },
-    active_tenant: { label: "Active Tenant", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20", accent: "bg-emerald-500" },
+    booked: { label: "Signed", color: "bg-violet-500/10 text-violet-500 border-violet-500/20", accent: "bg-violet-500" },
+    // Storage key kept as "active_tenant" for back-compat with existing data
+    // — display label is now generic.
+    active_tenant: { label: "Active", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20", accent: "bg-emerald-500" },
     paid: { label: "Paid", color: "bg-emerald-500/10 text-emerald-600 border-emerald-600/30", accent: "bg-emerald-600" },
     lost: { label: "Lost", color: "bg-red-500/10 text-red-500 border-red-500/20", accent: "bg-red-500" },
 }
@@ -44,10 +47,43 @@ const STATUS_ORDER: ReferralStatus[] = ["pending", "contacted", "booked", "activ
 
 const METHOD_LABELS: Record<string, string> = { zelle: "Zelle", venmo: "Venmo", paypal: "PayPal", check: "Check/Mail" }
 
-export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; end: string } | null }) {
+function LoadErrorPanel({ message, onRetry, label = "referral data" }: { message: string | null; onRetry: () => Promise<void>; label?: string }) {
+    const [retrying, setRetrying] = useState(false)
+    return (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 sm:p-8 text-center">
+            <div className="mx-auto h-10 w-10 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-3">
+                <AlertCircle className="h-5 w-5" />
+            </div>
+            <h3 className="text-sm font-semibold mb-1">Couldn&apos;t load {label}</h3>
+            <p className="text-xs text-muted-foreground max-w-md mx-auto mb-4">
+                {message || `Something went wrong fetching your ${label}.`} If this is your first time here, the database may still be provisioning indexes — give it a minute and try again.
+            </p>
+            <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                    setRetrying(true)
+                    try { await onRetry() } finally { setRetrying(false) }
+                }}
+                disabled={retrying}
+                className="h-8 text-xs"
+            >
+                {retrying ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                {retrying ? "Retrying…" : "Try again"}
+            </Button>
+        </div>
+    )
+}
+
+export function ReferralTracker({ dateFilter, viewContext = "referrals" }: { dateFilter?: { start: string; end: string } | null; viewContext?: "referrals" | "payouts" }) {
     const [data, setData] = useState<ReferralsData | null>(null)
     const [loading, setLoading] = useState(true)
-    const [filter, setFilter] = useState<string>("all")
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [filter, setFilter] = useState<string>(viewContext === "payouts" ? "payout_due" : "all")
     const [isCreateOpen, setIsCreateOpen] = useState(false)
     const [creating, setCreating] = useState(false)
     const [updatingId, setUpdatingId] = useState<string | null>(null)
@@ -66,8 +102,13 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
     }, [])
 
     async function loadData() {
+        setLoadError(null)
         const res = await getReferralsData()
-        if (res.success && res.data) setData(res.data)
+        if (res.success && res.data) {
+            setData(res.data)
+        } else {
+            setLoadError(res.error || "Failed to load referral data")
+        }
         setLoading(false)
     }
 
@@ -158,77 +199,136 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
         )
     }
 
-    if (!data) {
-        return <div className="text-center py-20 text-muted-foreground">Failed to load referral data.</div>
+    if (loadError || !data) {
+        return (
+            <LoadErrorPanel
+                message={loadError}
+                onRetry={loadData}
+                label={viewContext === "payouts" ? "payouts" : "referral data"}
+            />
+        )
     }
 
     return (
         <div className="space-y-6">
             {/* KPIs */}
-            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-                <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Referrals</CardTitle>
-                        <Share2 className="h-4 w-4 text-primary opacity-70" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{data.totalReferrals}</div>
-                        <p className="text-xs text-muted-foreground mt-1">{data.conversionRate}% convert to active tenant</p>
-                    </CardContent>
-                </Card>
-                <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Tenants</CardTitle>
-                        <Users className="h-4 w-4 text-emerald-500 opacity-70" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-emerald-600">{data.activeTenantsCount}</div>
-                        <p className="text-xs text-muted-foreground mt-1">Referred & moved in</p>
-                    </CardContent>
-                </Card>
-                <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Payouts Pending</CardTitle>
-                        <Banknote className="h-4 w-4 text-amber-500 opacity-70" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-amber-600">{formatCurrency(data.totalPayoutsPending)}</div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                            {data.referrals.filter(r => r.status === "active_tenant").length} referrers owed
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Paid Out</CardTitle>
-                        <DollarSign className="h-4 w-4 text-emerald-500 opacity-70" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-emerald-600">{formatCurrency(data.totalPayoutsPaid)}</div>
-                        <p className="text-xs text-muted-foreground mt-1">{data.paidCount} payouts completed</p>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Workflow Explainer */}
-            <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
-                <CardContent className="py-3 px-4">
-                    <div className="flex items-center gap-1.5 flex-wrap text-xs font-semibold">
-                        {STATUS_ORDER.filter(s => s !== "lost").map((status, i) => (
-                            <div key={status} className="flex items-center gap-1.5">
-                                {i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />}
-                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${STATUS_CONFIG[status].color}`}>
-                                    {STATUS_CONFIG[status].label}
-                                </Badge>
+            {viewContext === "payouts" ? (
+                <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Payouts Owed</CardTitle>
+                            <Banknote className="h-4 w-4 text-amber-500 opacity-70" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold text-amber-600">{formatCurrency(data.totalPayoutsPending)}</div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                {data.referrals.filter(r => r.status === "active_tenant").length} referrers awaiting payment
+                            </p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Need Payment Form</CardTitle>
+                            <Send className="h-4 w-4 text-blue-500 opacity-70" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold text-blue-600">
+                                {data.referrals.filter(r => r.status === "active_tenant" && !r.payoutFormSentAt).length}
                             </div>
-                        ))}
-                        <span className="text-muted-foreground ml-1">· Payout unlocks at Active Tenant</span>
-                    </div>
-                </CardContent>
-            </Card>
+                            <p className="text-xs text-muted-foreground mt-1">Send payout form to collect details</p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ready to Pay</CardTitle>
+                            <CheckCircle2 className="h-4 w-4 text-emerald-500 opacity-70" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold text-emerald-600">
+                                {data.referrals.filter(r => r.status === "active_tenant" && r.payoutFormSubmittedAt).length}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">Payment details submitted</p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Paid Out</CardTitle>
+                            <DollarSign className="h-4 w-4 text-emerald-500 opacity-70" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold text-emerald-600">{formatCurrency(data.totalPayoutsPaid)}</div>
+                            <p className="text-xs text-muted-foreground mt-1">{data.paidCount} payouts completed</p>
+                        </CardContent>
+                    </Card>
+                </div>
+            ) : (
+                <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Referrals</CardTitle>
+                            <Share2 className="h-4 w-4 text-primary opacity-70" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{data.totalReferrals}</div>
+                            <p className="text-xs text-muted-foreground mt-1">{data.conversionRate}% convert to active</p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Conversions</CardTitle>
+                            <Users className="h-4 w-4 text-emerald-500 opacity-70" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold text-emerald-600">{data.activeTenantsCount}</div>
+                            <p className="text-xs text-muted-foreground mt-1">Referred & active</p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Payouts Pending</CardTitle>
+                            <Banknote className="h-4 w-4 text-amber-500 opacity-70" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold text-amber-600">{formatCurrency(data.totalPayoutsPending)}</div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                {data.referrals.filter(r => r.status === "active_tenant").length} referrers owed
+                            </p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Paid Out</CardTitle>
+                            <DollarSign className="h-4 w-4 text-emerald-500 opacity-70" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold text-emerald-600">{formatCurrency(data.totalPayoutsPaid)}</div>
+                            <p className="text-xs text-muted-foreground mt-1">{data.paidCount} payouts completed</p>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
 
-            {/* Top Referrers */}
-            {data.topReferrers.length > 0 && (
+            {/* Workflow Explainer — funnel context, hidden on payouts page */}
+            {viewContext !== "payouts" && (
+                <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
+                    <CardContent className="py-3 px-4">
+                        <div className="flex items-center gap-1.5 flex-wrap text-xs font-semibold">
+                            {STATUS_ORDER.filter(s => s !== "lost").map((status, i) => (
+                                <div key={status} className="flex items-center gap-1.5">
+                                    {i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />}
+                                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${STATUS_CONFIG[status].color}`}>
+                                        {STATUS_CONFIG[status].label}
+                                    </Badge>
+                                </div>
+                            ))}
+                            <span className="text-muted-foreground ml-1">· Payout unlocks at Active</span>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Top Referrers — relationship-focused, hidden on payouts page */}
+            {viewContext !== "payouts" && data.topReferrers.length > 0 && (
                 <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -303,19 +403,35 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
             <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
                 <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 space-y-0 p-4 sm:p-6 pb-4">
                     <CardTitle className="text-base font-semibold flex items-center gap-2">
-                        <Share2 className="h-4 w-4 text-primary" />
-                        Referral Log
+                        {viewContext === "payouts" ? (
+                            <>
+                                <Banknote className="h-4 w-4 text-primary" />
+                                Payouts queue
+                            </>
+                        ) : (
+                            <>
+                                <Share2 className="h-4 w-4 text-primary" />
+                                Referral log
+                            </>
+                        )}
                     </CardTitle>
                     <div className="flex items-center gap-2 flex-wrap">
                         <div className="flex gap-1 flex-wrap">
-                            {[
-                                { key: "all", label: "All" },
-                                { key: "pending", label: "Pending" },
-                                { key: "contacted", label: "Contacted" },
-                                { key: "booked", label: "Booked" },
-                                { key: "payout_due", label: "Payout Due" },
-                                { key: "paid", label: "Paid" },
-                            ].map(f => (
+                            {(viewContext === "payouts"
+                                ? [
+                                    { key: "payout_due", label: "Payout Due" },
+                                    { key: "paid", label: "Paid" },
+                                    { key: "all", label: "All" },
+                                ]
+                                : [
+                                    { key: "all", label: "All" },
+                                    { key: "pending", label: "Pending" },
+                                    { key: "contacted", label: "Contacted" },
+                                    { key: "booked", label: "Booked" },
+                                    { key: "payout_due", label: "Payout Due" },
+                                    { key: "paid", label: "Paid" },
+                                ]
+                            ).map(f => (
                                 <Button
                                     key={f.key}
                                     variant={filter === f.key ? "secondary" : "ghost"}
@@ -389,11 +505,29 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                 </CardHeader>
                 <CardContent className="pt-0 px-4 sm:px-6 pb-4">
                     {filteredReferrals.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                            <Share2 className="h-12 w-12 text-muted-foreground/20 mb-4" />
-                            <p className="text-lg font-medium text-foreground mb-1">No referrals yet</p>
-                            <p className="text-sm text-muted-foreground mb-4 max-w-sm">Record referrals when past travelers recommend friends.</p>
-                        </div>
+                        <EmptyState
+                            Icon={viewContext === "payouts" ? Banknote : Share2}
+                            accent={viewContext === "payouts" ? "amber" : "violet"}
+                            title={
+                                viewContext === "payouts"
+                                    ? "No payouts to process"
+                                    : filter === "payout_due"
+                                        ? "No payouts due"
+                                        : filter === "paid"
+                                            ? "No payouts processed yet"
+                                            : "No referrals yet"
+                            }
+                            description={
+                                viewContext === "payouts"
+                                    ? "Payouts appear here when a referred contact becomes an active customer. Record referrals first so they can convert into payouts."
+                                    : "Record referrals when past customers recommend friends. Once they convert, payouts unlock automatically."
+                            }
+                            action={
+                                viewContext === "payouts"
+                                    ? { label: "Record a referral", onClick: () => setIsCreateOpen(true) }
+                                    : undefined
+                            }
+                        />
                     ) : (
                         <div className="space-y-3">
                             {filteredReferrals.map(referral => {
@@ -549,8 +683,8 @@ export function ReferralTracker({ dateFilter }: { dateFilter?: { start: string; 
                                                         <SelectContent>
                                                             <SelectItem value="pending">Pending</SelectItem>
                                                             <SelectItem value="contacted">Contacted</SelectItem>
-                                                            <SelectItem value="booked">Booked</SelectItem>
-                                                            <SelectItem value="active_tenant">Active Tenant</SelectItem>
+                                                            <SelectItem value="booked">Signed</SelectItem>
+                                                            <SelectItem value="active_tenant">Active</SelectItem>
                                                             <SelectItem value="lost">Lost</SelectItem>
                                                         </SelectContent>
                                                     </Select>

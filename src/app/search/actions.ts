@@ -1,6 +1,6 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
 import { requireAuth } from "@/lib/auth-guard";
 import type { SearchResult } from "./types";
 
@@ -9,12 +9,14 @@ export async function globalSearch(q: string): Promise<{
     opportunities: SearchResult[];
     notes: SearchResult[];
 }> {
-    await requireAuth();
+    const session = await requireAuth();
+    const workspaceId = session.user.workspaceId;
+    const db = tenantDb(workspaceId);
     try {
         const query = q?.trim().toLowerCase() || "";
         if (query.length < 2) return { contacts: [], opportunities: [], notes: [] };
 
-        const contactsSnap = await adminDb.collection("contacts").get();
+        const contactsSnap = await db.collection("contacts").get();
         const contacts: SearchResult[] = [];
         const contactIds = new Set<string>();
         const opps: SearchResult[] = [];
@@ -43,7 +45,7 @@ export async function globalSearch(q: string): Promise<{
             }
         }
 
-        const oppsSnap = await adminDb.collection("opportunities").get();
+        const oppsSnap = await db.collection("opportunities").get();
         // Build contact name map from already-fetched contacts to avoid N+1
         const contactsMap: Record<string, string> = {};
         for (const doc of contactsSnap.docs) {
@@ -65,10 +67,8 @@ export async function globalSearch(q: string): Promise<{
         }
 
         for (const contactId of Array.from(contactIds)) {
-            const notesSnap = await adminDb
-                .collection("contacts")
-                .doc(contactId)
-                .collection("notes")
+            const notesSnap = await db
+                .subcollection("contacts", contactId, "notes")
                 .orderBy("createdAt", "desc")
                 .limit(5)
                 .get();

@@ -1,7 +1,8 @@
 "use server"
 
 import { z } from "zod";
-import { adminDb } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
+import { requireAuth } from "@/lib/auth-guard";
 import { sendEmailToEligibleUsers, sendPushToEligibleUsers } from "@/lib/notification-dispatch";
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────────
@@ -38,9 +39,13 @@ export async function getNotifications(limit: number = 20) {
     if (!parsed.success) return { success: false, notifications: [], unreadCount: 0 };
     limit = parsed.data.limit ?? 20;
 
+    const session = await requireAuth();
+    const workspaceId = session.user.workspaceId;
+    const db = tenantDb(workspaceId);
+
     try {
         // Single orderBy avoids requiring a Firestore composite index
-        const snapshot = await adminDb.collection('notifications')
+        const snapshot = await db.collection('notifications')
             .orderBy('createdAt', 'desc')
             .limit(limit)
             .get();
@@ -64,7 +69,7 @@ export async function getNotifications(limit: number = 20) {
         // Unread first for display
         notifications.sort((a, b) => (a.isRead === b.isRead ? 0 : a.isRead ? 1 : -1));
 
-        const unreadSnapshot = await adminDb.collection('notifications')
+        const unreadSnapshot = await db.collection('notifications')
             .where('isRead', '==', false)
             .count()
             .get();
@@ -85,8 +90,12 @@ export async function markAsRead(id: string) {
     if (!parsed.success) return { success: false };
     id = parsed.data.id;
 
+    const session = await requireAuth();
+    const workspaceId = session.user.workspaceId;
+    const db = tenantDb(workspaceId);
+
     try {
-        await adminDb.collection('notifications').doc(id).update({
+        await db.doc('notifications', id).update({
             isRead: true
         });
         return { success: true };
@@ -96,12 +105,16 @@ export async function markAsRead(id: string) {
 }
 
 export async function markAllAsRead() {
+    const session = await requireAuth();
+    const workspaceId = session.user.workspaceId;
+    const db = tenantDb(workspaceId);
+
     try {
-        const unreadSnapshot = await adminDb.collection('notifications')
+        const unreadSnapshot = await db.collection('notifications')
             .where('isRead', '==', false)
             .get();
 
-        const batch = adminDb.batch();
+        const batch = db.batch();
         unreadSnapshot.forEach(doc => {
             batch.update(doc.ref, { isRead: true });
         });
@@ -127,11 +140,15 @@ export async function createNotification(data: {
     if (!parsed.success) return { success: false };
     data = parsed.data;
 
+    const session = await requireAuth();
+    const workspaceId = session.user.workspaceId;
+    const db = tenantDb(workspaceId);
+
     try {
         // Dedupe check — if a dedupeKey is provided and a notification with the same key
         // already exists, skip creation to prevent duplicate reminders
         if (data.dedupeKey) {
-            const existing = await adminDb.collection('notifications')
+            const existing = await db.collection('notifications')
                 .where('dedupeKey', '==', data.dedupeKey)
                 .limit(1)
                 .get();
@@ -144,7 +161,7 @@ export async function createNotification(data: {
         // with the same key and increment its count instead of creating a new one
         if (data.groupKey) {
             const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000)
-            const groupMatch = await adminDb.collection('notifications')
+            const groupMatch = await db.collection('notifications')
                 .where('groupKey', '==', data.groupKey)
                 .where('isRead', '==', false)
                 .where('createdAt', '>=', thirtyMinAgo)
@@ -168,7 +185,7 @@ export async function createNotification(data: {
             }
         }
 
-        await adminDb.collection('notifications').add({
+        await db.add('notifications', {
             title: data.title,
             message: data.message,
             type: data.type,
@@ -191,12 +208,12 @@ export async function createNotification(data: {
 
         // Fire-and-forget email dispatch (non-blocking)
         if (!data.skipEmail) {
-            sendEmailToEligibleUsers(dispatchPayload)
+            sendEmailToEligibleUsers(workspaceId, dispatchPayload)
                 .catch(err => console.error("Email dispatch failed:", err));
         }
 
         // Fire-and-forget push dispatch (non-blocking)
-        sendPushToEligibleUsers(dispatchPayload)
+        sendPushToEligibleUsers(workspaceId, dispatchPayload)
             .catch(err => console.error("Push dispatch failed:", err));
 
         return { success: true };

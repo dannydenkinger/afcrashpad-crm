@@ -1,7 +1,8 @@
 "use server"
 
 import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { getAuthSession, requireAuth } from "@/lib/auth-guard"
 import { revalidatePath } from "next/cache"
 import { logAudit } from "@/lib/audit"
 import { createNotification } from "@/app/notifications/actions"
@@ -10,13 +11,14 @@ import crypto from "crypto"
 import type { Referral, ReferralStatus, ReferralsData, PayoutMethod } from "./types"
 
 export async function getReferralsData(): Promise<{ success: boolean; data?: ReferralsData; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         const [referralsSnap, settingsDoc] = await Promise.all([
-            adminDb.collection("referrals").orderBy("createdAt", "desc").get(),
-            adminDb.collection("settings").doc("referrals").get(),
+            db.collection("referrals").orderBy("createdAt", "desc").get(),
+            db.settingsDoc("referrals").get(),
         ])
 
         const defaultPayoutAmount = settingsDoc.exists ? (settingsDoc.data()?.defaultPayoutAmount ?? 100) : 100
@@ -110,32 +112,33 @@ export async function createReferral(data: {
     notes?: string
     payoutAmount?: number
 }) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         // Get default payout amount
-        const settingsDoc = await adminDb.collection("settings").doc("referrals").get()
+        const settingsDoc = await db.settingsDoc("referrals").get()
         const defaultPayoutAmount = settingsDoc.exists ? (settingsDoc.data()?.defaultPayoutAmount ?? 100) : 100
 
         // Check if referrer is an existing contact
         let referrerContactId = data.referrerContactId || null
         if (!referrerContactId && data.referrerEmail) {
-            const contactSnap = await adminDb.collection("contacts")
+            const contactSnap = await db.collection("contacts")
                 .where("email", "==", data.referrerEmail)
                 .limit(1)
                 .get()
             if (!contactSnap.empty) referrerContactId = contactSnap.docs[0].id
         }
         if (!referrerContactId && data.referrerPhone) {
-            const contactSnap = await adminDb.collection("contacts")
+            const contactSnap = await db.collection("contacts")
                 .where("phone", "==", data.referrerPhone)
                 .limit(1)
                 .get()
             if (!contactSnap.empty) referrerContactId = contactSnap.docs[0].id
         }
 
-        const ref = await adminDb.collection("referrals").add({
+        const ref = await db.add("referrals", {
             referrerName: data.referrerName,
             referrerEmail: data.referrerEmail || null,
             referrerPhone: data.referrerPhone || null,
@@ -166,8 +169,8 @@ export async function createReferral(data: {
             linkUrl: `/dashboard?tab=referrals`,
         })
 
-        logAudit({
-            userId: (session.user as any).id || "",
+        logAudit(workspaceId, {
+            userId: session.user.id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
             action: "create",
@@ -189,8 +192,9 @@ export async function updateReferralStatus(
     status: ReferralStatus,
     data?: { referredContactId?: string; referredOpportunityId?: string; dealValue?: number; payoutAmount?: number }
 ) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         const update: Record<string, unknown> = { status }
@@ -201,11 +205,11 @@ export async function updateReferralStatus(
         if (data?.dealValue !== undefined) update.dealValue = data.dealValue
         if (data?.payoutAmount !== undefined) update.payoutAmount = data.payoutAmount
 
-        await adminDb.collection("referrals").doc(referralId).update(update)
+        await db.doc("referrals", referralId).update(update)
 
         // If marking as paid, notify team
         if (status === "paid") {
-            const refDoc = await adminDb.collection("referrals").doc(referralId).get()
+            const refDoc = await db.doc("referrals", referralId).get()
             const refData = refDoc.data()
             if (refData) {
                 createNotification({
@@ -227,25 +231,29 @@ export async function updateReferralStatus(
 
 /**
  * Finds a referral linked to this opportunity/contact by opportunityId, contactId, or email.
+ * Note: This is called internally (from pipeline actions) which already have workspace context.
+ * We accept workspaceId as a parameter for internal calls.
  */
-async function findLinkedReferral(opportunityId: string, contactId: string) {
-    let refSnap = await adminDb.collection("referrals")
+async function findLinkedReferral(workspaceId: string, opportunityId: string, contactId: string) {
+    const db = tenantDb(workspaceId)
+
+    let refSnap = await db.collection("referrals")
         .where("referredOpportunityId", "==", opportunityId)
         .limit(1)
         .get()
 
     if (refSnap.empty && contactId) {
-        refSnap = await adminDb.collection("referrals")
+        refSnap = await db.collection("referrals")
             .where("referredContactId", "==", contactId)
             .limit(1)
             .get()
     }
 
     if (refSnap.empty && contactId) {
-        const contactDoc = await adminDb.collection("contacts").doc(contactId).get()
+        const contactDoc = await db.doc("contacts", contactId).get()
         const email = contactDoc.data()?.email
         if (email) {
-            refSnap = await adminDb.collection("referrals")
+            refSnap = await db.collection("referrals")
                 .where("referredEmail", "==", email)
                 .limit(1)
                 .get()
@@ -272,7 +280,13 @@ export async function advanceReferralForStage(
     dealValue: number,
 ) {
     try {
-        const refDoc = await findLinkedReferral(opportunityId, contactId)
+        // Get workspace context — this is called from pipeline actions which have session
+        const session = await getAuthSession()
+        if (!session?.user?.workspaceId) return
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const refDoc = await findLinkedReferral(workspaceId, opportunityId, contactId)
         if (!refDoc) return
 
         const refData = refDoc.data()
@@ -309,7 +323,7 @@ export async function advanceReferralForStage(
         }
         if (targetStatus === "active_tenant") update.convertedAt = new Date()
 
-        await refDoc.ref.update(update)
+        await db.doc("referrals", refDoc.id).update(update)
 
         // Notify team when payout is unlocked
         if (targetStatus === "active_tenant") {
@@ -333,12 +347,13 @@ export async function checkReferralConversion(opportunityId: string, contactId: 
 }
 
 export async function updateDefaultPayoutAmount(amount: number) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        await adminDb.collection("settings").doc("referrals").set(
-            { defaultPayoutAmount: amount, updatedAt: new Date() },
+        await db.settingsDoc("referrals").set(
+            { defaultPayoutAmount: amount, updatedAt: new Date(), workspaceId },
             { merge: true }
         )
         revalidatePath("/dashboard")
@@ -351,15 +366,16 @@ export async function updateDefaultPayoutAmount(amount: number) {
 
 /**
  * Sends a payout form email to the referrer.
- * Generates a unique token and emails a link to /referral-payout/[token]
+ * Generates a unique token and emails a link to /payout/[token]
  * where the referrer can submit their preferred payout method.
  */
 export async function sendPayoutFormEmail(referralId: string) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const refDoc = await adminDb.collection("referrals").doc(referralId).get()
+        const refDoc = await db.doc("referrals", referralId).get()
         if (!refDoc.exists) return { success: false, error: "Referral not found" }
 
         const refData = refDoc.data()!
@@ -374,13 +390,13 @@ export async function sendPayoutFormEmail(referralId: string) {
         // Generate a secure token
         const payoutToken = crypto.randomBytes(32).toString("hex")
 
-        await adminDb.collection("referrals").doc(referralId).update({
+        await db.doc("referrals", referralId).update({
             payoutToken,
             payoutFormSentAt: new Date(),
         })
 
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-        const formUrl = `${baseUrl}/referral-payout/${payoutToken}`
+        const formUrl = `${baseUrl}/payout/${payoutToken}`
 
         const html = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -404,7 +420,7 @@ export async function sendPayoutFormEmail(referralId: string) {
                     </p>
                 </div>
                 <p style="color: #737373; font-size: 12px; margin-top: 16px; text-align: center;">
-                    AFCrashpad &bull; Referral Program
+                    Vesta CRM &bull; Referral Program
                 </p>
             </div>
         `
@@ -426,6 +442,7 @@ export async function sendPayoutFormEmail(referralId: string) {
 /**
  * Public-facing action — no auth required.
  * Looks up a referral by its payout token and returns the info needed for the form.
+ * Note: This is a public endpoint so we query across all workspaces using adminDb.
  */
 export async function getPayoutFormData(token: string): Promise<{
     success: boolean
@@ -461,6 +478,7 @@ export async function getPayoutFormData(token: string): Promise<{
 /**
  * Public-facing action — no auth required.
  * Submits the referrer's preferred payout method and details.
+ * Note: This is a public endpoint so we query across all workspaces using adminDb.
  */
 export async function submitPayoutDetails(
     token: string,

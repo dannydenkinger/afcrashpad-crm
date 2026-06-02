@@ -1,11 +1,11 @@
 "use server"
 
 import { z } from "zod"
+import { tenantDb } from "@/lib/tenant-db"
 import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { getAuthSession, requireAdmin, requireAuth } from "@/lib/auth-guard"
 import { revalidatePath } from "next/cache"
 import { FieldValue } from "firebase-admin/firestore"
-import { requireAdmin } from "@/lib/auth-guard"
 import { logAudit } from "@/lib/audit"
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────────
@@ -43,19 +43,9 @@ const createUserSchema = z.object({
 })
 
 export async function getCurrentUserRole() {
-    const session = await auth()
-    if (!session?.user?.email) return "AGENT"
-
-    try {
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-        if (!usersSnap.empty) {
-            return usersSnap.docs[0].data()?.role || "AGENT"
-        }
-    } catch (err) {
-        console.error("Error getting user role:", err)
-    }
-    
-    return "AGENT"
+    const session = await getAuthSession()
+    if (!session?.user) return "AGENT"
+    return session.user.role || "AGENT"
 }
 
 export async function updateUserRole(userId: string, newRole: string) {
@@ -64,35 +54,41 @@ export async function updateUserRole(userId: string, newRole: string) {
     userId = parsed.data.userId
     newRole = parsed.data.newRole
 
-    try {
-        await requireAdmin()
-    } catch {
-        throw new Error("Admin access required")
-    }
+    const session = await requireAdmin()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const userDoc = await adminDb.collection('users').doc(userId).get()
+        const userDoc = await db.doc('users', userId).get()
         const previousRole = userDoc.data()?.role || ""
         const targetUserName = userDoc.data()?.name || userDoc.data()?.email || ""
 
-        await adminDb.collection('users').doc(userId).update({
-            role: newRole,
-            updatedAt: new Date()
-        })
+        const memberSnap = await adminDb.collection('workspace_members')
+            .where('workspaceId', '==', workspaceId)
+            .where('userId', '==', userId)
+            .limit(1)
+            .get()
 
-        const session = await auth()
-        if (session?.user) {
-            logAudit({
-                userId: (session.user as any).id || "",
-                userEmail: session.user.email || "",
-                userName: session.user.name || "",
-                action: "update",
-                entity: "user",
-                entityId: userId,
-                entityName: targetUserName,
-                changes: { role: { from: previousRole, to: newRole } },
-            }).catch(() => {})
+        const batch = adminDb.batch()
+        batch.update(db.doc('users', userId), {
+            role: newRole,
+            updatedAt: new Date(),
+        })
+        if (!memberSnap.empty) {
+            batch.update(memberSnap.docs[0].ref, { role: newRole })
         }
+        await batch.commit()
+
+        logAudit(workspaceId, {
+            userId: session.user.id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "update",
+            entity: "user",
+            entityId: userId,
+            entityName: targetUserName,
+            changes: { role: { from: previousRole, to: newRole } },
+        }).catch(() => {})
 
         revalidatePath("/settings/users")
         return { success: true }
@@ -107,30 +103,33 @@ export async function deleteUser(userId: string) {
     if (!parsed.success) throw new Error("Invalid input")
     userId = parsed.data.userId
 
-    try {
-        await requireAdmin()
-    } catch {
-        throw new Error("Admin access required")
-    }
+    const session = await requireAdmin()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const userDoc = await adminDb.collection('users').doc(userId).get()
+        const userDoc = await db.doc('users', userId).get()
         const deletedUserName = userDoc.data()?.name || userDoc.data()?.email || ""
 
-        await adminDb.collection('users').doc(userId).delete()
+        const memberSnap = await adminDb.collection('workspace_members')
+            .where('workspaceId', '==', workspaceId)
+            .where('userId', '==', userId)
+            .get()
 
-        const session = await auth()
-        if (session?.user) {
-            logAudit({
-                userId: (session.user as any).id || "",
-                userEmail: session.user.email || "",
-                userName: session.user.name || "",
-                action: "delete",
-                entity: "user",
-                entityId: userId,
-                entityName: deletedUserName,
-            }).catch(() => {})
-        }
+        const batch = adminDb.batch()
+        batch.delete(db.doc('users', userId))
+        memberSnap.docs.forEach(doc => batch.delete(doc.ref))
+        await batch.commit()
+
+        logAudit(workspaceId, {
+            userId: session.user.id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "delete",
+            entity: "user",
+            entityId: userId,
+            entityName: deletedUserName,
+        }).catch(() => {})
 
         revalidatePath("/settings/users")
         return { success: true }
@@ -146,14 +145,13 @@ export async function updateProfile(name: string, phone: string) {
     name = parsed.data.name
     phone = parsed.data.phone
 
-    const session = await auth()
-    if (!session?.user?.email) throw new Error("Unauthorized")
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-        if (usersSnap.empty) throw new Error("User not found in DB")
-        
-        await adminDb.collection('users').doc(usersSnap.docs[0].id).update({
+        const userId = session.user.id!
+        await db.doc('users', userId).update({
             name,
             phone,
             updatedAt: new Date()
@@ -168,11 +166,13 @@ export async function updateProfile(name: string, phone: string) {
 
 export async function getProfileImageUrl(): Promise<string | null> {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return null
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-        if (usersSnap.empty) return null
-        return usersSnap.docs[0].data().profileImageUrl || null
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const userDoc = await db.doc('users', session.user.id!).get()
+        if (!userDoc.exists) return null
+        return userDoc.data()?.profileImageUrl || null
     } catch {
         return null
     }
@@ -180,14 +180,16 @@ export async function getProfileImageUrl(): Promise<string | null> {
 
 export async function getSidebarProfile(): Promise<{ name: string | null; imageUrl: string | null }> {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { name: null, imageUrl: null }
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-        if (usersSnap.empty) return { name: null, imageUrl: null }
-        const data = usersSnap.docs[0].data()
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const userDoc = await db.doc('users', session.user.id!).get()
+        if (!userDoc.exists) return { name: null, imageUrl: null }
+        const data = userDoc.data()
         return {
-            name: data.name || null,
-            imageUrl: data.profileImageUrl || null,
+            name: data?.name || null,
+            imageUrl: data?.profileImageUrl || null,
         }
     } catch {
         return { name: null, imageUrl: null }
@@ -195,20 +197,18 @@ export async function getSidebarProfile(): Promise<{ name: string | null; imageU
 }
 
 export async function disconnectGoogleCalendar() {
-    const session = await auth();
-    if (!session?.user?.email) throw new Error("Unauthorized");
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-        if (usersSnap.empty) throw new Error("User not found in DB")
+        const userId = session.user.id
 
-        const dbUserId = usersSnap.docs[0].id;
-
-        const querySnapshot = await adminDb.collection('calendar_integrations')
-            .where('userId', '==', dbUserId)
+        const querySnapshot = await db.collection('calendar_integrations')
+            .where('userId', '==', userId)
             .get();
 
-        const batch = adminDb.batch();
+        const batch = db.batch();
         querySnapshot.forEach(doc => {
             batch.delete(doc.ref);
         });
@@ -224,14 +224,15 @@ export async function disconnectGoogleCalendar() {
 }
 
 export async function getNotificationPreferences() {
-    const session = await auth()
-    if (!session?.user?.email) return null
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-        if (usersSnap.empty) return null
+        const userDoc = await db.doc('users', session.user.id!).get()
+        if (!userDoc.exists) return null
 
-        const prefs = usersSnap.docs[0].data()?.notificationPreferences
+        const prefs = userDoc.data()?.notificationPreferences
         return prefs || null
     } catch (err) {
         console.error("Error getting notification preferences:", err)
@@ -244,14 +245,12 @@ export async function updateNotificationPreferences(prefs: Record<string, boolea
     if (!parsed.success) throw new Error("Invalid input")
     prefs = parsed.data.prefs
 
-    const session = await auth()
-    if (!session?.user?.email) throw new Error("Unauthorized")
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-        if (usersSnap.empty) throw new Error("User not found")
-
-        await adminDb.collection('users').doc(usersSnap.docs[0].id).update({
+        await db.doc('users', session.user.id!).update({
             notificationPreferences: prefs,
             updatedAt: new Date()
         })
@@ -269,17 +268,17 @@ export async function saveFcmToken(token: string) {
     if (!parsed.success) throw new Error("Invalid input")
     token = parsed.data.token
 
-    const session = await auth()
-    if (!session?.user?.email) throw new Error("Unauthorized")
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
-    const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-    if (usersSnap.empty) throw new Error("User not found")
+    const userDoc = await db.doc('users', session.user.id!).get()
+    if (!userDoc.exists) throw new Error("User not found")
 
-    const userRef = adminDb.collection('users').doc(usersSnap.docs[0].id)
-    const existing: string[] = usersSnap.docs[0].data().fcmTokens || []
+    const existing: string[] = userDoc.data()?.fcmTokens || []
 
     if (!existing.includes(token)) {
-        await userRef.update({ fcmTokens: FieldValue.arrayUnion(token) })
+        await db.doc('users', session.user.id!).update({ fcmTokens: FieldValue.arrayUnion(token) })
     }
 
     return { success: true }
@@ -290,13 +289,11 @@ export async function removeFcmToken(token: string) {
     if (!parsed.success) throw new Error("Invalid input")
     token = parsed.data.token
 
-    const session = await auth()
-    if (!session?.user?.email) throw new Error("Unauthorized")
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
-    const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-    if (usersSnap.empty) throw new Error("User not found")
-
-    await adminDb.collection('users').doc(usersSnap.docs[0].id).update({
+    await db.doc('users', session.user.id!).update({
         fcmTokens: FieldValue.arrayRemove(token),
     })
 
@@ -307,17 +304,18 @@ export async function getPushNotificationStatus(): Promise<{
     pushEnabled: boolean
     pushPromptDismissed: boolean
 }> {
-    const session = await auth()
-    if (!session?.user?.email) return { pushEnabled: false, pushPromptDismissed: false }
-
     try {
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-        if (usersSnap.empty) return { pushEnabled: false, pushPromptDismissed: false }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const userData = usersSnap.docs[0].data()
+        const userDoc = await db.doc('users', session.user.id!).get()
+        if (!userDoc.exists) return { pushEnabled: false, pushPromptDismissed: false }
+
+        const userData = userDoc.data()
         return {
-            pushEnabled: userData.notificationPreferences?.pushEnabled === true || (userData.fcmTokens?.length || 0) > 0,
-            pushPromptDismissed: userData.pushPromptDismissed === true,
+            pushEnabled: userData?.notificationPreferences?.pushEnabled === true || (userData?.fcmTokens?.length || 0) > 0,
+            pushPromptDismissed: userData?.pushPromptDismissed === true,
         }
     } catch {
         return { pushEnabled: false, pushPromptDismissed: false }
@@ -325,16 +323,14 @@ export async function getPushNotificationStatus(): Promise<{
 }
 
 export async function dismissPushPrompt() {
-    const session = await auth()
-    if (!session?.user?.email) return
-
     try {
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get()
-        if (!usersSnap.empty) {
-            await adminDb.collection('users').doc(usersSnap.docs[0].id).update({
-                pushPromptDismissed: true,
-            })
-        }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        await db.doc('users', session.user.id!).update({
+            pushPromptDismissed: true,
+        })
     } catch {
         // Non-critical
     }
@@ -345,15 +341,19 @@ export async function createUser(data: { name: string, email: string, role: stri
     if (!parsed.success) return { success: false, error: "Invalid input" }
     data = parsed.data
 
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        // Check if user already exists
-        const existingUsers = await adminDb.collection('users')
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        // Check if user already exists in this workspace
+        const existingUsers = await db.collection('users')
             .where('email', '==', data.email)
             .get();
             
@@ -361,31 +361,39 @@ export async function createUser(data: { name: string, email: string, role: stri
             return { success: false, error: "A user with this email already exists." }
         }
 
-        // We use doc() with no args to generate a new ID, but typically Firebase Auth users
-        // will log in with Google and NextAuth will create the user document with its own ID.
-        // For pre-created users, we can just create a document and NextAuth firestore adapter
-        // should link it if the email matches.
-        const newUserRef = await adminDb.collection('users').add({
+        const now = new Date()
+        const newUserRef = await db.add('users', {
             name: data.name,
             email: data.email,
             role: data.role,
-            createdAt: new Date(),
-            updatedAt: new Date()
+            createdAt: now,
+            updatedAt: now,
         })
 
-        const session = await auth()
-        if (session?.user) {
-            logAudit({
-                userId: (session.user as any).id || "",
-                userEmail: session.user.email || "",
-                userName: session.user.name || "",
-                action: "create",
-                entity: "user",
-                entityId: newUserRef.id,
-                entityName: data.name,
-                metadata: { email: data.email, role: data.role },
-            }).catch(() => {})
+        // Also create a workspace_members entry
+        try {
+            await adminDb.collection('workspace_members').add({
+                workspaceId,
+                userId: newUserRef.id,
+                role: data.role,
+                status: 'active',
+                joinedAt: now,
+                invitedBy: session.user.id || null,
+            })
+        } catch (err) {
+            console.error("Failed to create workspace_members entry:", err)
         }
+
+        logAudit(workspaceId, {
+            userId: session.user.id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "create",
+            entity: "user",
+            entityId: newUserRef.id,
+            entityName: data.name,
+            metadata: { email: data.email, role: data.role },
+        }).catch(() => {})
 
         revalidatePath("/settings")
         return { success: true }

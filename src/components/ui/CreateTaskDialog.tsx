@@ -23,6 +23,7 @@ import { getAllContacts } from "@/app/communications/actions"
 import { getOpportunitiesList } from "@/app/pipeline/actions"
 import { CheckSquare, CalendarDays } from "lucide-react"
 import { toast } from "sonner"
+import { Field } from "@/components/ui/Field"
 
 interface Recurrence {
     type: "none" | "daily" | "weekly" | "monthly"
@@ -72,6 +73,7 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
     const [opportunities, setOpportunities] = useState<{ id: string; name: string }[]>([])
     const [opportunityId, setOpportunityId] = useState<string>("")
     const [isLoading, setIsLoading] = useState(false)
+    const [titleError, setTitleError] = useState<string | null>(null)
 
     const formatDateForInput = (date: string | Date | null | undefined): string => {
         if (!date) return ""
@@ -146,9 +148,10 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
 
     const handleSave = async () => {
         if (!title.trim()) {
-            toast.error("Title is required")
+            setTitleError("Title is required")
             return
         }
+        setTitleError(null)
         setIsLoading(true)
 
         const taskData: any = {
@@ -228,59 +231,51 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                         </button>
                     </div>
 
-                    <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium">Title</label>
+                    <Field label="Title" required error={titleError}>
                         <Input
                             value={title}
-                            onChange={(e) => setTitle(e.target.value)}
+                            onChange={(e) => { setTitle(e.target.value); if (titleError) setTitleError(null) }}
                             placeholder={isEvent ? "What's happening?" : "What needs to be done?"}
                             autoFocus
                         />
-                    </div>
+                    </Field>
 
-                    <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium">Description</label>
+                    <Field label="Description">
                         <Textarea
                             value={description}
                             onChange={(e: any) => setDescription(e.target.value)}
                             placeholder="Add details..."
                             className="resize-none h-24"
                         />
-                    </div>
+                    </Field>
 
                     {isEvent ? (
-                        /* Event: Start + End date/time */
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="flex flex-col gap-2">
-                                <label className="text-sm font-medium">Start</label>
+                            <Field label="Start">
                                 <Input
                                     type="datetime-local"
                                     value={dueDate}
                                     onChange={(e) => setDueDate(e.target.value)}
                                 />
-                            </div>
-                            <div className="flex flex-col gap-2">
-                                <label className="text-sm font-medium">End</label>
+                            </Field>
+                            <Field label="End">
                                 <Input
                                     type="datetime-local"
                                     value={endDate}
                                     onChange={(e) => setEndDate(e.target.value)}
                                 />
-                            </div>
+                            </Field>
                         </div>
                     ) : (
-                        /* Task: Due date + Priority */
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="flex flex-col gap-2">
-                                <label className="text-sm font-medium">Due Date & Time</label>
+                            <Field label="Due date & time">
                                 <Input
                                     type="datetime-local"
                                     value={dueDate}
                                     onChange={(e) => setDueDate(e.target.value)}
                                 />
-                            </div>
-                            <div className="flex flex-col gap-2">
-                                <label className="text-sm font-medium">Priority</label>
+                            </Field>
+                            <Field label="Priority">
                                 <Select value={priority} onValueChange={setPriority}>
                                     <SelectTrigger>
                                         <SelectValue />
@@ -291,12 +286,11 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                                         <SelectItem value="HIGH">High</SelectItem>
                                     </SelectContent>
                                 </Select>
-                            </div>
+                            </Field>
                         </div>
                     )}
 
-                    <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium">Link to contact</label>
+                    <Field label="Link to contact">
                         <div className="relative">
                             <Input
                                 placeholder="Search contacts..."
@@ -340,10 +334,9 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </Field>
 
-                    <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium">Link to deal</label>
+                    <Field label="Link to deal">
                         <Select value={opportunityId} onValueChange={setOpportunityId}>
                             <SelectTrigger>
                                 <SelectValue placeholder="None" />
@@ -355,12 +348,10 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                                 ))}
                             </SelectContent>
                         </Select>
-                    </div>
+                    </Field>
 
-                    {/* Task-only fields */}
                     {!isEvent && availableTasks && availableTasks.length > 0 && (
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium">Blocked by</label>
+                        <Field label="Blocked by">
                             <Select value={blockedByTaskId} onValueChange={setBlockedByTaskId}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="None" />
@@ -372,12 +363,11 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                                     ))}
                                 </SelectContent>
                             </Select>
-                        </div>
+                        </Field>
                     )}
 
                     {!isEvent && (
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium">Recurrence</label>
+                        <Field label="Recurrence"><div className="flex flex-col gap-3">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <Select value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as any)}>
                                     <SelectTrigger>
@@ -417,7 +407,7 @@ export function CreateTaskDialog({ isOpen, onClose, onSaved, initialData, initia
                                     />
                                 </div>
                             )}
-                        </div>
+                        </div></Field>
                     )}
                 </div>
 

@@ -149,7 +149,7 @@ export function exportToPDF(contentHtml: string, filename: string) {
 <body>
   ${contentHtml}
   <div class="print-footer">
-    Exported from AFCrashpad CRM &mdash; ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+    Exported from Vesta CRM &mdash; ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
   </div>
 </body>
 </html>`)

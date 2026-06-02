@@ -5,7 +5,7 @@
  * Called from the main daily cron and the dedicated cron endpoint.
  */
 
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 import { sendEmail } from "@/lib/email"
 
 function isDue(frequency: string, lastSentAt: Date | null): boolean {
@@ -27,16 +27,18 @@ function isDue(frequency: string, lastSentAt: Date | null): boolean {
     }
 }
 
-async function generatePipelineSummaryHtml(): Promise<string> {
+async function generatePipelineSummaryHtml(workspaceId: string): Promise<string> {
+    const db = tenantDb(workspaceId)
+
     const [oppsSnap, contactsSnap] = await Promise.all([
-        adminDb.collection("opportunities").get(),
-        adminDb.collection("contacts").get(),
+        db.collection("opportunities").get(),
+        db.collection("contacts").get(),
     ])
 
-    const pipelinesSnap = await adminDb.collection("pipelines").orderBy("createdAt", "asc").get()
+    const pipelinesSnap = await db.collection("pipelines").orderBy("createdAt", "asc").get()
     const stageMap: Record<string, string> = {}
     for (const pDoc of pipelinesSnap.docs) {
-        const stagesSnap = await pDoc.ref.collection("stages").orderBy("order", "asc").get()
+        const stagesSnap = await db.subcollection("pipelines", pDoc.id, "stages").orderBy("order", "asc").get()
         for (const sDoc of stagesSnap.docs) {
             stageMap[sDoc.id] = sDoc.data().name || "Unknown"
         }
@@ -85,8 +87,10 @@ async function generatePipelineSummaryHtml(): Promise<string> {
     </div>`
 }
 
-async function generateContactsSummaryHtml(): Promise<string> {
-    const contactsSnap = await adminDb.collection("contacts").get()
+async function generateContactsSummaryHtml(workspaceId: string): Promise<string> {
+    const db = tenantDb(workspaceId)
+
+    const contactsSnap = await db.collection("contacts").get()
     const contacts = contactsSnap.docs.map(d => d.data())
     const totalContacts = contacts.length
 
@@ -127,8 +131,10 @@ async function generateContactsSummaryHtml(): Promise<string> {
     </div>`
 }
 
-async function generateRevenueSummaryHtml(): Promise<string> {
-    const oppsSnap = await adminDb.collection("opportunities").get()
+async function generateRevenueSummaryHtml(workspaceId: string): Promise<string> {
+    const db = tenantDb(workspaceId)
+
+    const oppsSnap = await db.collection("opportunities").get()
     const opps = oppsSnap.docs.map(d => d.data())
 
     const totalValue = opps.reduce((sum, o) => sum + (o.opportunityValue || 0), 0)
@@ -152,12 +158,14 @@ async function generateRevenueSummaryHtml(): Promise<string> {
     </div>`
 }
 
-export async function processScheduledReports(): Promise<{
+export async function processScheduledReports(workspaceId: string): Promise<{
     success: boolean
     sent: number
     skipped: number
 }> {
-    const snap = await adminDb.collection("scheduled_reports").where("enabled", "==", true).get()
+    const db = tenantDb(workspaceId)
+
+    const snap = await db.collection("scheduled_reports").where("enabled", "==", true).get()
     let sent = 0
     let skipped = 0
 
@@ -175,15 +183,15 @@ export async function processScheduledReports(): Promise<{
 
         switch (data.reportType) {
             case "pipeline_summary":
-                html = await generatePipelineSummaryHtml()
+                html = await generatePipelineSummaryHtml(workspaceId)
                 subject = `Pipeline Summary Report - ${new Date().toLocaleDateString()}`
                 break
             case "contacts_summary":
-                html = await generateContactsSummaryHtml()
+                html = await generateContactsSummaryHtml(workspaceId)
                 subject = `Contacts Summary Report - ${new Date().toLocaleDateString()}`
                 break
             case "revenue_summary":
-                html = await generateRevenueSummaryHtml()
+                html = await generateRevenueSummaryHtml(workspaceId)
                 subject = `Revenue Summary Report - ${new Date().toLocaleDateString()}`
                 break
             default:

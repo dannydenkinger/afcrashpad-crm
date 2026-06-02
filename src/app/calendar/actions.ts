@@ -1,12 +1,13 @@
 "use server"
 
 import { z } from "zod";
-import { adminDb } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
 import { createNotification } from "@/app/notifications/actions";
 import type { CalendarEvent } from "@/lib/calendar-sync";
 import { getGoogleCalendarClient } from "@/lib/google-calendar";
-import { auth } from "@/auth";
+import { getAuthSession } from "@/lib/auth-guard";
 import { revalidatePath } from "next/cache";
+import { createAppointment as bookingCreateAppointment, cancelAppointment as bookingCancelAppointment, getBookingPage, upsertBookingPage } from "@/lib/booking/store";
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────────
 
@@ -28,8 +29,8 @@ const createTaskSchema = z.object({
     dueDate: z.coerce.date().optional(),
     endDate: z.coerce.date().optional(),
     priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
-    contactId: z.string().optional().nullable(),
-    opportunityId: z.string().optional().nullable(),
+    contactId: z.string().optional(),
+    opportunityId: z.string().optional(),
     assigneeId: z.string().optional(),
     recurrence: recurrenceSchema,
     blockedByTaskId: z.string().optional().nullable(),
@@ -52,10 +53,7 @@ const updateTaskSchema = z.object({
     opportunityId: z.string().optional().nullable(),
     recurrence: recurrenceSchema,
     blockedByTaskId: z.string().optional().nullable(),
-    itemType: z.enum(["task", "event"]).optional(),
 });
-
-// ── Task Template Schemas ───────────────────────────────────────────────────
 
 const taskTemplateItemSchema = z.object({
     title: z.string().min(1).max(500),
@@ -97,18 +95,146 @@ const recurrenceExceptionSchema = z.object({
 
 const deleteTaskSchema = z.object({ taskId: firestoreIdSchema });
 
+const createManualAppointmentSchema = z.object({
+    contactName: z.string().min(1).max(200),
+    contactEmail: z.string().email().max(320),
+    notes: z.string().max(2000).optional(),
+    startsAt: z.coerce.date(),
+    durationMinutes: z.number().int().min(5).max(480),
+});
+
+export async function createManualAppointment(input: {
+    contactName: string;
+    contactEmail: string;
+    notes?: string;
+    startsAt: Date;
+    durationMinutes: number;
+}): Promise<{ success: boolean; id?: string; error?: string }> {
+    const parsed = createManualAppointmentSchema.safeParse(input);
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    try {
+        // Ensure a booking page exists so the FK is satisfied
+        let page = await getBookingPage(workspaceId);
+        if (!page) page = await upsertBookingPage(workspaceId, {});
+
+        // Try to link to an existing contact by email
+        let contactId: string | null = null;
+        const email = parsed.data.contactEmail.toLowerCase();
+        const cSnap = await db.collection("contacts").where("email", "==", email).limit(1).get();
+        if (!cSnap.empty) contactId = cSnap.docs[0].id;
+
+        const startsAt = parsed.data.startsAt;
+        const endsAt = new Date(startsAt.getTime() + parsed.data.durationMinutes * 60_000);
+
+        const appt = await bookingCreateAppointment({
+            workspaceId,
+            bookingPageId: page.id,
+            contactId,
+            contactEmail: email,
+            contactName: parsed.data.contactName,
+            notes: parsed.data.notes,
+            startsAt,
+            endsAt,
+        });
+
+        revalidatePath("/calendar");
+        return { success: true, id: appt.id };
+    } catch (error: any) {
+        console.error("createManualAppointment error:", error);
+        return { success: false, error: error?.message || "Failed to create appointment" };
+    }
+}
+
+export async function cancelManualAppointment(appointmentId: string): Promise<{ success: boolean; error?: string }> {
+    const idParsed = firestoreIdSchema.safeParse(appointmentId);
+    if (!idParsed.success) return { success: false, error: "Invalid appointment ID" };
+
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    try {
+        // Verify the appointment belongs to this workspace before cancelling
+        const doc = await db.doc("appointments", idParsed.data).get();
+        if (!doc.exists) return { success: false, error: "Appointment not found" };
+        const data = doc.data();
+        if (data?.workspaceId !== workspaceId) return { success: false, error: "Appointment not found" };
+
+        await bookingCancelAppointment(idParsed.data);
+        revalidatePath("/calendar");
+        return { success: true };
+    } catch (error: any) {
+        console.error("cancelManualAppointment error:", error);
+        return { success: false, error: error?.message || "Failed to cancel appointment" };
+    }
+}
+
+export interface AppointmentRow {
+    id: string;
+    contactId: string | null;
+    contactName: string;
+    contactEmail: string;
+    notes: string | null;
+    appointmentTypeName: string | null;
+    startsAt: string;
+    endsAt: string;
+    status: string;
+}
+
+export async function listMyAppointments(limit: number = 200): Promise<AppointmentRow[]> {
+    const session = await getAuthSession();
+    if (!session?.user?.id) return [];
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    try {
+        const snap = await db.collection('appointments')
+            .orderBy('startsAt', 'desc')
+            .limit(limit)
+            .get();
+        return snap.docs.map(doc => {
+            const a = doc.data();
+            const start = a.startsAt?.toDate ? a.startsAt.toDate() : new Date(a.startsAt);
+            const end = a.endsAt?.toDate ? a.endsAt.toDate() : new Date(a.endsAt);
+            return {
+                id: doc.id,
+                contactId: a.contactId || null,
+                contactName: a.contactName || "Unknown",
+                contactEmail: a.contactEmail || "",
+                notes: a.notes || null,
+                appointmentTypeName: a.appointmentTypeName || null,
+                startsAt: start.toISOString(),
+                endsAt: end.toISOString(),
+                status: a.status || "confirmed",
+            };
+        });
+    } catch (error) {
+        console.error("Failed to list appointments:", error);
+        return [];
+    }
+}
+
 export async function getUnifiedEvents(days: number = 30): Promise<CalendarEvent[]> {
     const parsed = getUnifiedEventsSchema.safeParse({ days });
     if (!parsed.success) return [];
     days = parsed.data.days ?? 30;
     const events: CalendarEvent[] = [];
 
-    const session = await auth();
+    const session = await getAuthSession();
     if (!session?.user?.id) return [];
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
 
     // 1. Fetch External Calendars (Google OAuth)
     try {
-        const calendar = await getGoogleCalendarClient(session.user.id);
+        const calendar = await getGoogleCalendarClient(workspaceId, session.user.id);
         const timeMin = new Date();
         timeMin.setDate(timeMin.getDate() - days);
 
@@ -159,8 +285,8 @@ export async function getUnifiedEvents(days: number = 30): Promise<CalendarEvent
     // 2. Fetch CRM Stay Dates from Contacts (using Firebase)
     try {
         const [contactsSnapshot, oppsSnapshot] = await Promise.all([
-            adminDb.collection('contacts').get(),
-            adminDb.collection('opportunities').get(),
+            db.collection('contacts').get(),
+            db.collection('opportunities').get(),
         ]);
         
         // Map opportunities to contacts
@@ -211,9 +337,35 @@ export async function getUnifiedEvents(days: number = 30): Promise<CalendarEvent
         console.error("Error fetching CRM stay dates from Firebase:", error);
     }
 
+    // 2b. Fetch Booking Page Appointments (CRM-owned scheduled meetings)
+    try {
+        const apptSnapshot = await db.collection('appointments').get();
+        apptSnapshot.forEach(doc => {
+            const a = doc.data();
+            if (a.status && a.status === "cancelled") return;
+            const start = a.startsAt?.toDate ? a.startsAt.toDate() : (a.startsAt ? new Date(a.startsAt) : null);
+            const end = a.endsAt?.toDate ? a.endsAt.toDate() : (a.endsAt ? new Date(a.endsAt) : null);
+            if (!start) return;
+            const titleSubject = a.contactName || a.contactEmail || "Appointment";
+            const typePrefix = a.appointmentTypeName ? `${a.appointmentTypeName}: ` : "Appointment: ";
+            events.push({
+                id: `appointment-${doc.id}`,
+                title: `${typePrefix}${titleSubject}`,
+                start,
+                end: end || start,
+                description: a.notes || "",
+                source: "APPOINTMENT",
+                color: "#06B6D4",
+                navigationUrl: a.contactId ? `/contacts/${a.contactId}` : undefined,
+            });
+        });
+    } catch (error) {
+        console.error("Error fetching appointments from Firebase:", error);
+    }
+
     // 3. Fetch Internal Tasks & Events (using Firebase)
     try {
-        const tasksSnapshot = await adminDb.collection('tasks')
+        const tasksSnapshot = await db.collection('tasks')
             .where('completed', '==', false)
             .get();
 
@@ -261,8 +413,8 @@ export async function createTask(data: {
     dueDate?: Date;
     endDate?: Date;
     priority?: string;
-    contactId?: string | null;
-    opportunityId?: string | null;
+    contactId?: string;
+    opportunityId?: string;
     assigneeId?: string;
     recurrence?: { type: string; interval?: number; endDate?: Date | null } | null;
     blockedByTaskId?: string | null;
@@ -272,6 +424,11 @@ export async function createTask(data: {
     if (!parsed.success) return { id: null, error: "Invalid input" };
     data = parsed.data;
 
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { id: null, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
     const recurrence = data.recurrence && data.recurrence.type !== "none"
         ? {
             type: data.recurrence.type,
@@ -280,7 +437,7 @@ export async function createTask(data: {
         }
         : null;
 
-    const taskRef = await adminDb.collection('tasks').add({
+    const taskRef = await db.add('tasks', {
         title: data.title,
         description: data.description || null,
         dueDate: data.dueDate ? data.dueDate : null,
@@ -300,7 +457,12 @@ export async function createTask(data: {
 }
 
 export async function getTaskById(taskId: string) {
-    const doc = await adminDb.collection('tasks').doc(taskId).get();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return null;
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const doc = await db.doc('tasks', taskId).get();
     if (!doc.exists) return null;
     const data = doc.data()!;
     const dueDate = data.dueDate?.toDate ? data.dueDate.toDate() : (data.dueDate ? new Date(data.dueDate) : null);
@@ -324,18 +486,50 @@ export async function toggleTaskComplete(taskId: string, completed: boolean) {
     taskId = parsed.data.taskId;
     completed = parsed.data.completed;
 
-    await adminDb.collection('tasks').doc(taskId).update({
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const ref = db.doc('tasks', taskId);
+    const before = await ref.get();
+    await ref.update({
         completed,
         updatedAt: new Date()
     });
+
+    // Outbound webhook on transition to completed (ignore re-completes)
+    if (completed && before.exists && before.data()?.completed !== true) {
+        const taskData = before.data() || {};
+        const { dispatchWebhook } = await import("@/lib/webhooks/dispatcher");
+        dispatchWebhook(workspaceId, "task.completed", {
+            id: taskId,
+            title: taskData.title || "",
+            assigneeId: taskData.assigneeId || null,
+            contactId: taskData.contactId || null,
+            opportunityId: taskData.opportunityId || null,
+        });
+    }
     return { success: true };
 }
 
 export async function getTasks() {
-    const tasksSnapshot = await adminDb.collection('tasks').orderBy('dueDate', 'asc').get();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return [];
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const tasksSnapshot = await db.collection('tasks').orderBy('dueDate', 'asc').get();
     const tasks = [];
-    // Filter out calendar events — only return actual tasks
-    const taskDocs = tasksSnapshot.docs.filter(doc => doc.data().itemType !== "event");
+    // Filter out calendar events AND soft-deleted tasks (those have a
+    // deletedAt timestamp set by softDeleteTask; the 10-second undo window
+    // means we can't permanently delete inline, but we can hide them).
+    const taskDocs = tasksSnapshot.docs.filter(doc => {
+        const d = doc.data();
+        if (d.itemType === "event") return false;
+        if (d.deletedAt) return false;
+        return true;
+    });
     
     // Simple caching for related entities
     const contactsMap: Record<string, any> = {};
@@ -348,7 +542,7 @@ export async function getTasks() {
 
         if (taskData.contactId) {
             if (!contactsMap[taskData.contactId]) {
-                const cDoc = await adminDb.collection('contacts').doc(taskData.contactId).get();
+                const cDoc = await db.doc('contacts', taskData.contactId).get();
                 if (cDoc.exists) contactsMap[taskData.contactId] = { id: cDoc.id, ...cDoc.data() };
             }
             contactData = contactsMap[taskData.contactId];
@@ -356,7 +550,7 @@ export async function getTasks() {
 
         if (taskData.assigneeId) {
             if (!usersMap[taskData.assigneeId]) {
-                const uDoc = await adminDb.collection('users').doc(taskData.assigneeId).get();
+                const uDoc = await db.doc('users', taskData.assigneeId).get();
                 if (uDoc.exists) usersMap[taskData.assigneeId] = { id: uDoc.id, ...uDoc.data() };
             }
             assigneeData = usersMap[taskData.assigneeId];
@@ -397,7 +591,7 @@ export async function getTasks() {
             } else {
                 // Blocking task might be in a different filter set, fetch directly
                 try {
-                    const blockDoc = await adminDb.collection('tasks').doc(task.blockedByTaskId).get();
+                    const blockDoc = await db.doc('tasks', task.blockedByTaskId).get();
                     if (blockDoc.exists) {
                         const bd = blockDoc.data()!;
                         task.blockedByTaskTitle = bd.title || 'Task';
@@ -416,7 +610,7 @@ export async function getTasks() {
             if (task.completed || !task.dueDate) continue;
             const due = new Date(task.dueDate);
             if (due >= now && due <= in24h) {
-                const existing = await adminDb.collection('notifications')
+                const existing = await db.collection('notifications')
                     .where('taskId', '==', task.id)
                     .limit(1)
                     .get();
@@ -456,6 +650,11 @@ export async function updateTask(taskId: string, data: {
     taskId = idParsed.data;
     data = dataParsed.data;
 
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
     const updateData: any = { updatedAt: new Date() };
     if (data.title !== undefined) updateData.title = data.title;
     if (data.description !== undefined) updateData.description = data.description;
@@ -475,7 +674,7 @@ export async function updateTask(taskId: string, data: {
             : null;
     }
 
-    await adminDb.collection('tasks').doc(taskId).update(updateData);
+    await db.doc('tasks', taskId).update(updateData);
     return { success: true };
 }
 
@@ -486,8 +685,13 @@ export async function addSubtask(taskId: string, title: string) {
     if (!idParsed.success || !title?.trim()) return { success: false, error: "Invalid input" };
     taskId = idParsed.data;
 
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
     const subtask = { id: crypto.randomUUID(), title: title.trim(), completed: false };
-    const taskRef = adminDb.collection('tasks').doc(taskId);
+    const taskRef = db.doc('tasks', taskId);
     const doc = await taskRef.get();
     const subtasks = doc.data()?.subtasks || [];
     subtasks.push(subtask);
@@ -500,7 +704,12 @@ export async function toggleSubtask(taskId: string, subtaskId: string) {
     if (!idParsed.success || !subtaskId) return { success: false, error: "Invalid input" };
     taskId = idParsed.data;
 
-    const taskRef = adminDb.collection('tasks').doc(taskId);
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const taskRef = db.doc('tasks', taskId);
     const doc = await taskRef.get();
     const subtasks = (doc.data()?.subtasks || []).map((s: any) =>
         s.id === subtaskId ? { ...s, completed: !s.completed } : s
@@ -514,7 +723,12 @@ export async function deleteSubtask(taskId: string, subtaskId: string) {
     if (!idParsed.success || !subtaskId) return { success: false, error: "Invalid input" };
     taskId = idParsed.data;
 
-    const taskRef = adminDb.collection('tasks').doc(taskId);
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const taskRef = db.doc('tasks', taskId);
     const doc = await taskRef.get();
     const subtasks = (doc.data()?.subtasks || []).filter((s: any) => s.id !== subtaskId);
     await taskRef.update({ subtasks, updatedAt: new Date() });
@@ -543,19 +757,24 @@ export async function completeRecurringTask(taskId: string) {
     if (!parsed.success) return { success: false, error: "Invalid task ID", nextTaskId: null };
     taskId = parsed.data;
 
-    const taskDoc = await adminDb.collection('tasks').doc(taskId).get();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated", nextTaskId: null };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const taskDoc = await db.doc('tasks', taskId).get();
     if (!taskDoc.exists) return { success: false, error: "Task not found", nextTaskId: null };
 
     const taskData = taskDoc.data()!;
     const recurrence = taskData.recurrence;
     if (!recurrence || recurrence.type === "none") {
         // Not a recurring task, just mark complete
-        await adminDb.collection('tasks').doc(taskId).update({ completed: true, updatedAt: new Date() });
+        await db.doc('tasks', taskId).update({ completed: true, updatedAt: new Date() });
         return { success: true, nextTaskId: null };
     }
 
     // Mark current task as complete
-    await adminDb.collection('tasks').doc(taskId).update({ completed: true, updatedAt: new Date() });
+    await db.doc('tasks', taskId).update({ completed: true, updatedAt: new Date() });
 
     // Calculate the next due date
     const currentDueDate = taskData.dueDate?.toDate
@@ -575,7 +794,7 @@ export async function completeRecurringTask(taskId: string) {
     }
 
     // Create the next occurrence
-    const nextTaskRef = await adminDb.collection('tasks').add({
+    const nextTaskRef = await db.add('tasks', {
         title: taskData.title,
         description: taskData.description || null,
         dueDate: nextDueDate,
@@ -597,19 +816,98 @@ export async function deleteTask(taskId: string) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
     taskId = parsed.data.taskId;
 
-    await adminDb.collection('tasks').doc(taskId).delete();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    // Tenant-isolation: confirm ownership before delete. Without this, an
+    // attacker who knew another workspace's task ID could delete it.
+    const owned = await db.getOwned('tasks', taskId);
+    if (!owned) return { success: false, error: "Task not found" };
+
+    await db.doc('tasks', taskId).delete();
+    return { success: true };
+}
+
+/**
+ * Soft-delete a task by setting `deletedAt`. Lets the UI show a 10-second
+ * "Undo" toast that calls restoreTask before permanentlyDeleteTask runs.
+ * Tasks with deletedAt set are filtered out of getTasks/etc by callers.
+ */
+export async function softDeleteTask(taskId: string) {
+    const parsed = deleteTaskSchema.safeParse({ taskId });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+    taskId = parsed.data.taskId;
+
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const owned = await db.getOwned('tasks', taskId);
+    if (!owned) return { success: false, error: "Task not found" };
+
+    await db.doc('tasks', taskId).update({
+        deletedAt: new Date(),
+        updatedAt: new Date(),
+    });
+    return { success: true };
+}
+
+export async function restoreTask(taskId: string) {
+    const parsed = deleteTaskSchema.safeParse({ taskId });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+    taskId = parsed.data.taskId;
+
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const owned = await db.getOwned('tasks', taskId);
+    if (!owned) return { success: false, error: "Task not found" };
+
+    // Firebase Admin SDK accepts FieldValue.delete() to remove a key,
+    // but we use null here for simpler interop with rest of the codebase.
+    await db.doc('tasks', taskId).update({
+        deletedAt: null,
+        updatedAt: new Date(),
+    });
+    return { success: true };
+}
+
+export async function permanentlyDeleteTask(taskId: string) {
+    const parsed = deleteTaskSchema.safeParse({ taskId });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+    taskId = parsed.data.taskId;
+
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const owned = await db.getOwned('tasks', taskId);
+    if (!owned) return { success: false, error: "Task not found" };
+
+    await db.doc('tasks', taskId).delete();
     return { success: true };
 }
 
 // ── Overdue Task Count (lightweight) ────────────────────────────────────────
 
 export async function getOverdueTaskCount(): Promise<number> {
+    const session = await getAuthSession();
+    if (!session?.user?.id) return 0;
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
     try {
         const now = new Date();
         // Zero out time to get start of today
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-        const snapshot = await adminDb.collection('tasks')
+        const snapshot = await db.collection('tasks')
             .where('completed', '==', false)
             .get();
 
@@ -632,7 +930,12 @@ export async function getOverdueTaskCount(): Promise<number> {
 // ── Task Templates ──────────────────────────────────────────────────────────
 
 export async function getTaskTemplates() {
-    const snapshot = await adminDb.collection('task_templates').orderBy('createdAt', 'desc').get();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return [];
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const snapshot = await db.collection('task_templates').orderBy('createdAt', 'desc').get();
     return snapshot.docs.map(doc => ({
         id: doc.id,
         name: doc.data().name,
@@ -648,7 +951,12 @@ export async function createTaskTemplate(data: {
     const parsed = createTaskTemplateSchema.safeParse(data);
     if (!parsed.success) return { id: null, error: "Invalid input" };
 
-    const ref = await adminDb.collection('task_templates').add({
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { id: null, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const ref = await db.add('task_templates', {
         name: parsed.data.name,
         tasks: parsed.data.tasks,
         createdAt: new Date(),
@@ -664,7 +972,12 @@ export async function updateTaskTemplate(templateId: string, data: {
     const parsed = updateTaskTemplateSchema.safeParse({ templateId, ...data });
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
-    await adminDb.collection('task_templates').doc(parsed.data.templateId).update({
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    await db.doc('task_templates', parsed.data.templateId).update({
         name: parsed.data.name,
         tasks: parsed.data.tasks,
         updatedAt: new Date(),
@@ -676,7 +989,16 @@ export async function deleteTaskTemplate(templateId: string) {
     const parsed = firestoreIdSchema.safeParse(templateId);
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
-    await adminDb.collection('task_templates').doc(parsed.data).delete();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    // Tenant-isolation: confirm ownership before delete.
+    const owned = await db.getOwned('task_templates', parsed.data);
+    if (!owned) return { success: false, error: "Template not found" };
+
+    await db.doc('task_templates', parsed.data).delete();
     return { success: true };
 }
 
@@ -684,7 +1006,12 @@ export async function applyTaskTemplate(templateId: string) {
     const parsed = firestoreIdSchema.safeParse(templateId);
     if (!parsed.success) return { success: false, error: "Invalid template ID" };
 
-    const templateDoc = await adminDb.collection('task_templates').doc(parsed.data).get();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const templateDoc = await db.doc('task_templates', parsed.data).get();
     if (!templateDoc.exists) return { success: false, error: "Template not found" };
 
     const template = templateDoc.data()!;
@@ -695,7 +1022,7 @@ export async function applyTaskTemplate(templateId: string) {
         const dueDate = new Date(today);
         dueDate.setDate(dueDate.getDate() + (taskDef.relativeDueDays || 0));
 
-        const ref = await adminDb.collection('tasks').add({
+        const ref = await db.add('tasks', {
             title: taskDef.title,
             description: taskDef.description || null,
             dueDate,
@@ -721,8 +1048,13 @@ export async function getTaskComments(taskId: string) {
     const parsed = firestoreIdSchema.safeParse(taskId);
     if (!parsed.success) return [];
 
-    const snapshot = await adminDb.collection('tasks').doc(parsed.data)
-        .collection('comments').orderBy('createdAt', 'asc').get();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return [];
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const snapshot = await db.subcollection('tasks', parsed.data, 'comments')
+        .orderBy('createdAt', 'asc').get();
 
     return snapshot.docs.map(doc => ({
         id: doc.id,
@@ -737,17 +1069,20 @@ export async function addTaskComment(taskId: string, text: string) {
     const parsed = addTaskCommentSchema.safeParse({ taskId, text });
     if (!parsed.success) return { id: null, error: "Invalid input" };
 
-    const session = await auth();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { id: null, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
     const userName = session?.user?.name || 'Unknown';
     const userId = session?.user?.id || null;
 
-    const ref = await adminDb.collection('tasks').doc(parsed.data.taskId)
-        .collection('comments').add({
-            userId,
-            userName,
-            text: parsed.data.text,
-            createdAt: new Date(),
-        });
+    const ref = await db.addToSubcollection('tasks', parsed.data.taskId, 'comments', {
+        userId,
+        userName,
+        text: parsed.data.text,
+        createdAt: new Date(),
+    });
 
     return { id: ref.id };
 }
@@ -769,7 +1104,12 @@ export async function addRecurrenceException(taskId: string, exception: {
     const exParsed = recurrenceExceptionSchema.safeParse(exception);
     if (!exParsed.success) return { success: false, error: "Invalid exception data" };
 
-    const taskDoc = await adminDb.collection('tasks').doc(idParsed.data).get();
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
+    const taskDoc = await db.doc('tasks', idParsed.data).get();
     if (!taskDoc.exists) return { success: false, error: "Task not found" };
 
     const taskData = taskDoc.data()!;
@@ -788,7 +1128,7 @@ export async function addRecurrenceException(taskId: string, exception: {
         modifications: exParsed.data.modifications || null,
     });
 
-    await adminDb.collection('tasks').doc(idParsed.data).update({
+    await db.doc('tasks', idParsed.data).update({
         exceptions: filtered,
         updatedAt: new Date(),
     });
@@ -804,11 +1144,16 @@ export async function updateFutureOccurrences(taskId: string, fromDate: Date, mo
     const idParsed = firestoreIdSchema.safeParse(taskId);
     if (!idParsed.success) return { success: false, error: "Invalid task ID" };
 
+    const session = await getAuthSession();
+    if (!session?.user?.id) return { success: false, error: "Not authenticated" };
+    const workspaceId = (session.user as any).workspaceId;
+    const db = tenantDb(workspaceId);
+
     const updateData: any = { updatedAt: new Date() };
     if (modifications.title !== undefined) updateData.title = modifications.title;
     if (modifications.description !== undefined) updateData.description = modifications.description;
     if (modifications.priority !== undefined) updateData.priority = modifications.priority;
 
-    await adminDb.collection('tasks').doc(idParsed.data).update(updateData);
+    await db.doc('tasks', idParsed.data).update(updateData);
     return { success: true };
 }

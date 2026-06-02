@@ -1,3 +1,0 @@
-{
-  "/api/contacts/[contactId]/documents/upload/route": "app/api/contacts/[contactId]/documents/upload/route.js"
-}

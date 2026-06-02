@@ -2,22 +2,40 @@ import { auth } from "@/auth"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
+export const runtime = "nodejs"
+
 // Routes that don't require authentication
 const publicRoutes = [
     "/",
+    "/login",
+    "/register",
+    "/privacy",
+    "/terms",
+    "/pricing",
+    "/verify-email",
 ]
 
 // Route prefixes that don't require authentication
 const publicPrefixes = [
-    "/sign/",    // E-signature signing pages are public by design
+    "/sign/",     // E-signature signing pages are public by design
+    "/invite/",   // Invitation acceptance pages are public
+    "/form/",     // Legacy redirect to /forms/
+    "/forms/",    // Hosted lead forms are public
+    "/unsub/",    // One-click unsubscribe pages are public (HMAC-signed token)
+    "/book/",     // Legacy redirect to /booking/
+    "/booking/",  // Public booking pages + cancellation links
+    "/payout/",   // Public payout-claim pages (token-gated)
 ]
 
 // API route prefixes that skip CSRF checking (they use their own auth mechanisms)
 const csrfExemptPrefixes = [
     "/api/auth/",        // NextAuth handles its own CSRF
     "/api/webhooks/",    // Webhooks authenticate via Bearer token / shared secret
+    "/api/forms/",       // Form submissions come from external sites
     "/api/cron/",        // Cron jobs authenticate via secret query param
     "/api/calendar/",    // Calendar feed is GET-only, public by design
+    "/api/v1/",          // Public REST API — auth via x-api-key / Bearer token
+    "/api/automations/", // Public webhook-in trigger — HMAC-signed token in URL
 ]
 
 /**
@@ -115,7 +133,7 @@ export default auth((req) => {
         publicPrefixes.some(prefix => nextUrl.pathname.startsWith(prefix))
 
     if (!isLoggedIn && !isPublicRoute) {
-        return NextResponse.redirect(new URL("/", nextUrl))
+        return NextResponse.redirect(new URL("/login", nextUrl))
     }
 
     return NextResponse.next()
@@ -123,8 +141,12 @@ export default auth((req) => {
 
 export const config = {
     matcher: [
-        // Match all routes except static assets, internal Next.js paths, and images
-        // Include /api routes in the matcher so CSRF middleware runs on them
-        "/((?!_next/static|_next/image|favicon.ico).*)",
+        // Match all routes except static assets, internal Next.js paths, and
+        // public files served from /public. Without these excluded, requests
+        // to manifest.json / service workers / icons go through auth and get
+        // an HTML redirect back instead of the actual file — browsers then
+        // fail to parse them ("manifest.json: Line 1, column 1, Syntax error").
+        // Include /api routes in the matcher so CSRF middleware runs on them.
+        "/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|firebase-messaging-sw.js|robots.txt|sitemap.xml|icons/).*)",
     ],
 }

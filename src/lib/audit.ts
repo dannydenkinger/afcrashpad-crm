@@ -1,4 +1,4 @@
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 
 export type AuditAction = "create" | "update" | "delete" | "export" | "settings_change" | "stage_move" | "claim" | "bulk_delete" | "bulk_move" | "bulk_assign"
 
@@ -14,9 +14,10 @@ export interface AuditEntry {
     metadata?: Record<string, unknown> | null
 }
 
-export async function logAudit(params: AuditEntry) {
+export async function logAudit(workspaceId: string, params: AuditEntry) {
     try {
-        await adminDb.collection("audit_log").add({
+        const db = tenantDb(workspaceId)
+        await db.add("audit_log", {
             ...params,
             entityName: params.entityName || "",
             changes: params.changes || null,

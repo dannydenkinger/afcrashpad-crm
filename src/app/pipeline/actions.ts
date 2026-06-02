@@ -1,9 +1,9 @@
 "use server"
 
 import { z } from "zod";
-import { adminDb } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
+import { requireAuth } from "@/lib/auth-guard";
 import { createNotification } from "@/app/notifications/actions";
 import { checkStayReminders } from "@/lib/reminders";
 import { logAudit, diffChanges } from "@/lib/audit";
@@ -11,10 +11,12 @@ import { recordCommission } from "@/app/dashboard/commissions/actions";
 import { advanceReferralForStage, checkReferralConversion } from "@/app/dashboard/referrals/actions";
 import { executeStageAutomations } from "@/lib/stage-automations";
 import { triggerWorkflows } from "@/lib/workflow-engine";
+import { fireTrigger } from "@/lib/automations/triggers";
 import { softDelete, restoreItem, permanentlyDelete } from "@/lib/soft-delete";
 import { captureError } from "@/lib/error-tracking";
 import { getCurrentUserRole } from "@/app/settings/users/actions";
 import { getCachedPipelines, getCachedUsers, invalidatePipelinesCache } from "@/lib/cached-queries";
+import { trackFirstForWorkspace } from "@/lib/posthog/firsts";
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────────
 
@@ -29,7 +31,6 @@ const bulkCreateOpportunitiesSchema = z.object({
         name: z.string().max(200).optional(),
         email: z.string().email().optional().or(z.literal("")),
         phone: z.string().max(50).optional().or(z.literal("")),
-        base: z.string().max(200).optional().or(z.literal("")),
         stage: z.string().max(100).optional(),
         dealName: z.string().max(200).optional(),
         value: z.union([z.string(), z.number()]).optional(),
@@ -72,7 +73,6 @@ const createNewDealSchema = z.object({
     notes: z.string().max(5000).optional().or(z.literal("")),
     contactId: z.string().optional(),
     assigneeId: z.string().optional().nullable(),
-    specialAccommodationId: z.string().optional().nullable(),
 });
 
 const updateOpportunitySchema = z.object({
@@ -91,7 +91,6 @@ const updateOpportunitySchema = z.object({
     assigneeId: z.string().optional().nullable(),
     leadSourceId: z.string().optional().nullable(),
     tagIds: z.array(z.string()).optional(),
-    specialAccommodationId: z.string().optional().nullable(),
     blockers: z.array(z.string().max(500)).max(20).optional(),
     revenueStatus: z.enum(["booked", "collected", "partial"]).optional(),
     collectedAmount: z.number().min(0).optional(),
@@ -110,11 +109,13 @@ const deleteOpportunitySchema = z.object({ id: firestoreIdSchema });
 
 const updateRequiredDocsSchema = z.object({
     opportunityId: firestoreIdSchema,
-    field: z.enum(["lease", "tc", "payment"]),
+    // Required-doc keys are workspace-defined (configured under Settings →
+    // Workspace → Required documents), so the field name is an arbitrary
+    // alphanumeric/dash slug rather than one of three fixed values.
+    field: z.string().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/),
     value: z.boolean(),
 });
 
-const moveToLeaseSignedSchema = z.object({ opportunityId: firestoreIdSchema });
 
 // ── Payment / Revenue Recognition Schemas ────────────────────────────────────
 
@@ -175,12 +176,16 @@ export async function getPipelines() {
     };
 
     try {
+        const session = await requireAuth();
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
+
         // Use cached pipelines/stages/users to avoid redundant Firestore reads
         const [cachedPipelinesData, oppsSnapshot, contactsSnap, cachedUsersData] = await Promise.all([
-            getCachedPipelines(),
-            adminDb.collection('opportunities').orderBy('createdAt', 'desc').get(),
-            adminDb.collection('contacts').get(),
-            getCachedUsers(),
+            getCachedPipelines(workspaceId),
+            db.collection('opportunities').orderBy('createdAt', 'desc').get(),
+            db.collection('contacts').get(),
+            getCachedUsers(workspaceId),
         ]);
 
         const pipelinesMap: Record<string, any> = {};
@@ -217,7 +222,7 @@ export async function getPipelines() {
             const contactIdsWithDeals = new Set(oppsSnapshot.docs.map(d => d.data().contactId).filter(Boolean));
             const noteResults = await Promise.all(
                 Array.from(contactIdsWithDeals).map(async (cid) => {
-                    const snap = await adminDb.collection('contacts').doc(cid).collection('notes')
+                    const snap = await db.subcollection('contacts', cid, 'notes')
                         .orderBy('createdAt', 'desc').limit(1).get();
                     return { cid, content: snap.empty ? null : (snap.docs[0].data().content || "") };
                 })
@@ -235,7 +240,6 @@ export async function getPipelines() {
             const assignee = data.assigneeId ? usersMap[data.assigneeId] : null;
             const stageInfo = data.pipelineStageId ? stageIndex[data.pipelineStageId] : null;
 
-            const base = data.militaryBase || contact?.militaryBase || null;
             const startDate = toDateInput(data.stayStartDate || contact?.stayStartDate);
             const endDate = toDateInput(data.stayEndDate || contact?.stayEndDate);
             const notes = data.notes || (data.contactId ? contactNotesMap[data.contactId] : null) || null;
@@ -248,7 +252,7 @@ export async function getPipelines() {
                 name: contact?.name || data.name || "Unknown",
                 email: contact?.email || data.email || null,
                 phone: contact?.phone || data.phone || null,
-                base: base || null,
+                base: null,
                 stage: stageInfo?.stageName || (data.status && data.status !== "open" ? "—" : "Unknown"),
                 value: Number(data.opportunityValue) || 0,
                 margin: Number(data.estimatedProfit) || 0,
@@ -260,7 +264,6 @@ export async function getPipelines() {
                 assigneeName: assignee?.name || "Unassigned",
                 leadSourceId: data.leadSourceId || null,
                 tags: Array.isArray(data.tags) ? data.tags.map((t: any) => ({ tagId: t.tagId || null, name: t.name || null, color: t.color || null })) : [],
-                specialAccommodationId: data.specialAccommodationId || null,
                 source: data.source || null,
                 unread: data.unread ?? false,
                 unreadAt: toISO(data.unreadAt),
@@ -268,7 +271,6 @@ export async function getPipelines() {
                 lastSeenBy: data.lastSeenBy || null,
                 notes: notes || null,
                 reasonForStay: data.reasonForStay || null,
-                specialAccommodationLabels: Array.isArray(data.specialAccommodationLabels) ? data.specialAccommodationLabels : [],
                 requiredDocs: {
                     lease: data.requiredDocs?.lease ?? false,
                     tc: data.requiredDocs?.tc ?? false,
@@ -319,12 +321,12 @@ export async function markOpportunitySeen(id: string) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
-        const seenBy = (session.user as any).email || session.user.name || "unknown";
+        const seenBy = session.user.email || session.user.name || "unknown";
 
-        await adminDb.collection('opportunities').doc(id).update({
+        await db.doc('opportunities', id).update({
             unread: false,
             lastSeenAt: new Date(),
             lastSeenBy: seenBy,
@@ -344,8 +346,12 @@ export async function bulkCreateOpportunities(opportunities: any[], pipelineId: 
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const pipelineRef = adminDb.collection('pipelines').doc(parsed.data.pipelineId);
-        const stagesSnapshot = await pipelineRef.collection('stages').get();
+        const session = await requireAuth();
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
+
+        const pipelineRef = db.doc('pipelines', parsed.data.pipelineId);
+        const stagesSnapshot = await db.subcollection('pipelines', parsed.data.pipelineId, 'stages').get();
         
         const stageMap = new Map();
         let defaultStageId: string | null = null;
@@ -362,34 +368,34 @@ export async function bulkCreateOpportunities(opportunities: any[], pipelineId: 
             return { success: false, error: "No stages found for this pipeline." };
         }
 
-        const batch = adminDb.batch();
+        const batch = db.batch();
 
         for (const opp of opportunities) {
             let contactId = null;
             
             if (opp.email) {
-                const contactQuery = await adminDb.collection('contacts').where('email', '==', opp.email).limit(1).get();
+                const contactQuery = await db.collection('contacts').where('email', '==', opp.email).limit(1).get();
                 if (!contactQuery.empty) {
                     contactId = contactQuery.docs[0].id;
                 }
             }
 
             if (!contactId) {
-                const contactRef = adminDb.collection('contacts').doc();
+                const contactRef = db.collectionRef('contacts').doc();
                 contactId = contactRef.id;
                 batch.set(contactRef, {
                     name: opp.name || "Unknown",
                     email: opp.email || null,
                     phone: opp.phone || null,
-                    militaryBase: opp.base || null,
                     status: "Lead",
+                    workspaceId,
                     createdAt: new Date(),
                     updatedAt: new Date()
                 });
             }
 
             const stageId = stageMap.get(opp.stage?.toLowerCase()) || defaultStageId;
-            const oppRef = adminDb.collection('opportunities').doc();
+            const oppRef = db.collectionRef('opportunities').doc();
             
             batch.set(oppRef, {
                 contactId: contactId,
@@ -398,6 +404,7 @@ export async function bulkCreateOpportunities(opportunities: any[], pipelineId: 
                 opportunityValue: parseFloat(opp.value) || 0,
                 estimatedProfit: parseFloat(opp.margin) || 0,
                 priority: opp.priority || "MEDIUM",
+                workspaceId,
                 createdAt: new Date(),
                 updatedAt: new Date()
             });
@@ -405,19 +412,16 @@ export async function bulkCreateOpportunities(opportunities: any[], pipelineId: 
 
         await batch.commit();
 
-        const session = await auth();
-        if (session?.user) {
-            logAudit({
-                userId: (session.user as any).id || "",
-                userEmail: session.user.email || "",
-                userName: session.user.name || "",
-                action: "create",
-                entity: "opportunity",
-                entityId: "bulk_import",
-                entityName: `Bulk import of ${opportunities.length} opportunities`,
-                metadata: { count: opportunities.length, pipelineId: parsed.data.pipelineId },
-            }).catch(() => {});
-        }
+        logAudit(workspaceId, {
+            userId: (session.user as any).id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
+            action: "create",
+            entity: "opportunity",
+            entityId: "bulk_import",
+            entityName: `Bulk import of ${opportunities.length} opportunities`,
+            metadata: { count: opportunities.length, pipelineId: parsed.data.pipelineId },
+        }).catch(() => {});
 
         revalidatePath("/pipeline");
         return { success: true, count: opportunities.length };
@@ -432,19 +436,22 @@ export async function createPipeline(name: string) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
+        const session = await requireAuth();
+        if ((session.user as any).role === "AGENT") {
             return { success: false, error: "Unauthorized" };
         }
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
 
-        const pipelineRef = adminDb.collection('pipelines').doc();
+        const pipelineRef = db.collectionRef('pipelines').doc();
         await pipelineRef.set({
             name,
+            workspaceId,
             createdAt: new Date(),
             updatedAt: new Date()
         });
 
-        logAudit({
+        logAudit(workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -454,7 +461,7 @@ export async function createPipeline(name: string) {
             entityName: name,
         }).catch(() => {});
 
-        invalidatePipelinesCache();
+        invalidatePipelinesCache(workspaceId);
         revalidatePath("/pipeline");
         return { success: true, pipeline: { id: pipelineRef.id, name } };
     } catch (error) {
@@ -468,18 +475,21 @@ export async function createPipelineStage(pipelineId: string, name: string, orde
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
+        const session = await requireAuth();
+        if ((session.user as any).role === "AGENT") {
             return { success: false, error: "Unauthorized" };
         }
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
 
-        const stageRef = adminDb.collection('pipelines').doc(parsed.data.pipelineId).collection('stages').doc();
+        const stageRef = db.subcollection('pipelines', parsed.data.pipelineId, 'stages').doc();
         await stageRef.set({
             name,
-            order
+            order,
+            workspaceId
         });
 
-        logAudit({
+        logAudit(workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -490,7 +500,7 @@ export async function createPipelineStage(pipelineId: string, name: string, orde
             metadata: { pipelineId: parsed.data.pipelineId },
         }).catch(() => {});
 
-        invalidatePipelinesCache();
+        invalidatePipelinesCache(workspaceId);
         revalidatePath("/pipeline");
         return { success: true, stage: { id: stageRef.id, name, order } };
     } catch (error) {
@@ -504,13 +514,15 @@ export async function updatePipelineStage(id: string, name: string, order: numbe
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
+        const session = await requireAuth();
+        if ((session.user as any).role === "AGENT") {
             return { success: false, error: "Unauthorized" };
         }
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
 
         // We need to find which pipeline contains this stage
-        const pipelines = await adminDb.collection('pipelines').get();
+        const pipelines = await db.collection('pipelines').get();
         for (const pipelineDoc of pipelines.docs) {
             const stageDoc = await pipelineDoc.ref.collection('stages').doc(id).get();
             if (stageDoc.exists) {
@@ -519,7 +531,7 @@ export async function updatePipelineStage(id: string, name: string, order: numbe
             }
         }
 
-        logAudit({
+        logAudit(workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -529,7 +541,7 @@ export async function updatePipelineStage(id: string, name: string, order: numbe
             entityName: name,
         }).catch(() => {});
 
-        invalidatePipelinesCache();
+        invalidatePipelinesCache(workspaceId);
         revalidatePath("/pipeline");
         return { success: true };
     } catch (error) {
@@ -543,19 +555,21 @@ export async function deletePipelineStage(id: string) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
+        const session = await requireAuth();
+        if ((session.user as any).role === "AGENT") {
             return { success: false, error: "Unauthorized" };
         }
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
 
-        const pipelines = await adminDb.collection('pipelines').get();
+        const pipelines = await db.collection('pipelines').get();
         for (const pipelineDoc of pipelines.docs) {
             const stageDoc = await pipelineDoc.ref.collection('stages').doc(parsed.data.id).get();
             if (stageDoc.exists) {
                 const stageName = stageDoc.data()?.name || "";
                 await stageDoc.ref.delete();
 
-                logAudit({
+                logAudit(workspaceId, {
                     userId: (session.user as any).id || "",
                     userEmail: session.user.email || "",
                     userName: session.user.name || "",
@@ -570,7 +584,7 @@ export async function deletePipelineStage(id: string) {
             }
         }
 
-        invalidatePipelinesCache();
+        invalidatePipelinesCache(workspaceId);
         revalidatePath("/pipeline");
         return { success: true };
     } catch (error) {
@@ -584,25 +598,27 @@ export async function deletePipeline(id: string) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
+        const session = await requireAuth();
+        if ((session.user as any).role === "AGENT") {
             return { success: false, error: "Unauthorized" };
         }
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
 
-        const pipelineRef = adminDb.collection('pipelines').doc(parsed.data.id);
+        const pipelineRef = db.doc('pipelines', parsed.data.id);
         const pipelineSnap = await pipelineRef.get();
         const pipelineName = pipelineSnap.data()?.name || "";
 
         // Delete subcollections manually in Firestore
-        const stagesSnapshot = await pipelineRef.collection('stages').get();
-        const batch = adminDb.batch();
+        const stagesSnapshot = await db.subcollection('pipelines', parsed.data.id, 'stages').get();
+        const batch = db.batch();
         stagesSnapshot.forEach(doc => {
             batch.delete(doc.ref);
         });
         batch.delete(pipelineRef);
         await batch.commit();
 
-        logAudit({
+        logAudit(workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -612,7 +628,7 @@ export async function deletePipeline(id: string) {
             entityName: pipelineName,
         }).catch(() => {});
 
-        invalidatePipelinesCache();
+        invalidatePipelinesCache(workspaceId);
         revalidatePath("/pipeline");
         return { success: true };
     } catch (error) {
@@ -631,12 +647,13 @@ export async function createNewDeal(data: any, pipelineId?: string) {
     data = parsed.data;
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth();
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
 
         let contactId = null;
         if (data.email) {
-            const contactQuery = await adminDb.collection('contacts').where('email', '==', data.email).limit(1).get();
+            const contactQuery = await db.collection('contacts').where('email', '==', data.email).limit(1).get();
             if (!contactQuery.empty) {
                 contactId = contactQuery.docs[0].id;
             }
@@ -645,7 +662,7 @@ export async function createNewDeal(data: any, pipelineId?: string) {
         }
 
         if (!contactId) {
-            const contactRef = adminDb.collection('contacts').doc();
+            const contactRef = db.collectionRef('contacts').doc();
             contactId = contactRef.id;
             
             let formattedStartDate = null;
@@ -657,10 +674,10 @@ export async function createNewDeal(data: any, pipelineId?: string) {
                 name: data.name || "New Lead",
                 email: data.email || null,
                 phone: data.phone || null,
-                militaryBase: data.base || null,
                 stayStartDate: formattedStartDate,
                 stayEndDate: formattedEndDate,
                 status: "Lead",
+                workspaceId,
                 createdAt: new Date(),
                 updatedAt: new Date()
             });
@@ -669,16 +686,15 @@ export async function createNewDeal(data: any, pipelineId?: string) {
             const contactUpdate: any = { updatedAt: new Date() };
             if (data.name && data.name !== "New Lead") contactUpdate.name = data.name;
             if (data.phone) contactUpdate.phone = data.phone;
-            if (data.base) contactUpdate.militaryBase = data.base;
             if (data.startDate) contactUpdate.stayStartDate = new Date(data.startDate).toISOString();
             if (data.endDate) contactUpdate.stayEndDate = new Date(data.endDate).toISOString();
-            await adminDb.collection('contacts').doc(contactId).update(contactUpdate);
+            await db.doc('contacts', contactId).update(contactUpdate);
         }
 
         // Find stage ID
         let targetPipelineId = pipelineId;
         if (!targetPipelineId) {
-            const pipelinesSnap = await adminDb.collection('pipelines').orderBy('createdAt', 'asc').limit(1).get();
+            const pipelinesSnap = await db.collection('pipelines').orderBy('createdAt', 'asc').limit(1).get();
             if (!pipelinesSnap.empty) {
                 targetPipelineId = pipelinesSnap.docs[0].id;
             }
@@ -686,8 +702,8 @@ export async function createNewDeal(data: any, pipelineId?: string) {
 
         if (!targetPipelineId) return { success: false, error: "No pipeline found" };
 
-        const pipelineRef = adminDb.collection('pipelines').doc(targetPipelineId);
-        const stagesSnapshot = await pipelineRef.collection('stages').get();
+        const pipelineRef = db.doc('pipelines', targetPipelineId);
+        const stagesSnapshot = await db.subcollection('pipelines', targetPipelineId, 'stages').get();
         let stageId: string | null = null;
         stagesSnapshot.forEach(doc => {
             if (doc.data().name === data.stage || (!stageId && doc.data().name.includes('Lead'))) {
@@ -698,7 +714,7 @@ export async function createNewDeal(data: any, pipelineId?: string) {
             stageId = stagesSnapshot.docs[0].id;
         }
 
-        const oppRef = adminDb.collection('opportunities').doc();
+        const oppRef = db.collectionRef('opportunities').doc();
         await oppRef.set({
             contactId: contactId,
             pipelineStageId: stageId,
@@ -708,8 +724,6 @@ export async function createNewDeal(data: any, pipelineId?: string) {
             estimatedProfit: Number(data.margin) || 0,
             priority: data.priority || "MEDIUM",
             assigneeId: data.assigneeId || null,
-            specialAccommodationId: data.specialAccommodationId || null,
-            militaryBase: data.base || null,
             stayStartDate: data.startDate ? new Date(data.startDate).toISOString() : null,
             stayEndDate: data.endDate ? new Date(data.endDate).toISOString() : null,
             notes: data.notes || null,
@@ -717,6 +731,7 @@ export async function createNewDeal(data: any, pipelineId?: string) {
             unreadAt: new Date(),
             lastSeenAt: null,
             lastSeenBy: null,
+            workspaceId,
             createdAt: new Date(),
             updatedAt: new Date()
         });
@@ -724,13 +739,13 @@ export async function createNewDeal(data: any, pipelineId?: string) {
         // Notify team about the new opportunity
         await createNotification({
             title: "New opportunity created",
-            message: `${data.name || "New Lead"}${data.base ? ` • ${data.base}` : ""}`,
+            message: `${data.name || "New Lead"}`,
             type: "opportunity",
             linkUrl: `/pipeline?deal=${oppRef.id}`
         });
 
-        // Trigger workflow automations for new deal
-        triggerWorkflows({
+        // Trigger workflow automations for new deal (legacy)
+        triggerWorkflows(workspaceId, {
             type: "deal_created",
             data: {
                 opportunityId: oppRef.id,
@@ -739,13 +754,36 @@ export async function createNewDeal(data: any, pipelineId?: string) {
                 contactEmail: data.email || "",
                 dealName: `${data.name || "New Lead"} - Deal`,
                 opportunityValue: Number(data.value) || 0,
-                militaryBase: data.base || "",
                 userId: (session.user as any).id || "",
             },
         }).catch(() => {});
 
+        // Fire unified-engine "opportunity_created" trigger
+        fireTrigger({
+            workspaceId,
+            type: "opportunity_created",
+            contactId: contactId || "",
+            contactEmail: data.email || undefined,
+            payload: {
+                opportunityId: oppRef.id,
+                opportunityValue: Number(data.value) || 0,
+                pipelineId: targetPipelineId,
+            },
+        }).catch(() => {});
+
+        // Outbound webhook for external integrations
+        const { dispatchWebhook: dispatchDealCreated } = await import("@/lib/webhooks/dispatcher");
+        dispatchDealCreated(workspaceId, "deal.created", {
+            id: oppRef.id,
+            name: `${data.name || "New Lead"} - Deal`,
+            value: Number(data.value) || 0,
+            stageId,
+            contactId,
+            pipelineId: targetPipelineId,
+        });
+
         if (data.notes) {
-            await adminDb.collection('contacts').doc(contactId).collection('notes').add({
+            await db.addToSubcollection('contacts', contactId, 'notes', {
                 content: data.notes,
                 contactId: contactId,
                 createdAt: new Date(),
@@ -753,7 +791,7 @@ export async function createNewDeal(data: any, pipelineId?: string) {
             });
         }
 
-        logAudit({
+        logAudit(workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -761,6 +799,13 @@ export async function createNewDeal(data: any, pipelineId?: string) {
             entity: "opportunity",
             entityId: oppRef.id,
             entityName: data.name || "New Deal",
+        }).catch(() => {});
+
+        trackFirstForWorkspace({
+            workspaceId,
+            userId: (session.user as any).id || "",
+            key: "dealCreatedAt",
+            event: { name: "first_deal_created" },
         }).catch(() => {});
 
         revalidatePath("/pipeline");
@@ -787,7 +832,6 @@ export async function updateOpportunity(id: string, data: {
     assigneeId?: string | null;
     leadSourceId?: string | null;
     tagIds?: string[];
-    specialAccommodationId?: string | null;
     blockers?: string[];
     revenueStatus?: "booked" | "collected" | "partial";
     collectedAmount?: number;
@@ -806,8 +850,9 @@ export async function updateOpportunity(id: string, data: {
         if (!oppId) {
             return { success: false, error: "Invalid opportunity id" };
         }
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth();
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
         const currentUserId = (session.user as any).id;
 
         // Only admins/owners can assign deals to other users
@@ -829,8 +874,6 @@ export async function updateOpportunity(id: string, data: {
         if (data.priority !== undefined) updateData.priority = data.priority;
         if (data.assigneeId !== undefined) updateData.assigneeId = data.assigneeId;
         if (data.leadSourceId !== undefined) updateData.leadSourceId = data.leadSourceId;
-        if (data.specialAccommodationId !== undefined) updateData.specialAccommodationId = data.specialAccommodationId;
-        if (data.base !== undefined) updateData.militaryBase = data.base || null;
         if (data.startDate !== undefined) updateData.stayStartDate = data.startDate && String(data.startDate).trim() ? new Date(data.startDate).toISOString() : null;
         if (data.endDate !== undefined) updateData.stayEndDate = data.endDate && String(data.endDate).trim() ? new Date(data.endDate).toISOString() : null;
         if (data.notes !== undefined) updateData.notes = data.notes != null ? String(data.notes) : null;
@@ -848,7 +891,7 @@ export async function updateOpportunity(id: string, data: {
 
         if (data.tagIds !== undefined) {
             updateData.tags = await Promise.all(data.tagIds.map(async (tagId) => {
-                const tagDoc = await adminDb.collection('tags').doc(tagId).get();
+                const tagDoc = await db.doc('tags', tagId).get();
                 return { 
                     tagId, 
                     name: tagDoc.data()?.name || null, 
@@ -857,7 +900,7 @@ export async function updateOpportunity(id: string, data: {
             }));
         }
 
-        const docRef = adminDb.collection('opportunities').doc(oppId);
+        const docRef = db.doc('opportunities', oppId);
         const snap = await docRef.get();
         if (!snap.exists) {
             return { success: false, error: "Opportunity not found" };
@@ -886,11 +929,42 @@ export async function updateOpportunity(id: string, data: {
 
         await docRef.update(updateData);
 
+        // ── Outbound webhooks for external integrations ──
+        // Stage move
+        if (data.pipelineStageId !== undefined && data.pipelineStageId !== beforeData.pipelineStageId) {
+            const { dispatchWebhook } = await import("@/lib/webhooks/dispatcher");
+            dispatchWebhook(workspaceId, "deal.stage_changed", {
+                id: oppId,
+                fromStageId: beforeData.pipelineStageId || null,
+                toStageId: data.pipelineStageId,
+                value: Number(beforeData.opportunityValue) || 0,
+                contactId: beforeData.contactId || null,
+            });
+        }
+        // Status change → won / lost
+        if (data.status !== undefined && data.status !== (beforeData.status || "open")) {
+            if (data.status === "closed_won") {
+                const { dispatchWebhook } = await import("@/lib/webhooks/dispatcher");
+                dispatchWebhook(workspaceId, "deal.closed_won", {
+                    id: oppId,
+                    value: Number(beforeData.opportunityValue) || 0,
+                    contactId: beforeData.contactId || null,
+                });
+            } else if (data.status === "closed_lost") {
+                const { dispatchWebhook } = await import("@/lib/webhooks/dispatcher");
+                dispatchWebhook(workspaceId, "deal.closed_lost", {
+                    id: oppId,
+                    value: Number(beforeData.opportunityValue) || 0,
+                    contactId: beforeData.contactId || null,
+                });
+            }
+        }
+
         // Auto-record commission + check referral conversion on stage change
         if (data.pipelineStageId !== undefined && data.pipelineStageId !== beforeData.pipelineStageId) {
             try {
-                const bookedNames = new Set(["Booked", "Closed Won", "Lease Signed"]);
-                const pipelines = await adminDb.collection('pipelines').get();
+                const bookedNames = new Set(["Closed Won", "Won", "Booked", "Signed"]);
+                const pipelines = await db.collection('pipelines').get();
                 for (const pDoc of pipelines.docs) {
                     const stageDoc = await pDoc.ref.collection('stages').doc(data.pipelineStageId).get();
                     if (stageDoc.exists) {
@@ -916,11 +990,11 @@ export async function updateOpportunity(id: string, data: {
             // Execute stage automation rules
             try {
                 const automationUserId = currentUserId || beforeData.claimedBy || beforeData.assigneeId || "";
-                executeStageAutomations(oppId, data.pipelineStageId, automationUserId).catch(() => {});
+                executeStageAutomations(workspaceId, oppId, data.pipelineStageId, automationUserId).catch(() => {});
             } catch { /* ignore stage automation errors */ }
 
-            // Trigger workflow automations for stage change
-            triggerWorkflows({
+            // Trigger workflow automations for stage change (legacy)
+            triggerWorkflows(workspaceId, {
                 type: "stage_changed",
                 data: {
                     opportunityId: oppId,
@@ -929,20 +1003,86 @@ export async function updateOpportunity(id: string, data: {
                     contactEmail: beforeData.email || "",
                     dealName: beforeData.name || "",
                     opportunityValue: Number(updateData.opportunityValue ?? beforeData.opportunityValue) || 0,
-                    militaryBase: beforeData.militaryBase || "",
                     previousStageId: beforeData.pipelineStageId || "",
                     newStageId: data.pipelineStageId,
                     userId: currentUserId || "",
+                },
+            }).catch(() => {});
+
+            // Fire unified-engine "pipeline_stage_entered" trigger for the new stage
+            fireTrigger({
+                workspaceId,
+                type: "pipeline_stage_entered",
+                contactId: beforeData.contactId || data.contactId || "",
+                contactEmail: beforeData.email || undefined,
+                match: { stageId: data.pipelineStageId },
+                payload: {
+                    opportunityId: oppId,
+                    previousStageId: beforeData.pipelineStageId || "",
+                    newStageId: data.pipelineStageId,
+                },
+            }).catch(() => {});
+        }
+
+        // Fire "opportunity_won" when status flips to closed_won
+        if (
+            data.status === "closed_won" &&
+            beforeData.status !== "closed_won"
+        ) {
+            fireTrigger({
+                workspaceId,
+                type: "opportunity_won",
+                contactId: beforeData.contactId || data.contactId || "",
+                contactEmail: beforeData.email || undefined,
+                payload: {
+                    opportunityId: oppId,
+                    opportunityValue: Number(updateData.opportunityValue ?? beforeData.opportunityValue) || 0,
+                },
+            }).catch(() => {});
+        }
+
+        // Fire "opportunity_lost" when status flips to closed_lost
+        if (
+            data.status === "closed_lost" &&
+            beforeData.status !== "closed_lost"
+        ) {
+            fireTrigger({
+                workspaceId,
+                type: "opportunity_lost",
+                contactId: beforeData.contactId || data.contactId || "",
+                contactEmail: beforeData.email || undefined,
+                payload: {
+                    opportunityId: oppId,
+                    opportunityValue: Number(updateData.opportunityValue ?? beforeData.opportunityValue) || 0,
+                    previousStatus: beforeData.status,
+                },
+            }).catch(() => {});
+        }
+
+        // Fire "opportunity_value_changed" when value changes (and isn't trivially identical)
+        if (
+            data.value !== undefined &&
+            Number(updateData.opportunityValue) !== Number(beforeData.opportunityValue)
+        ) {
+            fireTrigger({
+                workspaceId,
+                type: "opportunity_value_changed",
+                contactId: beforeData.contactId || data.contactId || "",
+                contactEmail: beforeData.email || undefined,
+                payload: {
+                    opportunityId: oppId,
+                    previousValue: Number(beforeData.opportunityValue) || 0,
+                    newValue: Number(updateData.opportunityValue) || 0,
                 },
             }).catch(() => {});
         }
 
         // Audit log
         if (session?.user) {
-            const auditFields = ["pipelineStageId", "opportunityValue", "estimatedProfit", "priority", "assigneeId", "militaryBase", "stayStartDate", "stayEndDate", "notes", "status"];
+            const auditFields = ["pipelineStageId", "opportunityValue", "estimatedProfit", "priority", "assigneeId", "stayStartDate", "stayEndDate", "notes", "status"];
             const changes = diffChanges(beforeData, updateData, auditFields);
             if (changes) {
-                logAudit({
+                logAudit(workspaceId, {
                     userId: (session.user as any).id || "",
                     userEmail: session.user.email || "",
                     userName: session.user.name || "",
@@ -958,7 +1098,7 @@ export async function updateOpportunity(id: string, data: {
         if (data.contactId && data.notes !== undefined) {
             const content = data.notes ? String(data.notes).trim() : "";
             if (content) {
-                await adminDb.collection('contacts').doc(data.contactId).collection('notes').add({
+                await db.addToSubcollection('contacts', data.contactId, 'notes', {
                     content,
                     contactId: data.contactId,
                     opportunityId: oppId,
@@ -969,16 +1109,15 @@ export async function updateOpportunity(id: string, data: {
             }
         }
 
-        if (data.contactId && (data.startDate !== undefined || data.endDate !== undefined || data.base !== undefined || data.name !== undefined || data.email !== undefined || data.phone !== undefined)) {
+        if (data.contactId && (data.startDate !== undefined || data.endDate !== undefined || data.name !== undefined || data.email !== undefined || data.phone !== undefined)) {
             const contactUpdate: any = { updatedAt: new Date() };
             if (data.startDate !== undefined) contactUpdate.stayStartDate = data.startDate && String(data.startDate).trim() ? new Date(data.startDate).toISOString() : null;
             if (data.endDate !== undefined) contactUpdate.stayEndDate = data.endDate && String(data.endDate).trim() ? new Date(data.endDate).toISOString() : null;
-            if (data.base !== undefined) contactUpdate.militaryBase = data.base || null;
             if (data.name !== undefined) contactUpdate.name = data.name;
             if (data.email !== undefined) contactUpdate.email = data.email;
             if (data.phone !== undefined) contactUpdate.phone = data.phone;
 
-            await adminDb.collection('contacts').doc(data.contactId).update(contactUpdate);
+            await db.doc('contacts', data.contactId).update(contactUpdate);
         }
 
         revalidatePath("/pipeline");
@@ -996,16 +1135,16 @@ export async function updateBlockers(id: string, blockers: string[]) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Not authenticated" };
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
-        const docRef = adminDb.collection('opportunities').doc(id);
+        const docRef = db.doc('opportunities', id);
         const snap = await docRef.get();
         if (!snap.exists) return { success: false, error: "Opportunity not found" };
 
         await docRef.update({ blockers, updatedAt: new Date() });
 
-        logAudit({
+        logAudit(session.user.workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -1029,13 +1168,13 @@ export async function claimOpportunity(id: string) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Not authenticated" };
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
         const userId = (session.user as any).id;
         const userName = session.user.name || session.user.email || "Unknown";
 
-        const docRef = adminDb.collection('opportunities').doc(id);
+        const docRef = db.doc('opportunities', id);
         const snap = await docRef.get();
         if (!snap.exists) return { success: false, error: "Opportunity not found" };
 
@@ -1060,7 +1199,7 @@ export async function claimOpportunity(id: string) {
             updatedAt: new Date(),
         });
 
-        logAudit({
+        logAudit(session.user.workspaceId, {
             userId,
             userEmail: session.user.email || "",
             userName,
@@ -1083,16 +1222,18 @@ export async function deleteOpportunity(id: string) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) throw new Error("Unauthorized");
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
         const role = await getCurrentUserRole();
         if (role === "AGENT") throw new Error("Unauthorized");
 
-        const snap = await adminDb.collection('opportunities').doc(id).get();
+        // Tenant-isolation: confirm ownership before delete.
+        const snap = await db.getOwned('opportunities', id);
+        if (!snap) return { success: false, error: "Opportunity not found" };
         const name = snap.data()?.name || "";
-        await adminDb.collection('opportunities').doc(id).delete();
+        await db.doc('opportunities', id).delete();
 
-        logAudit({
+        logAudit(session.user.workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -1115,15 +1256,14 @@ export async function softDeleteOpportunity(id: string) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) throw new Error("Unauthorized");
+        const session = await requireAuth();
         const role = await getCurrentUserRole();
         if (role === "AGENT") {
             throw new Error("Unauthorized");
         }
 
         const userId = (session.user as any).id || "";
-        const res = await softDelete('opportunities', id, userId);
+        const res = await softDelete(session.user.workspaceId, 'opportunities', id, userId);
         if (!res.success) return res;
 
         revalidatePath("/pipeline");
@@ -1139,7 +1279,8 @@ export async function restoreOpportunity(id: string) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const res = await restoreItem('opportunities', id);
+        const session = await requireAuth();
+        const res = await restoreItem(session.user.workspaceId, 'opportunities', id);
         if (!res.success) return res;
 
         revalidatePath("/pipeline");
@@ -1162,18 +1303,16 @@ export async function permanentlyDeleteOpportunity(id: string) {
     }
 }
 
+/** @deprecated Locations are now managed via custom fields. */
 export async function getBaseNames(): Promise<string[]> {
-    try {
-        const snapshot = await adminDb.collection('military_bases').orderBy('name', 'asc').get();
-        return snapshot.docs.map(doc => doc.data().name).filter(Boolean);
-    } catch {
-        return [];
-    }
+    return [];
 }
 
 export async function getUsers() {
     try {
-        const snapshot = await adminDb.collection('users').orderBy('name', 'asc').get();
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
+        const snapshot = await db.collection('users').orderBy('name', 'asc').get();
         const users = snapshot.docs.map(doc => ({
             id: doc.id,
             name: doc.data().name,
@@ -1188,58 +1327,39 @@ export async function getUsers() {
 
 /**
  * Consolidated page-data fetch: returns pipelines + base names + users +
- * special accommodations + priority settings + auto-advance results in a
- * single server action call (saves 5-6 HTTP round trips on page load).
+ * priority settings in a single server action call (saves several HTTP
+ * round trips on page load).
  */
 export async function getPipelinePageData() {
     try {
-        const [pipelinesResult, baseNames, usersResult, accommodationsResult, priorityResult, automationResult] = await Promise.all([
+        const session = await requireAuth();
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
+
+        const [pipelinesResult, baseNames, usersResult, priorityResult] = await Promise.all([
             getPipelines(),
             getBaseNames(),
             getUsers(),
             (async () => {
-                const snap = await adminDb.collection('special_accommodations').orderBy('order', 'asc').get();
-                return snap.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
-            })(),
-            (async () => {
-                const doc = await adminDb.collection("settings").doc("pipeline").get();
+                const doc = await db.settingsDoc("pipeline").get();
                 const data = doc.data();
                 return {
                     urgentDays: typeof data?.priorityUrgentDays === "number" ? data.priorityUrgentDays : 14,
                     soonDays: typeof data?.prioritySoonDays === "number" ? data.prioritySoonDays : 30,
                 };
             })(),
-            (async () => {
-                const doc = await adminDb.collection('settings').doc('automations').get();
-                return doc.exists ? doc.data() : { autoAdvanceEnabled: false };
-            })(),
         ]);
 
-        // Run auto-advance server-side if enabled (avoids second round trip)
-        let advancedCount = 0;
-        if (automationResult?.autoAdvanceEnabled) {
-            const advRes = await autoAdvanceOpportunities();
-            if (advRes.success && advRes.advancedCount && advRes.advancedCount > 0) {
-                advancedCount = advRes.advancedCount;
-                // Re-fetch pipelines with the advanced data
-                const refreshed = await getPipelines();
-                if (refreshed.success) {
-                    pipelinesResult.pipelines = refreshed.pipelines;
-                }
-            }
-        }
-
         // Fire-and-forget: stay reminders
-        checkStayReminders().catch(() => {});
+        checkStayReminders(workspaceId).catch(() => {});
 
         return {
             success: true,
             pipelines: pipelinesResult.success ? pipelinesResult.pipelines : {},
             baseNames,
             users: usersResult.success ? usersResult.users : [],
-            specialAccommodations: accommodationsResult,
             priorityRanges: priorityResult,
-            advancedCount,
+            advancedCount: 0,
         };
     } catch (error: any) {
         captureError(error, { context: "getPipelinePageData" });
@@ -1248,19 +1368,21 @@ export async function getPipelinePageData() {
             pipelines: {},
             baseNames: [],
             users: [],
-            specialAccommodations: [],
             priorityRanges: { urgentDays: 14, soonDays: 30 },
             advancedCount: 0,
         };
     }
 }
 
-export async function updateRequiredDocs(opportunityId: string, field: "lease" | "tc" | "payment", value: boolean) {
+export async function updateRequiredDocs(opportunityId: string, field: string, value: boolean) {
     const parsed = updateRequiredDocsSchema.safeParse({ opportunityId, field, value });
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        await adminDb.collection('opportunities').doc(parsed.data.opportunityId).update({
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
+
+        await db.doc('opportunities', parsed.data.opportunityId).update({
             [`requiredDocs.${field}`]: value,
             updatedAt: new Date()
         });
@@ -1272,146 +1394,10 @@ export async function updateRequiredDocs(opportunityId: string, field: "lease" |
     }
 }
 
-export async function moveToLeaseSigned(opportunityId: string) {
-    const parsed = moveToLeaseSignedSchema.safeParse({ opportunityId });
-    if (!parsed.success) return { success: false, error: "Invalid input" };
-
-    try {
-        // Find the opportunity to get its pipeline
-        const oppDoc = await adminDb.collection('opportunities').doc(parsed.data.opportunityId).get();
-        if (!oppDoc.exists) return { success: false, error: "Opportunity not found" };
-
-        const oppData = oppDoc.data()!;
-        const currentStageId = oppData.pipelineStageId;
-
-        // Find which pipeline this belongs to
-        const pipelines = await adminDb.collection('pipelines').get();
-        let leaseSignedStageId: string | null = null;
-
-        for (const pDoc of pipelines.docs) {
-            const stages = await pDoc.ref.collection('stages').get();
-            const hasCurrentStage = stages.docs.some(s => s.id === currentStageId);
-            if (hasCurrentStage) {
-                const leaseStage = stages.docs.find(s => s.data().name === "Lease Signed");
-                if (leaseStage) leaseSignedStageId = leaseStage.id;
-                break;
-            }
-        }
-
-        if (!leaseSignedStageId) return { success: false, error: "Lease Signed stage not found in this pipeline" };
-
-        const history = Array.isArray(oppData.stageHistory) ? [...oppData.stageHistory] : [];
-        history.push({ stageId: leaseSignedStageId, enteredAt: new Date() });
-        await adminDb.collection('opportunities').doc(opportunityId).update({
-            pipelineStageId: leaseSignedStageId,
-            stageHistory: history,
-            updatedAt: new Date()
-        });
-
-        // Execute stage automation rules for Lease Signed
-        try {
-            const session = await auth();
-            const userId = (session?.user as any)?.id || oppData.claimedBy || oppData.assigneeId || "";
-            executeStageAutomations(opportunityId, leaseSignedStageId, userId).catch(() => {});
-        } catch { /* ignore stage automation errors */ }
-
-        revalidatePath("/pipeline");
-        return { success: true };
-    } catch (error) {
-        console.error("Failed to move to Lease Signed:", error);
-        return { success: false, error: "Failed to move to Lease Signed" };
-    }
-}
-
-export async function autoAdvanceOpportunities() {
-    try {
-        const now = new Date();
-        const today = now.toISOString().split("T")[0];
-
-        // Get all pipelines and find "Lease Signed", "Move In Scheduled", and "Current Tenant" stages
-        const pipelinesSnap = await adminDb.collection('pipelines').get();
-
-        let advancedCount = 0;
-
-        for (const pDoc of pipelinesSnap.docs) {
-            const stagesSnap = await pDoc.ref.collection('stages').get();
-            const stageMap = new Map<string, { id: string; name: string }>();
-            stagesSnap.docs.forEach(s => stageMap.set(s.id, { id: s.id, name: s.data().name }));
-
-            const triggerStageIds = new Set<string>();
-            let currentTenantStageId: string | null = null;
-
-            for (const [id, stage] of stageMap) {
-                const nameLower = stage.name.toLowerCase();
-                if (nameLower === "lease signed" || nameLower === "move in scheduled") {
-                    triggerStageIds.add(id);
-                }
-                if (nameLower === "current tenant") {
-                    currentTenantStageId = id;
-                }
-            }
-
-            if (triggerStageIds.size === 0 || !currentTenantStageId) continue;
-
-            // Find opportunities in these stages
-            for (const stageId of triggerStageIds) {
-                const oppsSnap = await adminDb.collection('opportunities')
-                    .where('pipelineStageId', '==', stageId)
-                    .get();
-
-                for (const oppDoc of oppsSnap.docs) {
-                    const data = oppDoc.data();
-                    // Skip non-open deals
-                    if (data.status && data.status !== "open") continue;
-                    let startDate = data.stayStartDate;
-
-                    // Try contact fallback if no direct start date
-                    if (!startDate && data.contactId) {
-                        const contactDoc = await adminDb.collection('contacts').doc(data.contactId).get();
-                        if (contactDoc.exists) {
-                            startDate = contactDoc.data()?.stayStartDate;
-                        }
-                    }
-
-                    if (!startDate) continue;
-
-                    // Normalize to YYYY-MM-DD for comparison
-                    const startStr = typeof startDate === 'string'
-                        ? startDate.split("T")[0]
-                        : startDate.toDate ? startDate.toDate().toISOString().split("T")[0]
-                        : null;
-
-                    if (startStr && startStr <= today) {
-                        const history = Array.isArray(data.stageHistory) ? [...data.stageHistory] : [];
-                        history.push({ stageId: currentTenantStageId, enteredAt: new Date() });
-                        await oppDoc.ref.update({
-                            pipelineStageId: currentTenantStageId,
-                            stageHistory: history,
-                            updatedAt: new Date()
-                        });
-                        advancedCount++;
-
-                        // Check if this advancement triggers a referral payout
-                        if (data.contactId) {
-                            const dealValue = Number(data.opportunityValue) || 0;
-                            checkReferralConversion(oppDoc.id, data.contactId, dealValue).catch(() => {});
-                        }
-                    }
-                }
-            }
-        }
-
-        revalidatePath("/pipeline");
-        return { success: true, advancedCount };
-    } catch (error) {
-        console.error("Failed to auto-advance opportunities:", error);
-        return { success: false, error: "Failed to auto-advance opportunities" };
-    }
-}
-
 export async function runStayReminders() {
     try {
-        const result = await checkStayReminders();
+        const session = await requireAuth();
+        const result = await checkStayReminders(session.user.workspaceId);
         return { success: true, ...result };
     } catch (error) {
         console.error("Failed to run stay reminders:", error);
@@ -1428,29 +1414,38 @@ export async function bulkDeleteDeals(dealIds: string[]) {
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user || (session.user as any).role === "AGENT") {
+        const session = await requireAuth();
+        if ((session.user as any).role === "AGENT") {
             throw new Error("Unauthorized");
         }
+        const db = tenantDb(session.user.workspaceId);
 
-        const batch = adminDb.batch();
+        // Tenant-isolation: drop any IDs that don't belong to this workspace.
+        const ownedIds: string[] = [];
         for (const id of parsed.data) {
-            batch.delete(adminDb.collection('opportunities').doc(id));
+            const owned = await db.getOwned('opportunities', id);
+            if (owned) ownedIds.push(id);
+        }
+
+        const batch = db.batch();
+        for (const id of ownedIds) {
+            batch.delete(db.doc('opportunities', id));
         }
         await batch.commit();
 
-        logAudit({
+        logAudit(session.user.workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
             action: "bulk_delete",
             entity: "opportunity",
-            entityId: parsed.data.join(","),
-            entityName: `${parsed.data.length} opportunities`,
+            entityId: ownedIds.join(","),
+            entityName: `${ownedIds.length} opportunities`,
+            metadata: { count: ownedIds.length, requested: parsed.data.length },
         }).catch(() => {});
 
         revalidatePath("/pipeline");
-        return { success: true, count: parsed.data.length };
+        return { success: true, count: ownedIds.length };
     } catch (error: any) {
         console.error("Failed to bulk delete deals:", error);
         return { success: false, error: error.message || "Failed to bulk delete deals" };
@@ -1463,31 +1458,63 @@ export async function bulkMoveDeals(dealIds: string[], stageId: string) {
     if (!idsParsed.success || !stageParsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) throw new Error("Unauthorized");
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
-        const batch = adminDb.batch();
+        const pipelinesSnap = await db.collection('pipelines').get();
+        const stageToPipeline = new Map<string, string>();
+        let targetPipelineId: string | null = null;
+        for (const pipeline of pipelinesSnap.docs) {
+            const stagesSnap = await db.subcollection('pipelines', pipeline.id, 'stages').get();
+            for (const stage of stagesSnap.docs) {
+                stageToPipeline.set(stage.id, pipeline.id);
+                if (stage.id === stageParsed.data) targetPipelineId = pipeline.id;
+            }
+        }
+        if (!targetPipelineId) {
+            return { success: false, error: "Target stage not found in any pipeline" };
+        }
+
+        const ownedIds: string[] = [];
+        let skippedCrossPipeline = 0;
         for (const id of idsParsed.data) {
-            const docRef = adminDb.collection('opportunities').doc(id);
-            batch.update(docRef, {
+            const owned = await db.getOwned('opportunities', id);
+            if (!owned) continue;
+            const currentStageId = (owned.data() as any)?.pipelineStageId;
+            const currentPipelineId = currentStageId ? stageToPipeline.get(currentStageId) : null;
+            if (currentPipelineId && currentPipelineId !== targetPipelineId) {
+                skippedCrossPipeline++;
+                continue;
+            }
+            ownedIds.push(id);
+        }
+
+        const batch = db.batch();
+        for (const id of ownedIds) {
+            batch.update(db.doc('opportunities', id), {
                 pipelineStageId: stageParsed.data,
                 updatedAt: new Date(),
             });
         }
         await batch.commit();
 
-        logAudit({
+        logAudit(session.user.workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
             action: "bulk_move",
             entity: "opportunity",
             entityId: idsParsed.data.join(","),
-            entityName: `${idsParsed.data.length} opportunities moved to stage ${stageParsed.data}`,
+            entityName: `${ownedIds.length} opportunities moved to stage ${stageParsed.data}`,
+            metadata: { skippedCrossPipeline },
         }).catch(() => {});
 
         revalidatePath("/pipeline");
-        return { success: true, count: idsParsed.data.length };
+        return {
+            success: true,
+            count: ownedIds.length,
+            skippedCrossPipeline,
+        };
     } catch (error: any) {
         console.error("Failed to bulk move deals:", error);
         return { success: false, error: error.message || "Failed to bulk move deals" };
@@ -1501,25 +1528,27 @@ export async function addPayment(dealId: string, amount: number, date: string, m
     if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message || "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth();
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
 
-        const paymentRef = adminDb.collection('opportunities').doc(parsed.data.dealId).collection('payments').doc();
+        const paymentRef = db.subcollection('opportunities', parsed.data.dealId, 'payments').doc();
         await paymentRef.set({
             amount: parsed.data.amount,
             date: parsed.data.date,
             method: parsed.data.method,
             notes: parsed.data.notes || "",
             recordedBy: session.user.name || session.user.email || "Unknown",
+            workspaceId,
             createdAt: new Date(),
         });
 
         // Recalculate payment status based on total payments vs deal value
-        const oppDoc = await adminDb.collection('opportunities').doc(parsed.data.dealId).get();
+        const oppDoc = await db.doc('opportunities', parsed.data.dealId).get();
         const oppData = oppDoc.data();
         const dealValue = Number(oppData?.opportunityValue) || 0;
 
-        const paymentsSnap = await adminDb.collection('opportunities').doc(parsed.data.dealId).collection('payments').get();
+        const paymentsSnap = await db.subcollection('opportunities', parsed.data.dealId, 'payments').get();
         let totalPaid = 0;
         paymentsSnap.docs.forEach(doc => { totalPaid += Number(doc.data().amount) || 0; });
 
@@ -1533,7 +1562,7 @@ export async function addPayment(dealId: string, amount: number, date: string, m
             revenueStatus = "collected";
         }
 
-        await adminDb.collection('opportunities').doc(parsed.data.dealId).update({
+        await db.doc('opportunities', parsed.data.dealId).update({
             paymentStatus,
             revenueStatus,
             collectedAmount: totalPaid,
@@ -1541,7 +1570,7 @@ export async function addPayment(dealId: string, amount: number, date: string, m
             updatedAt: new Date(),
         });
 
-        logAudit({
+        logAudit(workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -1566,13 +1595,11 @@ export async function getPayments(dealId: string) {
     if (!parsed.success) return { success: false, error: "Invalid input", payments: [] };
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized", payments: [] };
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
-        const paymentsSnap = await adminDb
-            .collection('opportunities')
-            .doc(parsed.data.dealId)
-            .collection('payments')
+        const paymentsSnap = await db
+            .subcollection('opportunities', parsed.data.dealId, 'payments')
             .orderBy('createdAt', 'desc')
             .get();
 
@@ -1601,10 +1628,10 @@ export async function updatePaymentStatus(dealId: string, status: "unpaid" | "pa
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
-        await adminDb.collection('opportunities').doc(parsed.data.dealId).update({
+        await db.doc('opportunities', parsed.data.dealId).update({
             paymentStatus: parsed.data.status,
             updatedAt: new Date(),
         });
@@ -1623,8 +1650,8 @@ export async function updateRevenueStatus(dealId: string, revenueStatus: "booked
     if (!parsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
         const updateData: Record<string, unknown> = {
             revenueStatus: parsed.data.revenueStatus,
@@ -1643,9 +1670,9 @@ export async function updateRevenueStatus(dealId: string, revenueStatus: "booked
             }
         }
 
-        await adminDb.collection('opportunities').doc(parsed.data.dealId).update(updateData);
+        await db.doc('opportunities', parsed.data.dealId).update(updateData);
 
-        logAudit({
+        logAudit(session.user.workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -1666,8 +1693,8 @@ export async function updateRevenueStatus(dealId: string, revenueStatus: "booked
 
 export async function getRevenueData() {
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
         const toDateInput = (val: any): string => {
             if (!val) return "";
@@ -1680,7 +1707,7 @@ export async function getRevenueData() {
             return "";
         };
 
-        const oppsSnap = await adminDb.collection('opportunities').get();
+        const oppsSnap = await db.collection('opportunities').get();
         const deals = oppsSnap.docs
             .filter(doc => !doc.data().deletedAt)
             .map(doc => {
@@ -1722,8 +1749,8 @@ export async function bulkAssignDeals(dealIds: string[], userId: string) {
     if (!idsParsed.success || !userParsed.success) return { success: false, error: "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) throw new Error("Unauthorized");
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
         // Only admins/owners can bulk assign deals
         const role = await getCurrentUserRole();
@@ -1731,9 +1758,9 @@ export async function bulkAssignDeals(dealIds: string[], userId: string) {
             return { success: false, error: "Only admins and owners can assign deals to other users" };
         }
 
-        const batch = adminDb.batch();
+        const batch = db.batch();
         for (const id of idsParsed.data) {
-            const docRef = adminDb.collection('opportunities').doc(id);
+            const docRef = db.doc('opportunities', id);
             batch.update(docRef, {
                 assigneeId: userParsed.data,
                 updatedAt: new Date(),
@@ -1741,7 +1768,7 @@ export async function bulkAssignDeals(dealIds: string[], userId: string) {
         }
         await batch.commit();
 
-        logAudit({
+        logAudit(session.user.workspaceId, {
             userId: (session.user as any).id || "",
             userEmail: session.user.email || "",
             userName: session.user.name || "",
@@ -1766,10 +1793,10 @@ export async function updateDealExpenses(dealId: string, expenses: { monthlyRent
     if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message || "Invalid input" };
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
-        await adminDb.collection('opportunities').doc(parsed.data.dealId).update({
+        await db.doc('opportunities', parsed.data.dealId).update({
             expenses: parsed.data.expenses,
             updatedAt: new Date(),
         });
@@ -1787,10 +1814,10 @@ export async function getDealExpenses(dealId: string) {
     if (!parsed.success) return { success: false, expenses: null };
 
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, expenses: null };
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
 
-        const doc = await adminDb.collection('opportunities').doc(parsed.data).get();
+        const doc = await db.doc('opportunities', parsed.data).get();
         const data = doc.data();
         return {
             success: true,
@@ -1804,7 +1831,9 @@ export async function getDealExpenses(dealId: string) {
 
 export async function getOpportunitiesList() {
     try {
-        const snap = await adminDb.collection('opportunities').orderBy('createdAt', 'desc').get();
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
+        const snap = await db.collection('opportunities').orderBy('createdAt', 'desc').get();
         const opportunities = snap.docs.map(doc => ({
             id: doc.id,
             name: doc.data().name || doc.data().contactName || "Untitled Deal",

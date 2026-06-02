@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
+import { sanitizeHtml } from "@/lib/sanitize-html"
 import {
     Dialog,
     DialogContent,
@@ -349,10 +350,10 @@ export function DocumentPreview({ document, open, onOpenChange, contactId, onRef
                 <div className="flex-1 overflow-auto min-h-0">
                     {/* Generated HTML content preview */}
                     {fileType === "generated" && document.generatedContent && (
-                        <div className="p-6">
+                        <div className="p-6 flex justify-center">
                             <div
-                                className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-white dark:bg-background"
-                                dangerouslySetInnerHTML={{ __html: document.generatedContent }}
+                                className="prose prose-sm dark:prose-invert max-w-3xl border rounded-lg p-6 bg-white dark:bg-background w-full"
+                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(document.generatedContent) }}
                             />
                         </div>
                     )}

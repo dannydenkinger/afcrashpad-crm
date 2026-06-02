@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getAuthSession } from "@/lib/auth-guard";
 import { getAdminStorageBucket } from "@/lib/firebase-admin";
-import { adminDb } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
 import { revalidatePath } from "next/cache";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -9,10 +9,15 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 export async function POST(req: NextRequest) {
     try {
-        const session = await auth();
+        const session = await getAuthSession();
         if (!session?.user?.email) {
             return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
         }
+        const workspaceId = (session.user as any).workspaceId;
+        if (!workspaceId) {
+            return NextResponse.json({ success: false, error: "No workspace found" }, { status: 403 });
+        }
+        const db = tenantDb(workspaceId);
 
         const formData = await req.formData();
         const file = formData.get("file") as File | null;
@@ -30,7 +35,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Find user doc
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get();
+        const usersSnap = await db.collection('users').where('email', '==', session.user.email).limit(1).get();
         if (usersSnap.empty) {
             return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
         }
@@ -54,7 +59,7 @@ export async function POST(req: NextRequest) {
         });
 
         // Update user doc with avatar URL
-        await adminDb.collection('users').doc(userDocId).update({
+        await db.doc('users', userDocId).update({
             profileImageUrl: signedUrl,
             updatedAt: new Date(),
         });

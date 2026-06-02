@@ -27,62 +27,41 @@ const db = getFirestore(admin.app(), dbId);
 async function seed() {
     console.log("Seeding Firebase database...");
 
-    // Create Metadata document
-    console.log("1. Creating bases metadata...");
-    await db.collection('metadata').doc('bases').set({
-        names: [
-            "Luke AFB",
-            "Nellis AFB",
-            "Randolph AFB",
-            "Altus AFB",
-            "Columbus AFB",
-            "Holloman AFB",
-            "Vance AFB",
-            "Laughlin AFB"
-        ]
-    });
-
-    // Check if pipeline exists
-    console.log("2. Checking for existing pipelines...");
+    // 1. Create default pipeline
+    console.log("1. Checking for existing pipelines...");
     const pipelines = await db.collection('pipelines').get();
-    
+
     if (pipelines.empty) {
-        console.log("3. Creating default Traveler Placement pipeline...");
+        console.log("   Creating default Sales Pipeline...");
         const pipelineRef = db.collection('pipelines').doc();
         await pipelineRef.set({
-            name: "Traveler Placement",
+            name: "Sales Pipeline",
             createdAt: new Date(),
             updatedAt: new Date()
         });
 
         const stages = [
-            "New Lead", "Contacted", "Finding Properties", "Selecting Property",
-            "Lease Sent", "Lease Signed", "Move-in Scheduled",
-            "Current Tenant", "Move-out Scheduled", "Review/Referral", "Closed Won",
-            "Closed Lost", "Archive"
+            "New Lead", "Contacted", "Qualified", "Proposal Sent",
+            "Negotiation", "Closed Won", "Closed Lost"
         ];
 
-        console.log("4. Creating default stages...");
         const batch = db.batch();
         stages.forEach((stageName, index) => {
             const stageRef = pipelineRef.collection('stages').doc();
-            batch.set(stageRef, {
-                name: stageName,
-                order: index
-            });
+            batch.set(stageRef, { name: stageName, order: index });
         });
-        
+
         await batch.commit();
-        console.log("Successfully created default pipeline and stages!");
+        console.log("   Created pipeline with " + stages.length + " stages.");
     } else {
-        console.log("Pipelines already exist. Skipping creation.");
+        console.log("   Pipelines already exist. Skipping.");
     }
 
-    // Seed contact statuses if empty
+    // 2. Create default contact statuses
+    console.log("2. Checking for contact statuses...");
     const statusesSnap = await db.collection('contact_statuses').limit(1).get();
     if (statusesSnap.empty) {
-        console.log("5a. Seeding contact statuses...");
-        const defaultStatuses = ["Lead", "Forms Pending", "Booked", "Active Stay", "Vendor", "Host", "Currently Staying"];
+        const defaultStatuses = ["Lead", "Prospect", "Active", "Customer", "Inactive"];
         for (let i = 0; i < defaultStatuses.length; i++) {
             await db.collection('contact_statuses').add({
                 name: defaultStatuses[i],
@@ -91,33 +70,17 @@ async function seed() {
                 updatedAt: new Date()
             });
         }
-        console.log("Created default contact statuses!");
+        console.log("   Created " + defaultStatuses.length + " default statuses.");
+    } else {
+        console.log("   Statuses already exist. Skipping.");
     }
 
-    // Seed special accommodations if empty
-    const accSnap = await db.collection('special_accommodations').limit(1).get();
-    if (accSnap.empty) {
-        console.log("5b. Seeding special accommodations...");
-        const defaultAcc = ["Traveling with Pet", "Spouse", "Dependents"];
-        for (let i = 0; i < defaultAcc.length; i++) {
-            await db.collection('special_accommodations').add({
-                name: defaultAcc[i],
-                order: i,
-                createdAt: new Date(),
-                updatedAt: new Date()
-            });
-        }
-        console.log("Created default special accommodations!");
-    }
-    
-    // Set up owner user if it doesn't exist
-    // You should probably change this to your actual email when running
-    const email = process.env.OWNER_EMAIL || "afcrashpad@gmail.com";
-    console.log(`5. Checking for owner user (${email})...`);
-    
+    // 3. Create owner user
+    const email = process.env.OWNER_EMAIL || "owner@example.com";
+    console.log("3. Checking for owner user (" + email + ")...");
+
     const users = await db.collection('users').where('email', '==', email).get();
     if (users.empty) {
-        console.log("7. Creating owner user...");
         await db.collection('users').add({
             name: "Owner",
             email: email,
@@ -125,12 +88,12 @@ async function seed() {
             createdAt: new Date(),
             updatedAt: new Date()
         });
-        console.log("Created owner user!");
+        console.log("   Created owner user.");
     } else {
-        console.log("Owner user already exists.");
+        console.log("   Owner user already exists. Skipping.");
     }
 
-    console.log("Seeding complete!");
+    console.log("\nSeeding complete! You can now start the app with: npm run dev");
 }
 
 seed().catch(console.error).finally(() => process.exit(0));

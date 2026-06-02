@@ -46,6 +46,7 @@ import dynamic from "next/dynamic"
 
 const TasksPage = dynamic(() => import("@/app/tasks/page"), { ssr: false })
 const BookingCalendar = dynamic(() => import("@/app/dashboard/bookings/BookingCalendar").then(mod => mod.BookingCalendar), { ssr: false })
+const AppointmentsPanel = dynamic(() => import("./AppointmentsPanel").then(mod => mod.AppointmentsPanel), { ssr: false })
 
 type ViewMode = "month" | "week" | "day"
 
@@ -55,7 +56,7 @@ export default function CalendarPage() {
     const [viewMode, setViewMode] = useState<ViewMode>("month")
     const [events, setEvents] = useState<CalendarEvent[]>([])
     const [isLoading, setIsLoading] = useState(false)
-    const [activeSources, setActiveSources] = useState<string[]>(["APPLE", "SYSTEM", "TASK", "EVENT"])
+    const [activeSources, setActiveSources] = useState<string[]>(["APPLE", "SYSTEM", "TASK", "EVENT", "APPOINTMENT"])
     const [activeGoogleCalendars, setActiveGoogleCalendars] = useState<string[]>([])
     const [googleFolderOpen, setGoogleFolderOpen] = useState(true)
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
@@ -182,6 +183,7 @@ export default function CalendarPage() {
                     <div className="flex gap-1 bg-muted rounded-xl p-1">
                         {[
                             { value: "calendar", label: "Calendar" },
+                            { value: "appointments", label: "Appts" },
                             { value: "bookings", label: "Stays" },
                             { value: "tasks", label: "Tasks" },
                         ].map(tab => (
@@ -293,7 +295,7 @@ export default function CalendarPage() {
                                                             {isAllDay ? "All day" : format(startTime, "h:mm a")}
                                                         </span>
                                                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-border text-muted-foreground">
-                                                            {event.source === "GOOGLE" ? "Google" : event.source === "APPLE" ? "iCal" : event.source === "TASK" ? "Task" : event.source === "EVENT" ? "Event" : "Stay"}
+                                                            {event.source === "GOOGLE" ? "Google" : event.source === "APPLE" ? "iCal" : event.source === "TASK" ? "Task" : event.source === "EVENT" ? "Event" : event.source === "APPOINTMENT" ? "Booking" : "Stay"}
                                                         </Badge>
                                                     </div>
                                                 </div>
@@ -313,6 +315,12 @@ export default function CalendarPage() {
                             <Filter className="h-3.5 w-3.5" />
                             Filters
                         </button>
+                    </div>
+                )}
+
+                {activeTab === "appointments" && (
+                    <div className="flex-1 overflow-y-auto pb-28 p-4">
+                        <AppointmentsPanel />
                     </div>
                 )}
 
@@ -356,9 +364,10 @@ export default function CalendarPage() {
                             </div>
                             {[
                                 { id: "APPLE", label: "Apple Calendar", color: "#9966FF" },
-                                { id: "SYSTEM", label: "Stay Dates", color: "#10B981" },
+                                { id: "SYSTEM", label: "Opportunity dates", color: "#10B981" },
                                 { id: "TASK", label: "CRM Tasks", color: "#F59E0B" },
-                                { id: "EVENT", label: "CRM Events", color: "#6366F1" }
+                                { id: "EVENT", label: "CRM Events", color: "#6366F1" },
+                                { id: "APPOINTMENT", label: "Booking appointments", color: "#06B6D4" }
                             ].map(source => (
                                 <button key={`mf-${source.id}`} onClick={() => toggleSource(source.id)} className="flex items-center justify-between w-full px-3 py-3 rounded-xl text-sm font-medium transition-all hover:bg-muted/20 min-h-[44px] touch-manipulation">
                                     <div className="flex items-center gap-3">
@@ -396,6 +405,18 @@ export default function CalendarPage() {
                                 }
                             })
                         }}
+                        onCancelAppointment={async (id) => {
+                            if (!confirm("Cancel this appointment? The contact will not be notified automatically.")) return
+                            const { cancelManualAppointment } = await import("./actions")
+                            const res = await cancelManualAppointment(id)
+                            if (res.success) {
+                                toast.success("Appointment cancelled")
+                                setSelectedEvent(null)
+                                loadEvents()
+                            } else {
+                                toast.error(res.error || "Failed to cancel")
+                            }
+                        }}
                     />
                 )}
             </div>
@@ -411,8 +432,8 @@ export default function CalendarPage() {
                         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
                             Calendar
                         </h2>
-                        <p className="text-sm sm:text-base text-muted-foreground mt-0.5">
-                            Manage schedules, tasks, and property bookings.
+                        <p className="text-sm text-muted-foreground mt-0.5">
+                            Schedule, tasks, and bookings — one place to see what's coming up.
                         </p>
                     </div>
                     {activeTab === "calendar" && (
@@ -435,10 +456,16 @@ export default function CalendarPage() {
                 </div>
                 <TabsList className="bg-muted/30 border border-border flex-wrap h-auto gap-0.5 p-1 mt-4">
                     <TabsTrigger value="calendar" className="text-xs font-semibold">Calendar</TabsTrigger>
-                    <TabsTrigger value="bookings" className="text-xs font-semibold">Stays</TabsTrigger>
+                    <TabsTrigger value="appointments" className="text-xs font-semibold">Appointments</TabsTrigger>
+                    <TabsTrigger value="bookings" className="text-xs font-semibold">Bookings</TabsTrigger>
                     <TabsTrigger value="tasks" className="text-xs font-semibold">Tasks</TabsTrigger>
                 </TabsList>
             </div>
+
+            {/* Appointments Tab (booking-page meetings) */}
+            <TabsContent value="appointments" className="flex-1 overflow-y-auto m-0 p-4 sm:p-6 lg:p-8">
+                <AppointmentsPanel />
+            </TabsContent>
 
             {/* Stays Tab */}
             <TabsContent value="bookings" className="flex-1 overflow-y-auto m-0 p-4 sm:p-6 lg:p-8">
@@ -454,52 +481,6 @@ export default function CalendarPage() {
             <TabsContent value="calendar" className="flex-1 flex flex-col md:flex-row overflow-hidden m-0 min-h-0">
                 {/* Sidebar */}
                 <aside className="hidden md:flex w-72 border-r bg-card/30 backdrop-blur-xl p-4 lg:p-6 flex-col gap-6 shrink-0 overflow-y-auto">
-                    {/* Mini Calendar */}
-                    <div>
-                        {(() => {
-                            const miniStart = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 })
-                            const miniEnd = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 })
-                            const miniDays: Date[] = []
-                            let d = miniStart
-                            while (d <= miniEnd) { miniDays.push(d); d = addDays(d, 1) }
-                            return (
-                                <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-1 rounded hover:bg-muted/30"><ChevronLeft className="h-3 w-3" /></button>
-                                        <span className="text-[11px] font-bold">{format(currentDate, "MMMM yyyy")}</span>
-                                        <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-1 rounded hover:bg-muted/30"><ChevronRight className="h-3 w-3" /></button>
-                                    </div>
-                                    <div className="grid grid-cols-7 gap-0">
-                                        {["Su","Mo","Tu","We","Th","Fr","Sa"].map(day => (
-                                            <div key={day} className="text-[10px] font-bold text-muted-foreground/50 text-center py-1">{day}</div>
-                                        ))}
-                                        {miniDays.map((day, i) => {
-                                            const dayEvents = events.filter(e => isSameDay(new Date(e.start), day))
-                                            return (
-                                                <button
-                                                    key={i}
-                                                    onClick={() => { setCurrentDate(day); setViewMode("day") }}
-                                                    className={cn(
-                                                        "relative h-7 w-full text-[10px] rounded-md transition-colors",
-                                                        !isSameMonth(day, currentDate) && "text-muted-foreground/30",
-                                                        isToday(day) && "bg-primary text-primary-foreground font-bold",
-                                                        isSameDay(day, currentDate) && !isToday(day) && "bg-muted font-bold",
-                                                        !isToday(day) && !isSameDay(day, currentDate) && "hover:bg-muted/30",
-                                                    )}
-                                                >
-                                                    {day.getDate()}
-                                                    {dayEvents.length > 0 && !isToday(day) && (
-                                                        <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-primary" />
-                                                    )}
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            )
-                        })()}
-                    </div>
-
                     <div>
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Event Sources</h3>
@@ -544,9 +525,10 @@ export default function CalendarPage() {
 
                             {[
                                 { id: "APPLE", label: "Apple Calendar", color: "#9966FF" },
-                                { id: "SYSTEM", label: "Stay Dates", color: "#10B981" },
+                                { id: "SYSTEM", label: "Opportunity dates", color: "#10B981" },
                                 { id: "TASK", label: "CRM Tasks", color: "#F59E0B" },
-                                { id: "EVENT", label: "CRM Events", color: "#6366F1" }
+                                { id: "EVENT", label: "CRM Events", color: "#6366F1" },
+                                { id: "APPOINTMENT", label: "Booking appointments", color: "#06B6D4" }
                             ].map(source => (
                                 <button key={source.id} onClick={() => toggleSource(source.id)} className="flex items-center justify-between w-full px-2.5 py-2 rounded-xl text-xs font-medium transition-all hover:bg-muted/20">
                                     <div className="flex items-center gap-2.5">
@@ -662,7 +644,9 @@ export default function CalendarPage() {
                         {[
                             { id: "APPLE", label: "Apple Calendar", color: "#9966FF" },
                             { id: "SYSTEM", label: "Stay Dates", color: "#10B981" },
-                            { id: "TASK", label: "CRM Tasks", color: "#F59E0B" }
+                            { id: "TASK", label: "CRM Tasks", color: "#F59E0B" },
+                            { id: "EVENT", label: "CRM Events", color: "#6366F1" },
+                            { id: "APPOINTMENT", label: "Booking appointments", color: "#06B6D4" }
                         ].map(source => (
                             <button key={`mobile-${source.id}`} onClick={() => toggleSource(source.id)} className="flex items-center justify-between w-full px-3 py-3 rounded-xl text-sm font-medium transition-all hover:bg-muted/20 min-h-[44px] touch-manipulation">
                                 <div className="flex items-center gap-3">
@@ -1136,9 +1120,10 @@ function DayView({
 
 // ── Event Detail Modal ──────────────────────────────────────────────────────
 
-function EventDetailModal({ event, onClose, onNavigate, onEditTask }: { event: CalendarEvent, onClose: () => void, onNavigate: (url: string) => void, onEditTask?: (taskId: string) => void }) {
-    const sourceLabels: Record<string, string> = { GOOGLE: "Google Calendar", APPLE: "Apple Calendar", SYSTEM: "CRM -- Stay Event", TASK: "CRM Task", EVENT: "Calendar Event" }
+function EventDetailModal({ event, onClose, onNavigate, onEditTask, onCancelAppointment }: { event: CalendarEvent, onClose: () => void, onNavigate: (url: string) => void, onEditTask?: (taskId: string) => void, onCancelAppointment?: (id: string) => void }) {
+    const sourceLabels: Record<string, string> = { GOOGLE: "Google Calendar", APPLE: "Apple Calendar", SYSTEM: "CRM -- Stay Event", TASK: "CRM Task", EVENT: "Calendar Event", APPOINTMENT: "Booking Appointment" }
     const isAllDay = event.start instanceof Date && event.start.getHours() === 0 && event.start.getMinutes() === 0
+    const navLabel = event.source === "APPOINTMENT" ? "View Contact" : event.source === "SYSTEM" ? "View Opportunity" : "Open"
 
     return (
         <Sheet open={true} onOpenChange={(open) => { if (!open) onClose() }}>
@@ -1190,14 +1175,23 @@ function EventDetailModal({ event, onClose, onNavigate, onEditTask }: { event: C
                             {event.source === "EVENT" ? "Edit Event" : "Edit Task"}
                         </Button>
                     )}
+                    {event.source === "APPOINTMENT" && onCancelAppointment && (
+                        <Button
+                            variant="outline"
+                            className="w-full h-9 gap-2 text-sm font-semibold border-rose-500/30 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700"
+                            onClick={() => onCancelAppointment(event.id.replace(/^appointment-/, ""))}
+                        >
+                            <X className="h-3.5 w-3.5" />
+                            Cancel appointment
+                        </Button>
+                    )}
                 </div>
                 {event.navigationUrl && (
                     <div className="p-4 sm:p-6 border-t border-border safe-bottom">
                         <Button className="w-full h-11 gap-3 font-black tracking-wide shadow-lg" style={{ backgroundColor: event.color, color: "white" }} onClick={() => onNavigate(event.navigationUrl!)}>
-                            View Opportunity
+                            {navLabel}
                             <ArrowRight className="h-4 w-4" />
                         </Button>
-                        <p className="text-[10px] text-muted-foreground text-center mt-3 font-medium">Opens the associated opportunity</p>
                     </div>
                 )}
             </SheetContent>

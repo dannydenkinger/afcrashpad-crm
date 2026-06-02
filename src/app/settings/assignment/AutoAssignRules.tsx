@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
@@ -201,28 +200,19 @@ export function AutoAssignRules({ users }: AutoAssignRulesProps) {
 
     if (isLoading) {
         return (
-            <Card>
-                <CardContent className="p-12 text-center text-muted-foreground">Loading assignment rules...</CardContent>
-            </Card>
+            <div className="py-12 text-center text-sm text-muted-foreground">Loading assignment rules…</div>
         )
     }
 
     return (
-        <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <div className="space-y-1">
-                    <CardTitle className="flex items-center gap-2">
-                        <UserPlus className="h-5 w-5 text-pink-500" />
-                        Auto-Assignment Rules
-                    </CardTitle>
-                    <CardDescription>Automatically assign new leads and deals to team members.</CardDescription>
-                </div>
+        <div className="space-y-4">
+            <div className="flex justify-end">
                 <Button size="sm" onClick={handleOpenCreate}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    New Rule
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    New rule
                 </Button>
-            </CardHeader>
-            <CardContent>
+            </div>
+            <div>
                 {rules.length === 0 ? (
                     <div className="flex items-center justify-center py-12 border-2 border-dashed rounded-lg bg-muted/10">
                         <div className="text-center">
@@ -294,7 +284,7 @@ export function AutoAssignRules({ users }: AutoAssignRulesProps) {
                         ))}
                     </div>
                 )}
-            </CardContent>
+            </div>
 
             {/* Create / Edit Dialog */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -380,7 +370,7 @@ export function AutoAssignRules({ users }: AutoAssignRulesProps) {
                                                         </SelectTrigger>
                                                         <SelectContent>
                                                             <SelectItem value="lead_source">Lead Source</SelectItem>
-                                                            <SelectItem value="base">Military Base</SelectItem>
+                                                            <SelectItem value="location">Location</SelectItem>
                                                             <SelectItem value="source">Source</SelectItem>
                                                         </SelectContent>
                                                     </Select>
@@ -440,6 +430,6 @@ export function AutoAssignRules({ users }: AutoAssignRulesProps) {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </Card>
+        </div>
     )
 }

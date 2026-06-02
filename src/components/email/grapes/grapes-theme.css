@@ -1,0 +1,241 @@
+/*
+ * GrapesJS theme overrides to match the rest of Vesta.
+ *
+ * The core chrome (selection outlines, hover highlights, resize handles,
+ * component toolbar, drop placeholders, modals) gets retinted to use our
+ * shadcn CSS variables, so the editor automatically follows light / dark mode.
+ *
+ * The email canvas iframe content itself is intentionally untouched — emails
+ * render on whatever background the recipient's inbox uses (usually white),
+ * and we don't want to paint a dark preview of a light email.
+ *
+ * Selectors use high specificity or !important where GrapesJS's built-in
+ * styles are similarly forceful. Prefer the least-aggressive override that
+ * still wins.
+ */
+
+/* ── Hide native GrapesJS chrome (we render React panels) ──────────────── */
+/* All the manager UIs are rendered via @grapesjs/react providers in our
+   shadcn-themed panels. The native panels (top toolbar with download/erase/
+   trash icons, right-side view tabs with paintbrush/gear/layers, the dark
+   style manager column) duplicate that information. Hide them. */
+.gjs-pn-options,
+.gjs-pn-views,
+.gjs-pn-views-container,
+.gjs-pn-devices-c,
+.gjs-pn-commands,
+.gjs-pn-buttons,
+.gjs-pn-panels,
+.gjs-pn-panel.gjs-pn-options,
+.gjs-pn-panel.gjs-pn-views,
+.gjs-pn-panel.gjs-pn-views-container {
+    display: none !important;
+}
+
+/* ── Canvas wrapper ─────────────────────────────────────────────────────── */
+.gjs-cv-canvas {
+    background: var(--muted) !important;
+    color: var(--foreground);
+    /* Let the iframe scroll horizontally if a wide device (Desktop ~600px)
+       exceeds the canvas pane width — beats clipping on the right edge. */
+    overflow: auto !important;
+}
+
+/*
+ * Center the device-preview iframe in the canvas.
+ *
+ * Default GrapesJS behavior pins .gjs-frame-wrapper to position:absolute
+ * left:0, top:0. When the user picks Mobile or Tablet, the iframe shrinks
+ * but stays glued to the left edge — leaving a giant empty area on the
+ * right and looking off-center. We turn the frames container into a
+ * column flex container with `safe center` so the wrapper centers
+ * horizontally, and falls back to flex-start when the device width
+ * exceeds the canvas width (so the left content never gets clipped).
+ *
+ * `position: relative` on the wrapper lets the flex layout govern its
+ * placement instead of the inline left/top GrapesJS injects. The drag/
+ * drop position math relies on getBoundingClientRect, which works the
+ * same regardless of positioning scheme.
+ */
+.gjs-cv-canvas__frames {
+    display: flex !important;
+    flex-direction: column;
+    align-items: safe center;
+    padding: 24px 16px;
+    min-height: 100%;
+    box-sizing: border-box;
+    /* Stretch wider than the parent when a centered wide iframe overflows,
+       so horizontal scroll on .gjs-cv-canvas reveals it. */
+    min-width: max-content;
+}
+
+.gjs-frame-wrapper {
+    background: var(--muted) !important;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    margin: 0 !important;
+    flex-shrink: 0;
+    /* Smooth resize when switching between Desktop / Tablet / Mobile */
+    transition: width 0.15s ease-out;
+}
+
+/* Let the iframe keep its own white-ish background (emails do) */
+.gjs-frame {
+    box-shadow: 0 1px 3px rgb(0 0 0 / 8%), 0 1px 2px rgb(0 0 0 / 6%) !important;
+    border-radius: 4px;
+}
+
+/* ── Selection & hover ──────────────────────────────────────────────────── */
+.gjs-selected,
+.gjs-selected-parent {
+    outline: 2px solid var(--primary) !important;
+    outline-offset: -2px !important;
+}
+
+.gjs-hovered {
+    outline: 1px solid color-mix(in oklab, var(--primary) 40%, transparent) !important;
+    outline-offset: -1px !important;
+}
+
+.gjs-dashed {
+    outline: 1px dashed color-mix(in oklab, var(--primary) 40%, transparent) !important;
+}
+
+/* The small "tag" badge showing the element type on hover */
+.gjs-badge {
+    background: var(--primary) !important;
+    color: var(--primary-foreground) !important;
+    font-family: inherit !important;
+    font-size: 11px !important;
+    padding: 2px 6px !important;
+    border-radius: 3px !important;
+}
+
+/* ── Drop placeholders ──────────────────────────────────────────────────── */
+.gjs-placeholder {
+    border-color: var(--primary) !important;
+}
+.gjs-placeholder-int {
+    background-color: var(--primary) !important;
+}
+.gjs-placeholder.gjs-placeholder-v {
+    background-color: var(--primary) !important;
+}
+
+/* ── Resize handles ─────────────────────────────────────────────────────── */
+.gjs-resizer-h,
+.gjs-resizer-c,
+.gjs-resizer-h-tl,
+.gjs-resizer-h-tc,
+.gjs-resizer-h-tr,
+.gjs-resizer-h-cl,
+.gjs-resizer-h-cr,
+.gjs-resizer-h-bl,
+.gjs-resizer-h-bc,
+.gjs-resizer-h-br {
+    background-color: var(--primary) !important;
+    border: 1px solid var(--background) !important;
+}
+
+/* ── Component toolbar (appears on selection with move/duplicate/delete) ── */
+.gjs-toolbar {
+    background: var(--popover) !important;
+    color: var(--popover-foreground) !important;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+    overflow: hidden;
+}
+
+.gjs-toolbar-item {
+    color: var(--popover-foreground) !important;
+    background: transparent !important;
+    padding: 6px 8px !important;
+    border-radius: 0 !important;
+}
+
+.gjs-toolbar-item:hover {
+    background: var(--muted) !important;
+}
+
+.gjs-toolbar-item svg {
+    fill: currentColor !important;
+}
+
+/* ── Modals (newsletter preset uses these for "Export HTML" etc.) ───────── */
+.gjs-mdl-dialog {
+    background: var(--background) !important;
+    color: var(--foreground) !important;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgb(0 0 0 / 20%);
+    max-width: min(90vw, 900px) !important;
+}
+
+.gjs-mdl-header {
+    background: var(--card) !important;
+    color: var(--foreground) !important;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px !important;
+}
+
+.gjs-mdl-title {
+    font-family: inherit !important;
+    font-weight: 600;
+}
+
+.gjs-mdl-btn-close {
+    color: var(--muted-foreground) !important;
+}
+
+.gjs-mdl-content {
+    background: var(--background) !important;
+    color: var(--foreground) !important;
+    padding: 16px !important;
+}
+
+/* Text input / textarea inside modals (eg. export HTML textarea) */
+.gjs-mdl-content textarea,
+.gjs-mdl-content input[type="text"] {
+    background: var(--muted) !important;
+    color: var(--foreground) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 6px;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace !important;
+    font-size: 12px !important;
+}
+
+/* The grey backdrop behind modals */
+.gjs-mdl-backdrop {
+    background: rgb(0 0 0 / 50%) !important;
+}
+
+/* ── Devices button/dropdown (we use our own, but the preset may use core) */
+.gjs-devices-c {
+    background: transparent !important;
+}
+
+/* ── Misc / default panels we don't render (safety net) ─────────────────── */
+.gjs-pn-panel {
+    background: var(--card) !important;
+    color: var(--foreground) !important;
+    border-color: var(--border) !important;
+}
+
+.gjs-pn-btn {
+    color: var(--foreground) !important;
+}
+
+.gjs-pn-btn.gjs-pn-active {
+    color: var(--primary) !important;
+    box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+/* Prevent the root editor background from leaking in dark mode */
+.gjs-editor-cont,
+.gjs-editor {
+    background: transparent !important;
+    color: var(--foreground) !important;
+    font-family: inherit !important;
+}

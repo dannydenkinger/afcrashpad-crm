@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Default-deny rules. Document uploads are written via the admin SDK (signed
+// URLs from /api/documents/upload-url), so end-user clients don't need direct
+// write access. Reads happen through long-lived signed URLs returned by the
+// record endpoint, which also don't require read rules.
+//
+// If we later want client-direct browser uploads via the firebase JS SDK,
+// add a more permissive `allow write: if request.auth != null && ...` rule
+// scoped to the user's workspace path.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

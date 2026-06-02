@@ -1,8 +1,9 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { requireAuth } from "@/lib/auth-guard"
 import { getSearchAnalytics, getGSCPages } from "@/lib/google-search-console"
+import { getIntegrationStatus } from "@/lib/integration-status"
 import type {
     TrackedKeyword,
     TrackedCompetitor,
@@ -24,21 +25,26 @@ function tsToISO(v: unknown): string | null {
 
 // ─── Google Search Console ──────────────────────────────────────────────────
 
-export async function fetchGSCData(days: number = 28): Promise<ActionResult<GSCSiteMetrics>> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+export async function getSeoConnectionStatus() {
+    const status = await getIntegrationStatus()
+    return { gsc: status.gsc }
+}
 
-    const data = await getSearchAnalytics(days)
+export async function fetchGSCData(days: number = 28): Promise<ActionResult<GSCSiteMetrics>> {
+    const session = await requireAuth()
+
+    const workspaceId = session.user.workspaceId
+    const data = await getSearchAnalytics(workspaceId, days)
     if (!data) return { success: false, error: "GSC not configured or no data available" }
 
     return { success: true, data }
 }
 
 export async function fetchGSCPages(days: number = 28) {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
 
-    const data = await getGSCPages(days)
+    const workspaceId = session.user.workspaceId
+    const data = await getGSCPages(workspaceId, days)
     if (!data) return { success: false, error: "GSC not configured or no data available" }
 
     return { success: true, data }
@@ -47,11 +53,12 @@ export async function fetchGSCPages(days: number = 28) {
 // ─── Keyword Tracking (Firestore) ───────────────────────────────────────────
 
 export async function getTrackedKeywords(): Promise<ActionResult<TrackedKeyword[]>> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const snap = await adminDb.collection("seo_keywords").orderBy("createdAt", "desc").get()
+        const snap = await db.collection("seo_keywords").orderBy("createdAt", "desc").get()
         const keywords: TrackedKeyword[] = snap.docs.map((doc) => {
             const d = doc.data()
             return {
@@ -77,11 +84,11 @@ export async function addTrackedKeyword(
     keyword: string,
     domain: string
 ): Promise<ActionResult<TrackedKeyword>> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const ref = adminDb.collection("seo_keywords").doc()
         const now = new Date().toISOString()
         const data = {
             keyword: keyword.toLowerCase().trim(),
@@ -92,7 +99,7 @@ export async function addTrackedKeyword(
             lastChecked: "",
             createdAt: now,
         }
-        await ref.set(data)
+        const ref = await db.add("seo_keywords", data)
 
         return {
             success: true,
@@ -105,11 +112,12 @@ export async function addTrackedKeyword(
 }
 
 export async function removeTrackedKeyword(id: string): Promise<ActionResult> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        await adminDb.collection("seo_keywords").doc(id).delete()
+        await db.doc("seo_keywords", id).delete()
         return { success: true }
     } catch (error) {
         console.error("Error removing keyword:", error)
@@ -122,11 +130,12 @@ export async function updateKeywordPosition(
     position: number | null,
     searchVolume?: number
 ): Promise<ActionResult> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const ref = adminDb.collection("seo_keywords").doc(id)
+        const ref = db.doc("seo_keywords", id)
         const doc = await ref.get()
         if (!doc.exists) return { success: false, error: "Keyword not found" }
 
@@ -158,11 +167,12 @@ export async function updateKeywordPosition(
 // ─── Competitor Tracking (Firestore) ────────────────────────────────────────
 
 export async function getTrackedCompetitors(): Promise<ActionResult<TrackedCompetitor[]>> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const snap = await adminDb.collection("seo_competitors").orderBy("createdAt", "desc").get()
+        const snap = await db.collection("seo_competitors").orderBy("createdAt", "desc").get()
         const competitors: TrackedCompetitor[] = snap.docs.map((doc) => {
             const d = doc.data()
             return {
@@ -186,11 +196,11 @@ export async function addTrackedCompetitor(
     domain: string,
     name: string
 ): Promise<ActionResult<TrackedCompetitor>> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const ref = adminDb.collection("seo_competitors").doc()
         const now = new Date().toISOString()
         const data = {
             domain: domain.replace("www.", "").toLowerCase().trim(),
@@ -200,7 +210,7 @@ export async function addTrackedCompetitor(
             lastChecked: "",
             createdAt: now,
         }
-        await ref.set(data)
+        const ref = await db.add("seo_competitors", data)
 
         return { success: true, data: { ...data, id: ref.id } }
     } catch (error) {
@@ -210,11 +220,12 @@ export async function addTrackedCompetitor(
 }
 
 export async function removeTrackedCompetitor(id: string): Promise<ActionResult> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        await adminDb.collection("seo_competitors").doc(id).delete()
+        await db.doc("seo_competitors", id).delete()
         return { success: true }
     } catch (error) {
         console.error("Error removing competitor:", error)
@@ -226,11 +237,12 @@ export async function updateCompetitorPageSpeed(
     id: string,
     pageSpeed: PageSpeedMetrics
 ): Promise<ActionResult> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const ref = adminDb.collection("seo_competitors").doc(id)
+        const ref = db.doc("seo_competitors", id)
         const doc = await ref.get()
         if (!doc.exists) return { success: false, error: "Competitor not found" }
 
@@ -261,11 +273,12 @@ export async function updateCompetitorPageSpeed(
 // ─── Backlink Tracking (Manual Entry) ───────────────────────────────────────
 
 export async function getBacklinkEntries(): Promise<ActionResult<BacklinkEntry[]>> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const snap = await adminDb.collection("seo_backlink_entries").orderBy("date", "desc").get()
+        const snap = await db.collection("seo_backlink_entries").orderBy("date", "desc").get()
         const entries: BacklinkEntry[] = snap.docs.map((doc) => {
             const d = doc.data()
             return {
@@ -292,14 +305,14 @@ export async function addBacklinkEntry(entry: {
     domainRating: number | null
     notes: string
 }): Promise<ActionResult<BacklinkEntry>> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const ref = adminDb.collection("seo_backlink_entries").doc()
         const now = new Date().toISOString()
         const data = { ...entry, createdAt: now }
-        await ref.set(data)
+        const ref = await db.add("seo_backlink_entries", data)
 
         return { success: true, data: { ...data, id: ref.id } }
     } catch (error) {
@@ -309,11 +322,12 @@ export async function addBacklinkEntry(entry: {
 }
 
 export async function removeBacklinkEntry(id: string): Promise<ActionResult> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        await adminDb.collection("seo_backlink_entries").doc(id).delete()
+        await db.doc("seo_backlink_entries", id).delete()
         return { success: true }
     } catch (error) {
         console.error("Error removing backlink entry:", error)
@@ -324,12 +338,12 @@ export async function removeBacklinkEntry(id: string): Promise<ActionResult> {
 // ─── SEO Snapshots ──────────────────────────────────────────────────────────
 
 export async function saveSEOSnapshot(snapshot: Omit<SEOSnapshot, "id" | "createdAt">): Promise<ActionResult> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const ref = adminDb.collection("seo_snapshots").doc()
-        await ref.set({ ...snapshot, createdAt: new Date().toISOString() })
+        await db.add("seo_snapshots", { ...snapshot, createdAt: new Date().toISOString() })
         return { success: true }
     } catch (error) {
         console.error("Error saving SEO snapshot:", error)
@@ -338,11 +352,12 @@ export async function saveSEOSnapshot(snapshot: Omit<SEOSnapshot, "id" | "create
 }
 
 export async function getSEOSnapshots(limit: number = 90): Promise<ActionResult<SEOSnapshot[]>> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Not authenticated" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const snap = await adminDb
+        const snap = await db
             .collection("seo_snapshots")
             .orderBy("date", "desc")
             .limit(limit)

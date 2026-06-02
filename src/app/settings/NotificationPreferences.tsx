@@ -4,17 +4,16 @@ import { useState } from "react"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { updateNotificationPreferences, saveFcmToken } from "./users/actions"
 import { toast } from "sonner"
-import { Loader2, Mail, Bell, Smartphone } from "lucide-react"
-import { requestPushToken } from "@/lib/firebase-messaging"
+import { Loader2, Mail, Smartphone, AlertCircle } from "lucide-react"
+import { requestPushToken, isPushConfigured, PushNotConfiguredError } from "@/lib/firebase-messaging"
 
 const EVENT_TYPES = [
     { key: "opportunity", label: "New Lead / Opportunity" },
     { key: "contact", label: "New Contact" },
-    { key: "checkin", label: "Check-in Reminder" },
-    { key: "checkout", label: "Check-out Reminder" },
+    { key: "checkin", label: "Engagement starts (period start)" },
+    { key: "checkout", label: "Engagement ends (period end)" },
     { key: "task", label: "Task Due" },
 ] as const
 
@@ -56,12 +55,18 @@ export function NotificationPreferences({ initialPrefs }: { initialPrefs: Prefs 
             setPrefs(prev => ({ ...prev, pushEnabled: true }))
             toast.success("Push notifications enabled!")
         } catch (err) {
-            console.error("Push setup error:", err)
-            toast.error("Failed to enable push notifications")
+            if (err instanceof PushNotConfiguredError) {
+                toast.error(err.message)
+            } else {
+                console.error("Push setup error:", err)
+                toast.error("Failed to enable push notifications")
+            }
         } finally {
             setRequestingPush(false)
         }
     }
+
+    const pushConfigured = isPushConfigured()
 
     const handleSave = async () => {
         setSaving(true)
@@ -79,23 +84,14 @@ export function NotificationPreferences({ initialPrefs }: { initialPrefs: Prefs 
     const pushEnabled = prefs.pushEnabled === true
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    <Bell className="h-4 w-4" />
-                    Notification Preferences
-                </CardTitle>
-                <CardDescription>
-                    Control which events trigger email and push alerts. In-app notifications are always on.
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-                {/* Email Master toggle */}
+        <div className="space-y-6">
+            {/* Email channel */}
+            <div className="space-y-3">
                 <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/20">
                     <div className="flex items-center gap-3">
                         <Mail className="h-5 w-5 text-muted-foreground" />
                         <div>
-                            <Label className="text-sm font-semibold">Email Alerts</Label>
+                            <Label className="text-sm font-semibold">Email alerts</Label>
                             <p className="text-xs text-muted-foreground mt-0.5">
                                 Master toggle for all email notifications
                             </p>
@@ -107,13 +103,12 @@ export function NotificationPreferences({ initialPrefs }: { initialPrefs: Prefs 
                     />
                 </div>
 
-                {/* Email per-event toggles */}
                 {emailEnabled && (
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                         {EVENT_TYPES.map(({ key, label }) => (
                             <div
                                 key={key}
-                                className="flex items-center justify-between py-3 px-4 rounded-md hover:bg-muted/30 transition-colors"
+                                className="flex items-center justify-between py-2.5 px-3 rounded-md hover:bg-muted/30 transition-colors"
                             >
                                 <Label className="text-sm">{label}</Label>
                                 <Switch
@@ -124,15 +119,17 @@ export function NotificationPreferences({ initialPrefs }: { initialPrefs: Prefs 
                         ))}
                     </div>
                 )}
+            </div>
 
-                {/* Push Master toggle */}
+            {/* Push channel */}
+            <div className="space-y-3">
                 <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/20">
                     <div className="flex items-center gap-3">
                         <Smartphone className="h-5 w-5 text-muted-foreground" />
                         <div>
-                            <Label className="text-sm font-semibold">Push Notifications</Label>
+                            <Label className="text-sm font-semibold">Push notifications</Label>
                             <p className="text-xs text-muted-foreground mt-0.5">
-                                Browser & device push alerts (requires permission)
+                                Browser &amp; device push alerts (requires permission)
                             </p>
                         </div>
                     </div>
@@ -146,21 +143,32 @@ export function NotificationPreferences({ initialPrefs }: { initialPrefs: Prefs 
                             variant="outline"
                             size="sm"
                             onClick={handleEnablePush}
-                            disabled={requestingPush}
+                            disabled={requestingPush || !pushConfigured}
+                            title={!pushConfigured ? "Push not configured for this deployment" : undefined}
                         >
-                            {requestingPush && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {requestingPush && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
                             Enable
                         </Button>
                     )}
                 </div>
 
-                {/* Push per-event toggles */}
+                {!pushConfigured && !pushEnabled && (
+                    <div className="flex items-start gap-2 px-1 text-[11px] text-muted-foreground">
+                        <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                        <span>
+                            Push notifications aren&apos;t configured for this deployment. The workspace owner needs to set{" "}
+                            <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">NEXT_PUBLIC_FIREBASE_VAPID_KEY</code>{" "}
+                            in environment variables.
+                        </span>
+                    </div>
+                )}
+
                 {pushEnabled && (
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                         {EVENT_TYPES.map(({ key, label }) => (
                             <div
                                 key={key}
-                                className="flex items-center justify-between py-3 px-4 rounded-md hover:bg-muted/30 transition-colors"
+                                className="flex items-center justify-between py-2.5 px-3 rounded-md hover:bg-muted/30 transition-colors"
                             >
                                 <Label className="text-sm">{label}</Label>
                                 <Switch
@@ -171,14 +179,14 @@ export function NotificationPreferences({ initialPrefs }: { initialPrefs: Prefs 
                         ))}
                     </div>
                 )}
+            </div>
 
-                <div className="flex justify-end pt-2">
-                    <Button onClick={handleSave} disabled={saving} size="sm">
-                        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Save Preferences
-                    </Button>
-                </div>
-            </CardContent>
-        </Card>
+            <div className="flex justify-end pt-2">
+                <Button onClick={handleSave} disabled={saving} size="sm">
+                    {saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                    Save preferences
+                </Button>
+            </div>
+        </div>
     )
 }

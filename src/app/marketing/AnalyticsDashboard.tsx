@@ -10,7 +10,9 @@ import {
     Calendar,
     ChevronDown,
     BarChart3,
+    LineChart,
 } from "lucide-react"
+import { EmptyState } from "@/components/ui/EmptyState"
 import {
     XAxis,
     YAxis,
@@ -84,12 +86,36 @@ export default function AnalyticsDashboard() {
         organicPercentage: number;
     } | null>(null)
     const [isLoading, setIsLoading] = useState(true)
+    const [connected, setConnected] = useState<boolean | null>(null)
+    const [siteDomain, setSiteDomain] = useState<string>("")
+
+    // Pull the workspace's site domain from Branding so the badge above the
+    // KPIs reflects this workspace, not whatever the operator put in env.
+    useEffect(() => {
+        let cancelled = false
+        import("@/app/settings/branding/actions").then(({ getBrandingSettings }) =>
+            getBrandingSettings().then((b) => {
+                if (cancelled) return
+                const url = (b?.websiteUrl || "").trim().replace(/\/+$/, "")
+                if (!url) return
+                const withProto = /^https?:\/\//i.test(url) ? url : `https://${url}`
+                try { setSiteDomain(new URL(withProto).hostname) } catch { setSiteDomain(url) }
+            }).catch(() => {})
+        )
+        return () => { cancelled = true }
+    }, [])
 
     useEffect(() => {
         const loadGA4Data = async () => {
             setIsLoading(true)
             const days = timeframe === "Last 30 Days" ? 30 : timeframe === "Last 7 Days" ? 7 : 1
             const result = await fetchMarketingData(days)
+
+            setConnected(result.connected ?? false)
+            if (!result.connected) {
+                setIsLoading(false)
+                return
+            }
 
             if (result.traffic && result.traffic.length > 0) {
                 const formattedTraffic = (result.traffic as GATrafficRow[])
@@ -134,6 +160,23 @@ export default function AnalyticsDashboard() {
         color: getSourceColor(s.source, i),
     }))
 
+    if (!isLoading && connected === false) {
+        return (
+            <Card className="border-amber-500/30 bg-amber-500/5">
+                <CardContent className="py-2">
+                    <EmptyState
+                        Icon={LineChart}
+                        accent="amber"
+                        title="Connect Google Analytics to see traffic"
+                        description="Once you link your GA4 property, this dashboard will show site visitors, top sources, conversions, and more."
+                        action={{ label: "Connect Google Analytics", href: "/settings/integrations/services" }}
+                        secondaryAction={{ label: "Learn more", href: "/settings/integrations/services" }}
+                    />
+                </CardContent>
+            </Card>
+        )
+    }
+
     return (
         <div className="relative">
             {isLoading && (
@@ -162,7 +205,7 @@ export default function AnalyticsDashboard() {
                 </DropdownMenu>
 
                 <Badge variant="outline" className="text-[10px] h-7 px-2">
-                    afcrashpad.com
+                    {siteDomain || "set website in branding"}
                 </Badge>
             </div>
 

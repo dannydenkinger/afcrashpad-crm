@@ -1,7 +1,7 @@
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 import { FieldValue } from "firebase-admin/firestore"
 
-export async function logAudit(params: {
+export async function logAudit(workspaceId: string, params: {
     action: string
     entity: string
     entityId: string
@@ -10,7 +10,8 @@ export async function logAudit(params: {
     details?: Record<string, unknown>
 }): Promise<void> {
     try {
-        await adminDb.collection("audit_log").add({
+        const db = tenantDb(workspaceId)
+        await db.add("audit_log", {
             action: params.action,
             entity: params.entity,
             entityId: params.entityId,

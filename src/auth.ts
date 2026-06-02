@@ -1,60 +1,212 @@
 import NextAuth from "next-auth"
 import Google from "next-auth/providers/google"
+import Credentials from "next-auth/providers/credentials"
+import bcrypt from "bcryptjs"
+import type { Firestore } from "firebase-admin/firestore"
 
-// NOTE: firebase-admin is imported dynamically inside the JWT callback
-// to avoid bundling Node.js modules into the edge runtime (middleware).
+// firebase-admin is loaded via globalThis (set in firebase-admin.ts, imported
+// by the NextAuth route handler). This avoids dynamic imports which fail in
+// both edge runtime (no dynamic imports) and Node.js (can't resolve @/ alias).
+function getAdminDb(): Firestore | null {
+    return (globalThis as any).__adminDb ?? null;
+}
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
-    providers: [
+// Build providers list — Google is optional (only if CLIENT_ID is configured)
+const providers = [
+    Credentials({
+        credentials: {
+            email: { type: "email" },
+            password: { type: "password" },
+        },
+        async authorize(credentials, request) {
+            if (!credentials?.email || !credentials?.password) return null
+            const email = String(credentials.email).toLowerCase().trim()
+            // Two throttles:
+            //   1. Per-email (10/min) — stops attacks targeting one account
+            //   2. Per-IP (30/min) — stops distributed credential stuffing
+            //      from a single attacker hitting many accounts. NextAuth v5
+            //      exposes the underlying Request in authorize().
+            try {
+                const { rateLimit } = await import("@/lib/rate-limit")
+                const { allowed: emailOk } = rateLimit(`login:email:${email}`, 10)
+                if (!emailOk) {
+                    console.warn(`[AUTH] login throttled (per-email) for ${email}`)
+                    return null
+                }
+                const fwd = request?.headers?.get("x-forwarded-for") || ""
+                const ip = fwd.split(",")[0]?.trim() || "unknown"
+                if (ip !== "unknown") {
+                    const { allowed: ipOk } = rateLimit(`login:ip:${ip}`, 30)
+                    if (!ipOk) {
+                        console.warn(`[AUTH] login throttled (per-IP) for ${ip}`)
+                        return null
+                    }
+                }
+            } catch { /* rate-limit failure shouldn't block login */ }
+            try {
+                const adminDb = getAdminDb()
+                if (!adminDb) return null
+                const snap = await adminDb.collection("users")
+                    .where("email", "==", email)
+                    .limit(1)
+                    .get()
+                if (snap.empty) return null
+                const doc = snap.docs[0]
+                const data = doc.data()
+                if (!data.passwordHash) return null
+                const valid = await bcrypt.compare(String(credentials.password), data.passwordHash)
+                if (!valid) return null
+                return { id: doc.id, email: data.email, name: data.name, role: data.role }
+            } catch (err) {
+                console.error("[AUTH] Credentials authorize error:", err)
+                return null
+            }
+        },
+    }),
+]
+
+// Only add Google provider if credentials are configured.
+// Sign-in only requests basic identity scopes (openid/email/profile). Gmail
+// access is requested separately via /api/auth/gmail when the user opts in
+// from the Integrations page — this keeps the sign-in consent screen
+// minimal and gives users a real "connect Gmail" affordance.
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    providers.push(
         Google({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             authorization: {
                 params: {
-                    scope: "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+                    scope: "openid email profile",
                     access_type: "offline",
-                    prompt: "consent",
                 },
             },
-        }),
-    ],
-    session: { strategy: "jwt" },
-    callbacks: {
-        async jwt({ token, user, trigger, account }) {
-            // On sign-in, store OAuth tokens and persist to Firestore
-            if (account) {
-                console.log("[AUTH] Sign-in account received:", {
-                    hasAccessToken: !!account.access_token,
-                    hasRefreshToken: !!account.refresh_token,
-                    expiresAt: account.expires_at,
-                    scope: account.scope,
-                    tokenType: account.token_type,
-                })
-                token.accessToken = account.access_token
-                token.refreshToken = account.refresh_token
-                token.accessTokenExpires = account.expires_at ? account.expires_at * 1000 : 0
+        }) as any
+    )
+}
 
-                // Persist tokens to Firestore immediately so Gmail API can use them
-                try {
-                    const { adminDb } = await import(/* webpackIgnore: true */ "@/lib/firebase-admin")
-                    const email = token.email || user?.email || account.providerAccountId
-                    console.log("[AUTH] Persisting tokens to Firestore for:", email, "hasRefresh:", !!token.refreshToken)
-                    if (email && token.refreshToken) {
-                        await adminDb.collection("oauth_tokens").doc("gmail").set({
-                            accessToken: token.accessToken,
-                            refreshToken: token.refreshToken,
-                            accessTokenExpires: token.accessTokenExpires,
-                            email,
-                            updatedAt: new Date().toISOString(),
-                        }, { merge: true })
-                        console.log("[AUTH] Tokens persisted successfully")
-                    }
-                } catch (err) {
-                    console.error("[AUTH] Failed to persist Gmail tokens:", err)
-                }
+export const { handlers, signIn, signOut, auth } = NextAuth({
+    providers,
+    /**
+     * Trust the host header on incoming requests. Required in any NextAuth
+     * v5 production deploy where AUTH_URL isn't explicitly set — without
+     * this, the PKCE cookie isn't written and every Google sign-in fails
+     * with "Invalid code verifier" on the callback. Vercel's domain is
+     * trusted; reverse-proxy setups that need stricter validation should
+     * leave this false and set AUTH_URL explicitly.
+     */
+    trustHost: true,
+    session: {
+        strategy: "jwt",
+        // 30 days. Strikes a balance between "users hate logging in every day"
+        // and "stolen-laptop window shouldn't be infinite." If we add a
+        // device-management UI later, drop this to 7d and let users extend.
+        maxAge: 30 * 24 * 60 * 60,
+        updateAge: 24 * 60 * 60, // Refresh the JWT once per day
+    },
+    /**
+     * Explicit config for every cookie NextAuth uses. Without this we
+     * customized only sessionToken with the v4 cookie name and let the
+     * OAuth-flow cookies (pkce.code_verifier, state, nonce, csrf-token,
+     * callback-url) fall back to v5 defaults. Mixing v4 + v5 cookie
+     * names confused some browsers + Vercel's edge cache and produced
+     * intermittent "invalid_grant: Invalid code verifier" errors during
+     * Google sign-in. Configuring them all explicitly makes the flow
+     * deterministic.
+     *
+     * sameSite=lax is correct for OAuth — the cookie is set on our
+     * origin, the user navigates to Google (top-level navigation),
+     * Google sends them back, and lax cookies ARE sent on top-level
+     * cross-site navigations back to our origin.
+     */
+    cookies: {
+        sessionToken: {
+            name: process.env.NODE_ENV === "production"
+                ? "__Secure-next-auth.session-token"
+                : "next-auth.session-token",
+            options: {
+                httpOnly: true,
+                sameSite: "lax",
+                path: "/",
+                secure: process.env.NODE_ENV === "production",
+            },
+        },
+        callbackUrl: {
+            name: process.env.NODE_ENV === "production"
+                ? "__Secure-next-auth.callback-url"
+                : "next-auth.callback-url",
+            options: {
+                sameSite: "lax",
+                path: "/",
+                secure: process.env.NODE_ENV === "production",
+            },
+        },
+        csrfToken: {
+            name: process.env.NODE_ENV === "production"
+                ? "__Host-next-auth.csrf-token"
+                : "next-auth.csrf-token",
+            options: {
+                httpOnly: true,
+                sameSite: "lax",
+                path: "/",
+                secure: process.env.NODE_ENV === "production",
+            },
+        },
+        pkceCodeVerifier: {
+            name: process.env.NODE_ENV === "production"
+                ? "__Secure-next-auth.pkce.code_verifier"
+                : "next-auth.pkce.code_verifier",
+            options: {
+                httpOnly: true,
+                sameSite: "lax",
+                path: "/",
+                secure: process.env.NODE_ENV === "production",
+                maxAge: 60 * 15, // 15 minutes — same as NextAuth default
+            },
+        },
+        state: {
+            name: process.env.NODE_ENV === "production"
+                ? "__Secure-next-auth.state"
+                : "next-auth.state",
+            options: {
+                httpOnly: true,
+                sameSite: "lax",
+                path: "/",
+                secure: process.env.NODE_ENV === "production",
+                maxAge: 60 * 15,
+            },
+        },
+        nonce: {
+            name: process.env.NODE_ENV === "production"
+                ? "__Secure-next-auth.nonce"
+                : "next-auth.nonce",
+            options: {
+                httpOnly: true,
+                sameSite: "lax",
+                path: "/",
+                secure: process.env.NODE_ENV === "production",
+            },
+        },
+    },
+    pages: {
+        signIn: "/login",
+    },
+    callbacks: {
+        async jwt({ token, user, trigger, account, session }) {
+            // On Google OAuth sign-in, just record auth provider. Gmail/Calendar
+            // tokens are NOT collected here — the basic sign-in scope is only
+            // openid/email/profile. Gmail access is granted via the dedicated
+            // /api/auth/gmail flow once the user opts in from Integrations.
+            if (account && account.provider === "google") {
+                token.authProvider = "google"
             }
 
-            // Refresh access token if expired
+            // Track auth provider for credentials sign-ins
+            if (account && account.provider === "credentials") {
+                token.authProvider = "credentials"
+            }
+
+            // Refresh Google access token if expired
             if (token.accessTokenExpires && Date.now() > (token.accessTokenExpires as number)) {
                 try {
                     const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -77,25 +229,132 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 }
             }
 
+            // On sign-in: fetch user record + workspace membership
+            // If Google OAuth user doesn't exist yet, auto-create user + workspace
             if (user || trigger === "signIn") {
                 try {
-                    const { adminDb } = await import(/* webpackIgnore: true */ "@/lib/firebase-admin")
+                    const adminDb = getAdminDb()
+                    if (!adminDb) throw new Error("adminDb not available (edge runtime)")
                     const email = token.email || user?.email
                     if (email) {
-                        const usersSnap = await adminDb.collection("users")
+                        let usersSnap = await adminDb.collection("users")
                             .where("email", "==", email)
                             .limit(1)
                             .get()
-                        if (!usersSnap.empty) {
-                            token.role = usersSnap.docs[0].data().role || "AGENT"
-                            token.dbUserId = usersSnap.docs[0].id
+
+                        // Auto-create user + workspace for new Google OAuth sign-ins
+                        if (usersSnap.empty && account?.provider === "google") {
+                            const now = new Date()
+                            const userName = token.name || user?.name || email.split("@")[0]
+
+                            // Create user doc
+                            const userRef = await adminDb.collection("users").add({
+                                name: userName,
+                                email,
+                                createdAt: now,
+                                updatedAt: now,
+                            })
+
+                            // Create workspace
+                            const wsName = `${userName}'s Workspace`
+                            const slug = wsName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60)
+                            const workspaceRef = await adminDb.collection("workspaces").add({
+                                name: wsName,
+                                slug,
+                                ownerId: userRef.id,
+                                plan: "free",
+                                status: "active",
+                                memberCount: 1,
+                                contactCount: 0,
+                                createdAt: now,
+                                updatedAt: now,
+                            })
+
+                            // Create workspace membership
+                            await adminDb.collection("workspace_members").add({
+                                workspaceId: workspaceRef.id,
+                                userId: userRef.id,
+                                role: "OWNER",
+                                status: "active",
+                                joinedAt: now,
+                                invitedBy: null,
+                            })
+
+                            // Provision default workspace data (handled by auth-guard.ts fallback)
+                            try {
+                                const { provisionWorkspace } = await import("@/lib/workspace-defaults")
+                                await provisionWorkspace(workspaceRef.id, wsName)
+                            } catch (provisionErr) {
+                                console.error("[AUTH] Failed to provision workspace defaults:", provisionErr)
+                            }
+
+                            token.dbUserId = userRef.id
+                            token.workspaceId = workspaceRef.id
+                            token.role = "OWNER"
+                        } else if (!usersSnap.empty) {
+                            const userDoc = usersSnap.docs[0]
+                            token.dbUserId = userDoc.id
+
+                            // Fetch all active memberships, then pick the most-recently-active one.
+                            // For multi-workspace users this means signing back into whichever
+                            // workspace they last visited rather than whatever Firestore returned
+                            // first (which has no defined order without orderBy).
+                            const memberSnap = await adminDb.collection("workspace_members")
+                                .where("userId", "==", userDoc.id)
+                                .where("status", "==", "active")
+                                .get()
+
+                            if (!memberSnap.empty) {
+                                // Prefer lastActiveAt; fall back to joinedAt; final fallback first doc.
+                                const sorted = memberSnap.docs.slice().sort((a, b) => {
+                                    const aTime = (a.data().lastActiveAt?.toMillis?.() ?? 0)
+                                        || (a.data().joinedAt?.toMillis?.() ?? 0)
+                                    const bTime = (b.data().lastActiveAt?.toMillis?.() ?? 0)
+                                        || (b.data().joinedAt?.toMillis?.() ?? 0)
+                                    return bTime - aTime
+                                })
+                                const membership = sorted[0].data()
+                                token.workspaceId = membership.workspaceId
+                                token.role = membership.role || "AGENT"
+                            } else {
+                                // Fallback: legacy user without workspace membership
+                                token.role = userDoc.data().role || "AGENT"
+                            }
                         } else {
                             token.role = "AGENT"
                         }
                     }
                 } catch (err) {
-                    console.error("Failed to fetch user role for JWT:", err)
+                    console.error("Failed to fetch user/workspace for JWT:", err)
                     token.role = token.role || "AGENT"
+                }
+            }
+            // Gmail token persistence used to happen here on sign-in. It now
+            // lives in /api/auth/gmail/callback so users only grant Gmail
+            // access when they explicitly connect from Integrations.
+
+            // Handle workspace switching
+            if (trigger === "update" && session?.workspaceId) {
+                try {
+                    const adminDb = getAdminDb()
+                    if (!adminDb) throw new Error("adminDb not available")
+                    const memberSnap = await adminDb.collection("workspace_members")
+                        .where("userId", "==", token.dbUserId)
+                        .where("workspaceId", "==", session.workspaceId)
+                        .where("status", "==", "active")
+                        .limit(1)
+                        .get()
+                    if (!memberSnap.empty) {
+                        const membership = memberSnap.docs[0]
+                        token.workspaceId = session.workspaceId
+                        token.role = membership.data().role || "AGENT"
+                        // Stamp lastActiveAt so the next sign-in lands on this
+                        // workspace by default. Fire-and-forget so the JWT
+                        // callback doesn't block on the write.
+                        membership.ref.update({ lastActiveAt: new Date() }).catch(() => {})
+                    }
+                } catch (err) {
+                    console.error("[AUTH] Workspace switch error:", err)
                 }
             }
             if (user) {
@@ -107,11 +366,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             if (session.user) {
                 session.user.role = token.role as string
                 session.user.id = (token.dbUserId as string) || (token.id as string)
+                session.user.workspaceId = token.workspaceId as string
             }
-            // Expose OAuth tokens for server-side use (already encrypted in JWT cookie)
+            // Expose OAuth tokens and auth provider for server-side use
             ;(session as any).accessToken = token.accessToken
             ;(session as any).refreshToken = token.refreshToken
             ;(session as any).accessTokenExpires = token.accessTokenExpires
+            ;(session as any).authProvider = token.authProvider || "credentials"
             return session
         },
     },

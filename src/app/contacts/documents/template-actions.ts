@@ -1,7 +1,7 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { requireAuth } from "@/lib/auth-guard"
 import { revalidatePath } from "next/cache"
 import { AVAILABLE_MERGE_FIELDS } from "./types"
 
@@ -9,10 +9,11 @@ import { AVAILABLE_MERGE_FIELDS } from "./types"
 
 export async function getDocumentTemplates() {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized", templates: [] }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const snapshot = await adminDb.collection("document_templates")
+        const snapshot = await db.collection("document_templates")
             .orderBy("createdAt", "desc")
             .get()
 
@@ -38,13 +39,14 @@ export async function createDocumentTemplate(
     mergeFields: string[]
 ) {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         if (!name.trim()) return { success: false, error: "Name is required" }
         if (!content.trim()) return { success: false, error: "Content is required" }
 
-        const docRef = await adminDb.collection("document_templates").add({
+        const docRef = await db.add("document_templates", {
             name: name.trim(),
             description: description.trim(),
             content: content.trim(),
@@ -74,8 +76,9 @@ export async function updateDocumentTemplate(
     }
 ) {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         const updateData: Record<string, unknown> = { updatedAt: new Date() }
         if (data.name !== undefined) updateData.name = data.name.trim()
@@ -84,7 +87,7 @@ export async function updateDocumentTemplate(
         if (data.category !== undefined) updateData.category = data.category.trim()
         if (data.mergeFields !== undefined) updateData.mergeFields = data.mergeFields
 
-        await adminDb.collection("document_templates").doc(templateId).update(updateData)
+        await db.doc("document_templates", templateId).update(updateData)
 
         revalidatePath("/contacts")
         return { success: true }
@@ -96,10 +99,11 @@ export async function updateDocumentTemplate(
 
 export async function deleteDocumentTemplate(templateId: string) {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        await adminDb.collection("document_templates").doc(templateId).delete()
+        await db.doc("document_templates", templateId).delete()
 
         revalidatePath("/contacts")
         return { success: true }
@@ -115,35 +119,26 @@ export async function deleteDocumentTemplate(templateId: string) {
  */
 export async function generateDocumentFromTemplate(templateId: string, contactId: string) {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         // Fetch the template
-        const templateDoc = await adminDb.collection("document_templates").doc(templateId).get()
+        const templateDoc = await db.doc("document_templates", templateId).get()
         if (!templateDoc.exists) return { success: false, error: "Template not found" }
         const template = templateDoc.data()!
 
         // Fetch the contact
-        const contactDoc = await adminDb.collection("contacts").doc(contactId).get()
+        const contactDoc = await db.doc("contacts", contactId).get()
         if (!contactDoc.exists) return { success: false, error: "Contact not found" }
         const contact = contactDoc.data()!
 
         // Build the merge field map
-        const toDateStr = (val: unknown) => {
-            if (!val) return ""
-            if (typeof val === "string") return new Date(val).toLocaleDateString()
-            if (val && typeof val === "object" && "toDate" in val) return (val as { toDate: () => Date }).toDate().toLocaleDateString()
-            return String(val)
-        }
-
         const mergeData: Record<string, string> = {
             contactName: contact.name || "",
             contactEmail: contact.email || "",
             contactPhone: contact.phone || "",
-            militaryBase: contact.militaryBase || "",
             businessName: contact.businessName || "",
-            stayStartDate: toDateStr(contact.stayStartDate),
-            stayEndDate: toDateStr(contact.stayEndDate),
             currentDate: new Date().toLocaleDateString(),
         }
 
@@ -155,7 +150,7 @@ export async function generateDocumentFromTemplate(templateId: string, contactId
 
         // Save the generated document as a record on the contact
         const docName = `${template.name} - ${contact.name || "Unknown"}`
-        await adminDb.collection("contacts").doc(contactId).collection("documents").add({
+        await db.addToSubcollection("contacts", contactId, "documents", {
             name: docName,
             url: "",
             status: "LINK",

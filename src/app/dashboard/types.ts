@@ -32,6 +32,8 @@ export interface DashboardData {
         leadVelocityTrend: number | null
         avgDealValue: number
         weightedForecast: number
+        /** 1-σ uncertainty around weightedForecast in dollars (Bernoulli per deal). */
+        forecastStdDev: number
         totalClosedProfit: number
         avgProfitPerDeal: number
     }

@@ -12,7 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowUp, ArrowDown, Phone, Mail, GripVertical } from "lucide-react"
+import { ArrowUp, ArrowDown, Phone, Mail, GripVertical, Moon } from "lucide-react"
 
 type ColumnId = 'name' | 'phone' | 'email' | 'businessName' | 'status' | 'opportunity' | 'lastActivity' | 'created' | 'tags' | 'lastNote';
 
@@ -84,6 +84,12 @@ const ContactRow = React.memo(function ContactRow({
                                     <span className="whitespace-nowrap">{contact.name}</span>
                                     {isNewContact && (
                                         <Badge className="shrink-0 text-[10px] font-bold tracking-wider bg-primary text-primary-foreground border-0 px-1.5 py-0 h-4">New</Badge>
+                                    )}
+                                    {contact.dndUntil && new Date(contact.dndUntil) > new Date() && (
+                                        <Moon
+                                            className="h-3 w-3 text-rose-500 shrink-0"
+                                            aria-label={`DND until ${new Date(contact.dndUntil).toLocaleString()}`}
+                                        />
                                     )}
                                 </div>
                             </div>

@@ -6,8 +6,10 @@ declare module "next-auth" {
      */
     interface Session {
         user: {
-            /** The user's role. */
+            /** The user's role within the current workspace. */
             role: string
+            /** The active workspace ID. */
+            workspaceId: string
         } & DefaultSession["user"]
     }
 

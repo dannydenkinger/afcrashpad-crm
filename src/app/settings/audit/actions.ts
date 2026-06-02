@@ -1,6 +1,6 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 import { requireAdmin } from "@/lib/auth-guard"
 
 export async function getAuditLog(filters?: {
@@ -9,14 +9,18 @@ export async function getAuditLog(filters?: {
     limit?: number
     startAfter?: string
 }) {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        let query = adminDb.collection("audit_log").orderBy("createdAt", "desc") as FirebaseFirestore.Query
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        let query = db.collection("audit_log").orderBy("createdAt", "desc") as FirebaseFirestore.Query
 
         if (filters?.entity) {
             query = query.where("entity", "==", filters.entity)

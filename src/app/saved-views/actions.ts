@@ -1,21 +1,24 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { requireAuth } from "@/lib/auth-guard"
+
+export type SavedViewPage = "contacts" | "pipeline" | "tasks"
 
 interface SavedViewData {
-    page: "contacts" | "pipeline"
+    page: SavedViewPage
     name: string
     filters: Record<string, unknown>
 }
 
-export async function getSavedViews(page: "contacts" | "pipeline") {
+export async function getSavedViews(page: SavedViewPage) {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const userId = (session.user as any).id || session.user.email
-        const snapshot = await adminDb
+        const userId = session.user.id || session.user.email
+        const snapshot = await db
             .collection("saved_views")
             .where("userId", "==", userId)
             .where("page", "==", page)
@@ -36,12 +39,13 @@ export async function getSavedViews(page: "contacts" | "pipeline") {
 
 export async function createSavedView(data: SavedViewData) {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const userId = (session.user as any).id || session.user.email
+        const userId = session.user.id || session.user.email
 
-        const docRef = await adminDb.collection("saved_views").add({
+        const docRef = await db.add("saved_views", {
             userId,
             page: data.page,
             name: data.name,
@@ -58,18 +62,19 @@ export async function createSavedView(data: SavedViewData) {
 
 export async function deleteSavedView(id: string) {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const userId = (session.user as any).id || session.user.email
+        const userId = session.user.id || session.user.email
 
         // Verify ownership
-        const doc = await adminDb.collection("saved_views").doc(id).get()
+        const doc = await db.doc("saved_views", id).get()
         if (!doc.exists || doc.data()?.userId !== userId) {
             return { success: false, error: "Not found" }
         }
 
-        await adminDb.collection("saved_views").doc(id).delete()
+        await db.doc("saved_views", id).delete()
         return { success: true }
     } catch (error: any) {
         console.error("Failed to delete saved view:", error)
@@ -79,17 +84,18 @@ export async function deleteSavedView(id: string) {
 
 export async function updateSavedViewName(id: string, name: string) {
     try {
-        const session = await auth()
-        if (!session?.user) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const userId = (session.user as any).id || session.user.email
+        const userId = session.user.id || session.user.email
 
-        const doc = await adminDb.collection("saved_views").doc(id).get()
+        const doc = await db.doc("saved_views", id).get()
         if (!doc.exists || doc.data()?.userId !== userId) {
             return { success: false, error: "Not found" }
         }
 
-        await adminDb.collection("saved_views").doc(id).update({ name })
+        await db.doc("saved_views", id).update({ name })
         return { success: true }
     } catch (error: any) {
         console.error("Failed to update saved view:", error)

@@ -1,4 +1,4 @@
-import { adminDb } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
 import { createNotification } from "@/app/notifications/actions";
 import { sendEmail } from "@/lib/email";
 import { triggerSequence } from "@/lib/email-sequences";
@@ -27,18 +27,18 @@ const DEFAULT_CHECK_OUT_DAYS = [1, 3, 7, 30];
 function substituteTemplate(text: string, vars: Record<string, string>): string {
     return text
         .replace(/\{\{name\}\}/g, vars.name || "Guest")
-        .replace(/\{\{base\}\}/g, vars.base || "your location")
         .replace(/\{\{startDate\}\}/g, vars.startDate || "")
         .replace(/\{\{endDate\}\}/g, vars.endDate || "")
         .replace(/\{\{days\}\}/g, vars.days || "");
 }
 
-export async function checkStayReminders() {
+export async function checkStayReminders(workspaceId: string) {
     const results = { checkinReminders: 0, checkoutReminders: 0, guestEmails: 0 };
+    const db = tenantDb(workspaceId)
 
     try {
         // Load automation settings for configurable days + guest templates
-        const settingsDoc = await adminDb.collection("settings").doc("automations").get();
+        const settingsDoc = await db.settingsDoc("automations").get();
         const automationData = settingsDoc.exists ? settingsDoc.data() : null;
         const checkInDays: number[] = automationData?.checkInReminderDays ?? DEFAULT_CHECK_IN_DAYS;
         const checkOutDays: number[] = automationData?.checkOutReminderDays ?? DEFAULT_CHECK_OUT_DAYS;
@@ -49,16 +49,16 @@ export async function checkStayReminders() {
         let checkOutTemplate: { subject: string; body: string } | null = null;
         if (guestRemindersEnabled) {
             if (automationData?.guestCheckInTemplateId) {
-                const tDoc = await adminDb.collection("email_templates").doc(automationData.guestCheckInTemplateId).get();
+                const tDoc = await db.doc("email_templates", automationData.guestCheckInTemplateId).get();
                 if (tDoc.exists) checkInTemplate = { subject: tDoc.data()!.subject, body: tDoc.data()!.body };
             }
             if (automationData?.guestCheckOutTemplateId) {
-                const tDoc = await adminDb.collection("email_templates").doc(automationData.guestCheckOutTemplateId).get();
+                const tDoc = await db.doc("email_templates", automationData.guestCheckOutTemplateId).get();
                 if (tDoc.exists) checkOutTemplate = { subject: tDoc.data()!.subject, body: tDoc.data()!.body };
             }
         }
 
-        const oppsSnap = await adminDb.collection("opportunities").get();
+        const oppsSnap = await db.collection("opportunities").get();
         const today = new Date();
 
         for (const doc of oppsSnap.docs) {
@@ -69,7 +69,7 @@ export async function checkStayReminders() {
             let contactEmail: string | null = null;
             if (data.contactId) {
                 try {
-                    const contactDoc = await adminDb.collection("contacts").doc(data.contactId).get();
+                    const contactDoc = await db.doc("contacts", data.contactId).get();
                     if (contactDoc.exists) {
                         contactName = contactDoc.data()?.name || contactName;
                         contactEmail = contactDoc.data()?.email || null;
@@ -77,10 +77,8 @@ export async function checkStayReminders() {
                 } catch { /* use fallback */ }
             }
 
-            const baseName = data.militaryBase || "";
             const templateVars = {
                 name: contactName,
-                base: baseName,
                 startDate: "",
                 endDate: "",
                 days: "",
@@ -94,8 +92,7 @@ export async function checkStayReminders() {
 
                 // Trigger pre_checkin sequence at 7 days before
                 if (daysUntil === 7 && contactEmail) {
-                    triggerSequence("pre_checkin", data.contactId || oppId, contactEmail, contactName, {
-                        base: baseName,
+                    triggerSequence(workspaceId, "pre_checkin", data.contactId || oppId, contactEmail, contactName, {
                         startDate: templateVars.startDate,
                         endDate: templateVars.endDate,
                     }).catch(() => {});
@@ -105,7 +102,7 @@ export async function checkStayReminders() {
                         const dedupeKey = `checkin_${oppId}_${d}d_${startDate.toISOString().slice(0, 10)}`;
                         await createNotification({
                             title: `Check-in in ${d} day${d > 1 ? "s" : ""}`,
-                            message: `${contactName}${baseName ? ` — ${baseName}` : ""}`,
+                            message: `${contactName}`,
                             type: "checkin",
                             linkUrl: `/pipeline?deal=${oppId}`,
                             dedupeKey,
@@ -115,7 +112,7 @@ export async function checkStayReminders() {
                         // Send guest email if enabled
                         if (guestRemindersEnabled && checkInTemplate && contactEmail) {
                             const guestDedupeKey = `guest_checkin_${oppId}_${d}d`;
-                            const existing = await adminDb.collection("notifications")
+                            const existing = await db.collection("notifications")
                                 .where("dedupeKey", "==", guestDedupeKey).limit(1).get();
                             if (existing.empty) {
                                 templateVars.days = String(d);
@@ -126,7 +123,7 @@ export async function checkStayReminders() {
                                         html: substituteTemplate(checkInTemplate.body, templateVars).replace(/\n/g, "<br>"),
                                     });
                                     // Log to prevent duplicate sends
-                                    await adminDb.collection("notifications").add({
+                                    await db.add("notifications", {
                                         dedupeKey: guestDedupeKey,
                                         title: "Guest check-in reminder sent",
                                         message: contactEmail,
@@ -152,8 +149,7 @@ export async function checkStayReminders() {
 
                 // Trigger post_checkout sequence 1 day after checkout
                 if (daysUntil === -1 && contactEmail) {
-                    triggerSequence("post_checkout", data.contactId || oppId, contactEmail, contactName, {
-                        base: baseName,
+                    triggerSequence(workspaceId, "post_checkout", data.contactId || oppId, contactEmail, contactName, {
                         startDate: templateVars.startDate,
                         endDate: templateVars.endDate,
                     }).catch(() => {});
@@ -163,7 +159,7 @@ export async function checkStayReminders() {
                         const dedupeKey = `checkout_${oppId}_${d}d_${endDate.toISOString().slice(0, 10)}`;
                         await createNotification({
                             title: `Check-out in ${d} day${d > 1 ? "s" : ""}`,
-                            message: `${contactName}${baseName ? ` — ${baseName}` : ""}`,
+                            message: `${contactName}`,
                             type: "checkout",
                             linkUrl: `/pipeline?deal=${oppId}`,
                             dedupeKey,
@@ -173,7 +169,7 @@ export async function checkStayReminders() {
                         // Send guest email if enabled
                         if (guestRemindersEnabled && checkOutTemplate && contactEmail) {
                             const guestDedupeKey = `guest_checkout_${oppId}_${d}d`;
-                            const existing = await adminDb.collection("notifications")
+                            const existing = await db.collection("notifications")
                                 .where("dedupeKey", "==", guestDedupeKey).limit(1).get();
                             if (existing.empty) {
                                 templateVars.days = String(d);
@@ -183,7 +179,7 @@ export async function checkStayReminders() {
                                         subject: substituteTemplate(checkOutTemplate.subject, templateVars),
                                         html: substituteTemplate(checkOutTemplate.body, templateVars).replace(/\n/g, "<br>"),
                                     });
-                                    await adminDb.collection("notifications").add({
+                                    await db.add("notifications", {
                                         dedupeKey: guestDedupeKey,
                                         title: "Guest check-out reminder sent",
                                         message: contactEmail,

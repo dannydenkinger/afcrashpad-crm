@@ -13,7 +13,6 @@ import {
     CheckSquare,
     Wallet,
     Megaphone,
-    Wrench,
     Settings,
     Bell,
     X,
@@ -24,6 +23,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useHapticFeedback } from "@/hooks/useHapticFeedback"
 import { useTheme } from "next-themes"
+import { FEATURES } from "@/lib/feature-flags"
 
 interface TabItem {
     label: string
@@ -40,13 +40,12 @@ const MAIN_TABS: TabItem[] = [
 ]
 
 const MORE_ITEMS: TabItem[] = [
-    { label: "Calendar", icon: Calendar, href: "/calendar" },
-    { label: "Documents", icon: FileText, href: "/documents" },
+    ...(FEATURES.GOOGLE_CALENDAR ? [{ label: "Calendar", icon: Calendar, href: "/calendar" }] : []),
+    ...(FEATURES.DOCUMENTS ? [{ label: "Documents", icon: FileText, href: "/documents" }] : []),
     { label: "Messages", icon: MessageSquare, href: "/communications" },
     { label: "Tasks", icon: CheckSquare, href: "/tasks" },
-    { label: "Finance", icon: Wallet, href: "/finance" },
-    { label: "Marketing", icon: Megaphone, href: "/marketing" },
-    { label: "Tools", icon: Wrench, href: "/tools" },
+    ...(FEATURES.FINANCE ? [{ label: "Finance", icon: Wallet, href: "/finance" }] : []),
+    ...(FEATURES.MARKETING ? [{ label: "Marketing", icon: Megaphone, href: "/marketing" }] : []),
     { label: "Settings", icon: Settings, href: "/settings" },
     { label: "Notifications", icon: Bell, href: "/notifications" },
 ]
@@ -74,6 +73,14 @@ export function MobileBottomNav() {
         haptic("light")
         if (href === "__more__") {
             setShowMore(true)
+            setShowAdd(false)
+            return
+        }
+        // iOS-style: tapping the active tab scrolls the page to top
+        if (isActive(href)) {
+            const main = document.getElementById("main-content")
+            if (main) main.scrollTo({ top: 0, behavior: "smooth" })
+            setShowMore(false)
             setShowAdd(false)
             return
         }
@@ -171,10 +178,12 @@ export function MobileBottomNav() {
                             <button
                                 key={tab.href}
                                 className={cn(
-                                    "flex flex-col items-center justify-center gap-0.5 flex-1 h-full touch-manipulation transition-colors",
+                                    "flex flex-col items-center justify-center gap-0.5 flex-1 h-full touch-manipulation transition-colors active:scale-95",
                                     active ? "text-primary" : "text-muted-foreground"
                                 )}
                                 onClick={() => handleNav(tab.href)}
+                                aria-label={tab.label}
+                                aria-current={active ? "page" : undefined}
                             >
                                 <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 1.5} />
                                 <span className="text-xs font-medium">{tab.label}</span>
@@ -199,10 +208,12 @@ export function MobileBottomNav() {
                             <button
                                 key={tab.href}
                                 className={cn(
-                                    "flex flex-col items-center justify-center gap-0.5 flex-1 h-full touch-manipulation transition-colors",
+                                    "flex flex-col items-center justify-center gap-0.5 flex-1 h-full touch-manipulation transition-colors active:scale-95",
                                     active ? "text-primary" : "text-muted-foreground"
                                 )}
                                 onClick={() => handleNav(tab.href)}
+                                aria-label={tab.label}
+                                aria-current={active ? "page" : undefined}
                             >
                                 <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 1.5} />
                                 <span className="text-xs font-medium">{tab.label}</span>

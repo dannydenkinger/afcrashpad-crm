@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { getAuthSession } from "@/lib/auth-guard";
 import { getAdminStorageBucket } from "@/lib/firebase-admin";
-import { adminDb } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
 import { revalidatePath } from "next/cache";
 import { rateLimit } from "@/lib/rate-limit";
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
-const BLOCKED_TYPES = [
-    "application/x-msdownload",  // .exe
-    "application/x-msdos-program",
-    "application/x-sh",
-    "application/x-bat",
+const ALLOWED_TYPES = [
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain",
+    "text/csv",
 ];
 
 function sanitizeFileName(name: string): string {
@@ -22,10 +29,15 @@ export async function POST(
     { params }: { params: Promise<{ contactId: string }> }
 ) {
     try {
-        const session = await auth();
+        const session = await getAuthSession();
         if (!session?.user) {
             return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
         }
+        const workspaceId = (session.user as any).workspaceId;
+        if (!workspaceId) {
+            return NextResponse.json({ success: false, error: "No workspace found" }, { status: 403 });
+        }
+        const db = tenantDb(workspaceId);
 
         // Rate limit: 20 uploads per minute per user
         const { allowed } = rateLimit(`upload:${session.user.id}`, 20);
@@ -54,10 +66,9 @@ export async function POST(
         }
 
         const type = file.type || "application/octet-stream";
-        const fileExt = (file.name || "").split(".").pop()?.toLowerCase() || "";
-        if (BLOCKED_TYPES.includes(type) || ["exe", "bat", "cmd", "sh", "msi"].includes(fileExt)) {
+        if (!ALLOWED_TYPES.includes(type) && !type.startsWith("image/")) {
             return NextResponse.json(
-                { success: false, error: "Executable files are not allowed" },
+                { success: false, error: "File type not allowed" },
                 { status: 400 }
             );
         }
@@ -86,19 +97,15 @@ export async function POST(
         const displayName = nameOverride || file.name || "Uploaded document";
         const folder = (formData.get("folder") as string)?.trim() || "General";
 
-        await adminDb
-            .collection("contacts")
-            .doc(contactId)
-            .collection("documents")
-            .add({
-                name: displayName,
-                url: signedUrl,
-                status: "LINK",
-                folder,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-                storagePath,
-            });
+        await db.addToSubcollection("contacts", contactId, "documents", {
+            name: displayName,
+            url: signedUrl,
+            status: "LINK",
+            folder,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            storagePath,
+        });
 
         revalidatePath("/contacts");
         revalidatePath("/pipeline");

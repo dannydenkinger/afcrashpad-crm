@@ -5,7 +5,7 @@
  * creating tasks, notifications, field updates, user assignments).
  */
 
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 import { sendEmail } from "@/lib/email"
 
 export interface WorkflowCondition {
@@ -77,14 +77,18 @@ function evaluateConditions(conditions: WorkflowCondition[], data: Record<string
     return conditions.every(c => evaluateCondition(c, data))
 }
 
+type TenantDbInstance = ReturnType<typeof tenantDb>
+
 /**
  * Find all enabled workflows that match a trigger event and whose conditions pass.
  * Returns the list of actions that should be executed.
  */
-export async function evaluateWorkflows(event: TriggerEvent): Promise<{
+export async function evaluateWorkflows(workspaceId: string, event: TriggerEvent): Promise<{
     matchedWorkflows: { workflow: WorkflowDefinition; actions: WorkflowAction[] }[]
 }> {
-    const snap = await adminDb
+    const db = tenantDb(workspaceId)
+
+    const snap = await db
         .collection("workflows")
         .where("trigger", "==", event.type)
         .where("enabled", "==", true)
@@ -127,7 +131,6 @@ function buildVars(context: Record<string, unknown>): Record<string, string> {
         "{{contact_name}}": String(context.contactName || ""),
         "{{deal_name}}": String(context.dealName || context.name || ""),
         "{{value}}": String(context.opportunityValue || context.value || "0"),
-        "{{base}}": String(context.militaryBase || context.base || ""),
         "{{stage}}": String(context.stageName || context.stage || ""),
         "{{email}}": String(context.contactEmail || context.email || ""),
     }
@@ -135,12 +138,12 @@ function buildVars(context: Record<string, unknown>): Record<string, string> {
 
 // ── Action Executors ────────────────────────────────────────────────────────
 
-async function executeSendEmail(config: Record<string, string>, context: Record<string, unknown>) {
+async function executeSendEmail(db: TenantDbInstance, config: Record<string, string>, context: Record<string, unknown>) {
     const vars = buildVars(context)
 
     // If a template is specified, load and substitute
     if (config.templateId) {
-        const templateDoc = await adminDb.collection("email_templates").doc(config.templateId).get()
+        const templateDoc = await db.doc("email_templates", config.templateId).get()
         if (!templateDoc.exists) return
 
         const template = templateDoc.data()!
@@ -159,7 +162,7 @@ async function executeSendEmail(config: Record<string, string>, context: Record<
         // Log to contact message history
         const contactId = String(context.contactId || "")
         if (contactId) {
-            await adminDb.collection("contacts").doc(contactId).collection("messages").add({
+            await db.addToSubcollection("contacts", contactId, "messages", {
                 type: "email",
                 direction: "outbound",
                 contactEmail: recipientEmail,
@@ -186,7 +189,7 @@ async function executeSendEmail(config: Record<string, string>, context: Record<
 
         const contactId = String(context.contactId || "")
         if (contactId) {
-            await adminDb.collection("contacts").doc(contactId).collection("messages").add({
+            await db.addToSubcollection("contacts", contactId, "messages", {
                 type: "email",
                 direction: "outbound",
                 contactEmail: recipientEmail,
@@ -200,7 +203,7 @@ async function executeSendEmail(config: Record<string, string>, context: Record<
     }
 }
 
-async function executeCreateTask(config: Record<string, string>, context: Record<string, unknown>) {
+async function executeCreateTask(db: TenantDbInstance, config: Record<string, string>, context: Record<string, unknown>) {
     const vars = buildVars(context)
     const title = resolveVars(config.taskTitle || "Follow up", vars)
     const description = resolveVars(config.taskDescription || "", vars)
@@ -209,7 +212,7 @@ async function executeCreateTask(config: Record<string, string>, context: Record
     const dueDate = new Date()
     dueDate.setDate(dueDate.getDate() + dueDays)
 
-    await adminDb.collection("tasks").add({
+    await db.add("tasks", {
         title,
         description: description || null,
         dueDate,
@@ -224,7 +227,7 @@ async function executeCreateTask(config: Record<string, string>, context: Record
     })
 }
 
-async function executeSendNotification(config: Record<string, string>, context: Record<string, unknown>) {
+async function executeSendNotification(db: TenantDbInstance, config: Record<string, string>, context: Record<string, unknown>) {
     const vars = buildVars(context)
     const message = resolveVars(config.message || "Workflow triggered", vars)
     const title = resolveVars(config.title || "Workflow", vars)
@@ -232,7 +235,7 @@ async function executeSendNotification(config: Record<string, string>, context: 
     const recipientId = config.recipientId || String(context.userId || context.assigneeId || "")
     if (!recipientId) return
 
-    await adminDb.collection("notifications").add({
+    await db.add("notifications", {
         userId: recipientId,
         title,
         message,
@@ -243,7 +246,7 @@ async function executeSendNotification(config: Record<string, string>, context: 
     })
 }
 
-async function executeUpdateField(config: Record<string, string>, context: Record<string, unknown>) {
+async function executeUpdateField(db: TenantDbInstance, config: Record<string, string>, context: Record<string, unknown>) {
     const fieldName = config.fieldName
     const fieldValue = config.fieldValue
     if (!fieldName) return
@@ -254,32 +257,32 @@ async function executeUpdateField(config: Record<string, string>, context: Recor
     const target = config.target || "opportunity" // "opportunity" or "contact"
 
     if (target === "contact" && contactId) {
-        await adminDb.collection("contacts").doc(contactId).update({
+        await db.doc("contacts", contactId).update({
             [fieldName]: fieldValue,
             updatedAt: new Date(),
         })
     } else if (opportunityId) {
-        await adminDb.collection("opportunities").doc(opportunityId).update({
+        await db.doc("opportunities", opportunityId).update({
             [fieldName]: fieldValue,
             updatedAt: new Date(),
         })
     }
 }
 
-async function executeAssignToUser(config: Record<string, string>, context: Record<string, unknown>) {
+async function executeAssignToUser(db: TenantDbInstance, config: Record<string, string>, context: Record<string, unknown>) {
     const assigneeId = config.assigneeId || config.userId
     if (!assigneeId) return
 
     const opportunityId = String(context.opportunityId || context.dealId || "")
     if (!opportunityId) return
 
-    await adminDb.collection("opportunities").doc(opportunityId).update({
+    await db.doc("opportunities", opportunityId).update({
         assigneeId,
         updatedAt: new Date(),
     })
 
     // Notify the assigned user
-    await adminDb.collection("notifications").add({
+    await db.add("notifications", {
         userId: assigneeId,
         title: "Deal Assigned",
         message: `You've been assigned to ${context.dealName || context.name || "a deal"}`,
@@ -294,9 +297,11 @@ async function executeAssignToUser(config: Record<string, string>, context: Reco
  * Execute workflow actions with real implementations.
  */
 export async function executeWorkflowActions(
+    workspaceId: string,
     actions: WorkflowAction[],
     context: Record<string, unknown>
 ): Promise<{ executed: number; errors: string[] }> {
+    const db = tenantDb(workspaceId)
     let executed = 0
     const errors: string[] = []
 
@@ -304,19 +309,19 @@ export async function executeWorkflowActions(
         try {
             switch (action.type) {
                 case "send_email":
-                    await executeSendEmail(action.config, context)
+                    await executeSendEmail(db, action.config, context)
                     break
                 case "create_task":
-                    await executeCreateTask(action.config, context)
+                    await executeCreateTask(db, action.config, context)
                     break
                 case "send_notification":
-                    await executeSendNotification(action.config, context)
+                    await executeSendNotification(db, action.config, context)
                     break
                 case "update_field":
-                    await executeUpdateField(action.config, context)
+                    await executeUpdateField(db, action.config, context)
                     break
                 case "assign_to_user":
-                    await executeAssignToUser(action.config, context)
+                    await executeAssignToUser(db, action.config, context)
                     break
             }
             executed++
@@ -333,11 +338,11 @@ export async function executeWorkflowActions(
 /**
  * Convenience: evaluate workflows for an event and execute all matched actions.
  */
-export async function triggerWorkflows(event: TriggerEvent): Promise<void> {
+export async function triggerWorkflows(workspaceId: string, event: TriggerEvent): Promise<void> {
     try {
-        const { matchedWorkflows } = await evaluateWorkflows(event)
+        const { matchedWorkflows } = await evaluateWorkflows(workspaceId, event)
         for (const { actions } of matchedWorkflows) {
-            await executeWorkflowActions(actions, event.data)
+            await executeWorkflowActions(workspaceId, actions, event.data)
         }
     } catch (err) {
         console.error("[Workflow] Error triggering workflows:", err)

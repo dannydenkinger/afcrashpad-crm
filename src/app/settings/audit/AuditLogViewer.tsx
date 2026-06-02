@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -102,29 +101,20 @@ export function AuditLogViewer() {
     }, [fetchEntries])
 
     return (
-        <Card>
-            <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div>
-                        <CardTitle className="flex items-center gap-2">
-                            <ScrollText className="h-5 w-5" />
-                            Audit Log
-                        </CardTitle>
-                        <CardDescription>Track all changes made across the CRM.</CardDescription>
-                    </div>
-                    <Select value={entityFilter} onValueChange={setEntityFilter}>
-                        <SelectTrigger className="w-full sm:w-[180px]">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {ENTITY_OPTIONS.map(opt => (
-                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-            </CardHeader>
-            <CardContent>
+        <div className="space-y-4">
+            <div className="flex justify-end">
+                <Select value={entityFilter} onValueChange={setEntityFilter}>
+                    <SelectTrigger className="w-full sm:w-[180px] h-8 text-xs">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {ENTITY_OPTIONS.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+            <div>
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
                         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -193,13 +183,13 @@ export function AuditLogViewer() {
                                     ) : (
                                         <ChevronDown className="h-4 w-4 mr-2" />
                                     )}
-                                    Load More
+                                    Load more
                                 </Button>
                             </div>
                         )}
                     </div>
                 )}
-            </CardContent>
-        </Card>
+            </div>
+        </div>
     )
 }

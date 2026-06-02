@@ -3,6 +3,7 @@
 import { useState, useMemo, Suspense } from "react"
 import { useDebounce } from "@/hooks/useDebounce"
 import { Button } from "@/components/ui/button"
+import { FirstVisitHint } from "@/components/FirstVisitHint"
 import { Search, Plus, ListFilter, CheckCircle2, Settings, ChevronDown, LayoutGrid, List as ListIcon, ChevronRight, User, Building2, Upload, BarChart3, Download, Trash2, ArrowRightLeft, UserPlus, X, Phone, MessageSquare, MapPin } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -59,6 +60,7 @@ import { useIsMobile } from "@/hooks/useIsMobile"
 import { SwipeableCard } from "@/components/mobile/SwipeableCard"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import dynamic from "next/dynamic"
+import { EmptyState } from "@/components/ui/EmptyState"
 
 // Lazy-loaded heavy dialogs (only shown on user action)
 const CSVImportDialog = dynamic(() => import("@/components/ui/CSVImportDialog").then(mod => mod.CSVImportDialog), {
@@ -108,15 +110,13 @@ function PipelineContent() {
     const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
-    const [baseNames, setBaseNames] = useState<string[]>([])
     const [allUsers, setAllUsers] = useState<any[]>([])
-    const [specialAccommodations, setSpecialAccommodations] = useState<{ id: string; name: string }[]>([])
     const [priorityRanges, setPriorityRanges] = useState({ urgentDays: 14, soonDays: 30 })
     const [draggedDealId, setDraggedDealId] = useState<string | null>(null)
     const [dragOverStageId, setDragOverStageId] = useState<string | null>(null)
     const [isContactPickerOpen, setIsContactPickerOpen] = useState(false)
     const [linkingDealId, setLinkingDealId] = useState<string | null>(null)
-    const [contactList, setContactList] = useState<{ id: string; name: string; email: string; phone: string; militaryBase: string }[]>([])
+    const [contactList, setContactList] = useState<{ id: string; name: string; email: string; phone: string }[]>([])
     const [contactSearch, setContactSearch] = useState("")
     const [pipelineSearch, setPipelineSearch] = useState("")
     const debouncedPipelineSearch = useDebounce(pipelineSearch, 300)
@@ -222,9 +222,7 @@ function PipelineContent() {
                     setActivePipelineKey(keys[0]);
                 }
             }
-            setBaseNames(res.baseNames || []);
             setAllUsers(res.users || []);
-            setSpecialAccommodations(res.specialAccommodations || []);
             setPriorityRanges(res.priorityRanges || { urgentDays: 14, soonDays: 30 });
             setIsLoading(false);
             if (res.advancedCount && res.advancedCount > 0) {
@@ -263,6 +261,17 @@ function PipelineContent() {
             }
         }
     }, [searchParams, pipelines, isLoading, pathname, router]);
+
+    // Auto-open import dialog from ?import=1 URL param (deep-link from Settings → Data)
+    useEffect(() => {
+        if (searchParams.get("import") === "1") {
+            setIsImportDialogOpen(true);
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete("import");
+            const q = params.toString();
+            router.replace(q ? `${pathname}?${q}` : pathname);
+        }
+    }, [searchParams, pathname, router]);
 
     useEffect(() => {
         async function fetchRole() {
@@ -315,29 +324,6 @@ function PipelineContent() {
         }
     };
 
-    const handleSyncCalculatorValue = (val: number, type: "BAH" | "VA" | "ON_BASE" | "OFF_BASE") => {
-        let updatedValue = val;
-        if ((type === "ON_BASE") && val < 1000) {
-            updatedValue = val * 30; // Estimate monthly if it looks like a daily rate
-        }
-        const updatedMargin = updatedValue * 0.25;
-
-        const updatedPipelines = { ...pipelines };
-        const deals = updatedPipelines[activePipelineKey].deals;
-        const dealIdx = deals.findIndex((d: any) => d.id === selectedDeal.id);
-
-        if (selectedDeal && dealIdx !== -1) {
-            deals[dealIdx] = {
-                ...deals[dealIdx],
-                value: updatedValue,
-                margin: updatedMargin
-            };
-            setPipelines(updatedPipelines);
-            // We need to update the selectedDeal state too to reflect in the UI immediately
-            setSelectedDeal({ ...deals[dealIdx] });
-        }
-    };
-
     const newDealTemplate = () => ({
         id: 'new',
         name: '',
@@ -352,7 +338,6 @@ function PipelineContent() {
         margin: 0,
         notes: '',
         assigneeId: null,
-        specialAccommodationId: null,
         contactId: null as string | null,
         assignee: session?.user?.name ? session.user.name.split(" ").map((w: string) => w[0]).join("").toUpperCase() : "—"
     });
@@ -371,7 +356,7 @@ function PipelineContent() {
         setIsContactPickerOpen(true);
     };
 
-    const handleSelectContactForOpportunity = (c: { id: string; name: string; email: string; phone: string; militaryBase: string }) => {
+    const handleSelectContactForOpportunity = (c: { id: string; name: string; email: string; phone: string }) => {
         if (linkingDealId && selectedDeal && selectedDeal.id === linkingDealId) {
             // Link contact to existing deal
             setSelectedDeal((prev: any) => prev ? {
@@ -380,7 +365,6 @@ function PipelineContent() {
                 name: c.name || prev.name,
                 email: c.email || prev.email,
                 phone: c.phone || prev.phone,
-                base: c.militaryBase || prev.base,
             } : null);
             setLinkingDealId(null);
         } else {
@@ -391,7 +375,6 @@ function PipelineContent() {
                 name: c.name || "New Lead",
                 email: c.email || "",
                 phone: c.phone || "",
-                base: c.militaryBase || ""
             });
         }
         setIsContactPickerOpen(false);
@@ -610,7 +593,6 @@ function PipelineContent() {
                         name: selectedDeal.name,
                         email: selectedDeal.email,
                         phone: selectedDeal.phone,
-                        base: selectedDeal.base,
                         stage: selectedDeal.stage,
                         priority: selectedDeal.priority,
                         startDate: selectedDeal.startDate,
@@ -619,7 +601,6 @@ function PipelineContent() {
                         margin: selectedDeal.margin,
                         notes: selectedDeal.notes,
                         assigneeId: selectedDeal.assigneeId,
-                        specialAccommodationId: selectedDeal.specialAccommodationId || null
                     }, activePipelineKey),
                     { onRetry: (attempt) => toast.info(`Retrying... (attempt ${attempt + 1}/4)`, { id: "retry-toast", duration: 2000 }) }
                 );
@@ -646,10 +627,8 @@ function PipelineContent() {
                     startDate: selectedDeal.startDate ? String(selectedDeal.startDate) : "",
                     endDate: selectedDeal.endDate ? String(selectedDeal.endDate) : "",
                     assigneeId: selectedDeal.assigneeId ?? null,
-                    specialAccommodationId: selectedDeal.specialAccommodationId ?? null,
                 };
                 if (pipelineStageId) payload.pipelineStageId = String(pipelineStageId);
-                if (selectedDeal.base != null && selectedDeal.base !== "") payload.base = String(selectedDeal.base);
                 if (selectedDeal.notes != null) payload.notes = String(selectedDeal.notes);
                 if (selectedDeal.contactId != null) payload.contactId = String(selectedDeal.contactId);
                 if (Array.isArray(selectedDeal.tags)) payload.tagIds = selectedDeal.tags.map((t: any) => String(t.tagId || t.id));
@@ -689,13 +668,30 @@ function PipelineContent() {
     const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
 
     // View Options State
-    const [showBase, setShowBase] = useState(true)
     const [showValue, setShowValue] = useState(true)
     const [showPriority, setShowPriority] = useState(true)
     const [showDates, setShowDates] = useState(true)
     const [showEndDate, setShowEndDate] = useState(false)
     const [showLengthOfStay, setShowLengthOfStay] = useState(false)
     const [showQuickActions, setShowQuickActions] = useState(true)
+    /**
+     * Kanban column density. "comfortable" preserves the 340px columns
+     * (1–4 stages fit on a typical laptop screen, the rest scroll). "cozy"
+     * shrinks to 260px and "compact" to 200px so more stages fit at once
+     * on narrower displays. Auto-fit width logic in KanbanView lets columns
+     * stretch beyond min-width to fill the available horizontal space.
+     */
+    const [kanbanDensity, setKanbanDensity] = useState<"comfortable" | "cozy" | "compact">(() => {
+        if (typeof window === "undefined") return "comfortable"
+        try {
+            const saved = localStorage.getItem("pipeline:kanban-density")
+            if (saved === "compact" || saved === "cozy" || saved === "comfortable") return saved
+        } catch { /* ignore */ }
+        return "comfortable"
+    })
+    useEffect(() => {
+        try { localStorage.setItem("pipeline:kanban-density", kanbanDensity) } catch { /* ignore */ }
+    }, [kanbanDensity])
 
     const currentPipeline = pipelines[activePipelineKey] || { name: "", stages: [], deals: [] }
     const pipelineKeys = Object.keys(pipelines)
@@ -721,8 +717,7 @@ function PipelineContent() {
                 const name = (deal.name || deal.contactName || '').toLowerCase();
                 const email = (deal.email || deal.contactEmail || '').toLowerCase();
                 const phone = (deal.phone || deal.contactPhone || '').toLowerCase();
-                const base = (deal.base || deal.militaryBase || '').toLowerCase();
-                return name.includes(term) || email.includes(term) || phone.includes(term) || base.includes(term);
+                return name.includes(term) || email.includes(term) || phone.includes(term);
             });
         }
 
@@ -765,7 +760,6 @@ function PipelineContent() {
         activePipelineKey,
         viewMode,
         statusFilter,
-        showBase,
         showValue,
         showPriority,
         showDates,
@@ -781,7 +775,6 @@ function PipelineContent() {
         }
         setViewMode(state.viewMode)
         if (state.statusFilter) setStatusFilter(state.statusFilter)
-        setShowBase(state.showBase)
         setShowValue(state.showValue)
         setShowPriority(state.showPriority)
         setShowDates(state.showDates)
@@ -901,12 +894,6 @@ function PipelineContent() {
                                             })()}
                                         </div>
                                         <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
-                                            {deal.base && (
-                                                <span className="flex items-center gap-0.5 truncate">
-                                                    <MapPin className="h-2.5 w-2.5" />
-                                                    {deal.base}
-                                                </span>
-                                            )}
                                             {deal.value > 0 && (
                                                 <span className="font-mono font-semibold text-muted-foreground">${deal.value.toLocaleString()}</span>
                                             )}
@@ -927,16 +914,14 @@ function PipelineContent() {
                     setActiveTab={setActiveTab}
                     currentPipeline={currentPipeline}
                     activePipelineKey={activePipelineKey}
-                    baseNames={baseNames}
                     allUsers={allUsers}
-                    specialAccommodations={specialAccommodations}
+
                     userRole={userRole}
                     session={session}
                     isSaving={isSaving}
                     saveStatus={saveStatus}
                     onSave={handleSaveOpportunity}
                     onDelete={(id: string) => setDeleteTarget(id)}
-                    onSyncCalculatorValue={handleSyncCalculatorValue}
                     contactTimeline={contactTimeline}
                     timelineLoading={timelineLoading}
                     onRefetchTimeline={refetchContactTimeline}
@@ -971,9 +956,13 @@ function PipelineContent() {
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-4 sm:pb-6 flex flex-col min-h-0">
+                <FirstVisitHint
+                    pageKey="pipeline"
+                    text="Drag deals between stages to move them through your pipeline. Click + to create a new deal or use Import to bring in a CSV."
+                />
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shrink-0">
                     <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">Opportunities</h2>
+                        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight truncate bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">Opportunities</h2>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="outline" size="sm" className="gap-2 h-8 min-h-[44px] sm:min-h-0 mt-1 border border-border/60 bg-muted/20 font-medium text-muted-foreground hover:text-foreground" disabled={isLoading}>
@@ -1020,9 +1009,6 @@ function PipelineContent() {
                         <DropdownMenuContent align="end" className="w-56">
                             <DropdownMenuLabel className="text-xs uppercase text-muted-foreground tracking-wider">Card Fields</DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            <DropdownMenuCheckboxItem checked={showBase} onCheckedChange={setShowBase} className="cursor-pointer">
-                                Show Base Location
-                            </DropdownMenuCheckboxItem>
                             <DropdownMenuCheckboxItem checked={showValue} onCheckedChange={setShowValue} className="cursor-pointer">
                                 Show Deal Value
                             </DropdownMenuCheckboxItem>
@@ -1030,10 +1016,10 @@ function PipelineContent() {
                                 Show Priority Badge
                             </DropdownMenuCheckboxItem>
                             <DropdownMenuCheckboxItem checked={showDates} onCheckedChange={setShowDates} className="cursor-pointer">
-                                Show Check-in Date
+                                Show Start Date
                             </DropdownMenuCheckboxItem>
                             <DropdownMenuCheckboxItem checked={showEndDate} onCheckedChange={setShowEndDate} className="cursor-pointer">
-                                Show Check-out Date
+                                Show End Date
                             </DropdownMenuCheckboxItem>
                             <DropdownMenuCheckboxItem checked={showLengthOfStay} onCheckedChange={setShowLengthOfStay} className="cursor-pointer">
                                 Show Duration
@@ -1041,6 +1027,37 @@ function PipelineContent() {
                             <DropdownMenuCheckboxItem checked={showQuickActions} onCheckedChange={setShowQuickActions} className="cursor-pointer">
                                 Show Quick Actions
                             </DropdownMenuCheckboxItem>
+
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel className="text-xs uppercase text-muted-foreground tracking-wider">
+                                Column Density
+                            </DropdownMenuLabel>
+                            <div className="px-2 pb-1.5">
+                                <div className="flex items-center gap-0.5 bg-muted/40 p-0.5 rounded-md">
+                                    {([
+                                        { value: "compact", label: "Compact", hint: "200px" },
+                                        { value: "cozy", label: "Cozy", hint: "260px" },
+                                        { value: "comfortable", label: "Spacious", hint: "340px" },
+                                    ] as const).map((opt) => (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            onClick={() => setKanbanDensity(opt.value)}
+                                            className={`flex-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors ${
+                                                kanbanDensity === opt.value
+                                                    ? "bg-background shadow-sm text-foreground"
+                                                    : "text-muted-foreground hover:text-foreground"
+                                            }`}
+                                            title={`Min column width ${opt.hint}`}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-muted-foreground/70 mt-1.5 leading-snug">
+                                    Columns stretch to fill the screen; this sets the smallest they can shrink to.
+                                </p>
+                            </div>
                         </DropdownMenuContent>
                     </DropdownMenu>
 
@@ -1070,7 +1087,6 @@ function PipelineContent() {
                                     Name: d.name || "",
                                     Stage: pipeline.stages.find((s: any) => s.id === d.pipelineStageId)?.name || "",
                                     Value: d.opportunityValue || 0,
-                                    "Military Base": d.militaryBase || "",
                                     "Stay Start": d.stayStartDate ? new Date(d.stayStartDate).toLocaleDateString() : "",
                                     "Stay End": d.stayEndDate ? new Date(d.stayEndDate).toLocaleDateString() : "",
                                     Priority: d.priority || "",
@@ -1134,13 +1150,18 @@ function PipelineContent() {
             {/* Analytics Sheet */}
             <Sheet open={isAnalyticsOpen} onOpenChange={setIsAnalyticsOpen}>
                 <SheetContent className="w-full max-w-[100vw] lg:max-w-lg overflow-y-auto">
-                    <SheetTitle className="text-lg font-semibold mb-1">Pipeline Analytics</SheetTitle>
-                    <SheetDescription className="text-sm text-muted-foreground mb-4">
-                        Conversion funnel, win rate, and deal cycle metrics.
-                    </SheetDescription>
-                    {isAnalyticsOpen && activePipelineKey && (
-                        <ConversionMetrics pipelineId={activePipelineKey} />
-                    )}
+                    <div
+                        className="px-5 sm:px-6 pb-6"
+                        style={{ paddingTop: 'calc(1.5rem + env(safe-area-inset-top, 0px))' }}
+                    >
+                        <SheetTitle className="text-lg font-semibold mb-1 pr-10">Pipeline Analytics</SheetTitle>
+                        <SheetDescription className="text-sm text-muted-foreground mb-5">
+                            Conversion funnel, win rate, and deal cycle metrics.
+                        </SheetDescription>
+                        {isAnalyticsOpen && activePipelineKey && (
+                            <ConversionMetrics pipelineId={activePipelineKey} />
+                        )}
+                    </div>
                 </SheetContent>
             </Sheet>
 
@@ -1219,20 +1240,40 @@ function PipelineContent() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0">
-                    {(["open", "closed_won", "closed_lost", "archive"] as DealStatus[]).map(s => {
+                {/* Status filter — pill switcher with prominent active state.
+                    These tabs scope every metric / list / card on this page,
+                    so they need to be obvious. Each tab shows a colored dot
+                    matching the deal's status badge color and a count chip. */}
+                <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/40 border w-fit shrink-0 overflow-x-auto no-scrollbar">
+                    {(["open", "closed_won", "closed_lost", "archive"] as DealStatus[]).map((s) => {
                         const count = currentPipeline.deals.filter((d: any) => (d.status || "open") === s).length
+                        const dotColor =
+                            s === "open" ? "bg-emerald-500" :
+                            s === "closed_won" ? "bg-blue-500" :
+                            s === "closed_lost" ? "bg-rose-500" :
+                            "bg-muted-foreground/40"
+                        const isActive = statusFilter === s
                         return (
-                            <Button
+                            <button
                                 key={s}
-                                variant={statusFilter === s ? "secondary" : "ghost"}
-                                size="sm"
+                                type="button"
                                 onClick={() => { setStatusFilter(s); setSelectedDealIds(new Set()); }}
-                                className="h-8 px-3 text-xs gap-1.5"
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors shrink-0 ${
+                                    isActive
+                                        ? "bg-background shadow-sm text-foreground"
+                                        : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                                }`}
+                                aria-pressed={isActive}
+                                title={`Show ${DEAL_STATUS_LABELS[s]} deals`}
                             >
-                                {DEAL_STATUS_LABELS[s]}
-                                <Badge variant="outline" className="ml-0.5 text-[10px] px-1.5 py-0 h-4 font-normal">{count}</Badge>
-                            </Button>
+                                <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
+                                <span>{DEAL_STATUS_LABELS[s]}</span>
+                                <span className={`text-[10px] tabular-nums px-1.5 py-0.5 rounded ${
+                                    isActive ? "bg-muted text-foreground" : "bg-muted/60 text-muted-foreground"
+                                }`}>
+                                    {count}
+                                </span>
+                            </button>
                         )
                     })}
                 </div>
@@ -1305,21 +1346,20 @@ function PipelineContent() {
                         </div>
                     )
                 ) : currentPipeline.deals.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <LayoutGrid className="h-12 w-12 text-muted-foreground/20 mb-4" />
-                        <p className="text-lg font-medium text-foreground mb-1">No deals yet</p>
-                        <p className="text-sm text-muted-foreground mb-4 max-w-sm">Create your first deal to start tracking opportunities</p>
-                        <Button onClick={handleAddNewContactOpportunity}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            New Deal
-                        </Button>
-                    </div>
+                    <EmptyState
+                        Icon={LayoutGrid}
+                        accent="primary"
+                        title="No deals yet"
+                        description="Create your first deal to start tracking opportunities."
+                        action={{ label: "New deal", onClick: handleAddNewContactOpportunity }}
+                    />
                 ) : (statusFilter === "open" && viewMode === "kanban") ? (
                     <KanbanView
                         currentPipeline={filteredPipeline}
                         mobileSelectedStage={mobileSelectedStage}
                         setMobileSelectedStage={setMobileSelectedStage}
-                        showBase={showBase}
+                        density={kanbanDensity}
+                        showBase={false}
                         showValue={showValue}
                         showPriority={showPriority}
                         showDates={showDates}
@@ -1444,7 +1484,7 @@ function PipelineContent() {
 
                         <ListView
                             sortedDeals={sortedDeals}
-                            showBase={showBase}
+                            showBase={false}
                             showValue={showValue}
                             showPriority={showPriority}
                             showDates={showDates}
@@ -1469,16 +1509,13 @@ function PipelineContent() {
                 setActiveTab={setActiveTab}
                 currentPipeline={currentPipeline}
                 activePipelineKey={activePipelineKey}
-                baseNames={baseNames}
                 allUsers={allUsers}
-                specialAccommodations={specialAccommodations}
                 userRole={userRole}
                 session={session}
                 isSaving={isSaving}
                 saveStatus={saveStatus}
                 onSave={handleSaveOpportunity}
                 onDelete={(id: string) => setDeleteTarget(id)}
-                onSyncCalculatorValue={handleSyncCalculatorValue}
                 contactTimeline={contactTimeline}
                 timelineLoading={timelineLoading}
                 onRefetchTimeline={refetchContactTimeline}
@@ -1573,3 +1610,4 @@ function PipelineContent() {
         </div>
     )
 }
+

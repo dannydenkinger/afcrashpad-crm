@@ -53,8 +53,8 @@ export function ActivityFeed() {
     }, [])
 
     return (
-        <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 sm:p-6 pb-4">
+        <Card className="border-none shadow-md bg-card/40 backdrop-blur-md h-full w-full flex flex-col overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 sm:p-5 pb-3 shrink-0">
                 <div className="space-y-1">
                     <CardTitle className="text-base font-semibold flex items-center gap-2">
                         <Activity className="h-4 w-4 text-primary" />
@@ -64,7 +64,7 @@ export function ActivityFeed() {
                 </div>
                 <Clock className="h-4 w-4 text-muted-foreground opacity-50" />
             </CardHeader>
-            <CardContent className="pt-0 px-4 sm:px-6 pb-4 sm:pb-6">
+            <CardContent className="pt-0 px-4 sm:px-5 pb-4 flex-1 min-h-0 overflow-hidden">
                 {loading ? (
                     <div className="space-y-4">
                         {[...Array(5)].map((_, i) => (
@@ -78,7 +78,7 @@ export function ActivityFeed() {
                         ))}
                     </div>
                 ) : activities.length === 0 ? (
-                    <div className="py-12 flex flex-col items-center justify-center text-muted-foreground">
+                    <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
                         <Activity className="h-10 w-10 mb-3 opacity-15" />
                         <p className="text-sm font-medium">No recent activity</p>
                         <p className="text-xs mt-1 text-muted-foreground/70">
@@ -86,7 +86,7 @@ export function ActivityFeed() {
                         </p>
                     </div>
                 ) : (
-                    <ScrollArea className="h-[360px] pr-3">
+                    <ScrollArea className="h-full pr-3">
                         <div className="relative">
                             {/* Vertical timeline line */}
                             <div className="absolute left-[15px] top-2 bottom-2 w-[1px] bg-border/40" />

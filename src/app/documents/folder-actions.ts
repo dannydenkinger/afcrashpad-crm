@@ -1,7 +1,7 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { requireAuth } from "@/lib/auth-guard"
 import { revalidatePath } from "next/cache"
 
 // ── Types ──
@@ -17,11 +17,12 @@ export interface FolderRecord {
 // ── Get All Folders ──
 
 export async function getFolders(): Promise<{ success: boolean; folders: FolderRecord[] }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, folders: [] }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const snapshot = await adminDb.collection("document_folders")
+        const snapshot = await db.collection("document_folders")
             .orderBy("path")
             .get()
 
@@ -46,8 +47,9 @@ export async function getFolders(): Promise<{ success: boolean; folders: FolderR
 // ── Create Folder ──
 
 export async function createFolder(parentPath: string, name: string): Promise<{ success: boolean; error?: string; folderId?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Unauthorized" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     if (!name.trim()) return { success: false, error: "Folder name is required" }
 
@@ -57,7 +59,7 @@ export async function createFolder(parentPath: string, name: string): Promise<{ 
 
     try {
         // Check for duplicate path
-        const existing = await adminDb.collection("document_folders")
+        const existing = await db.collection("document_folders")
             .where("path", "==", path)
             .limit(1)
             .get()
@@ -66,7 +68,7 @@ export async function createFolder(parentPath: string, name: string): Promise<{ 
             return { success: false, error: "A folder with this name already exists here" }
         }
 
-        const docRef = await adminDb.collection("document_folders").add({
+        const docRef = await db.add("document_folders", {
             name: safeName,
             path,
             parentPath,
@@ -85,8 +87,9 @@ export async function createFolder(parentPath: string, name: string): Promise<{ 
 // ── Rename Folder ──
 
 export async function renameFolder(folderPath: string, newName: string): Promise<{ success: boolean; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Unauthorized" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     if (!newName.trim()) return { success: false, error: "Folder name is required" }
 
@@ -94,7 +97,7 @@ export async function renameFolder(folderPath: string, newName: string): Promise
 
     try {
         // Find the folder doc
-        const folderSnap = await adminDb.collection("document_folders")
+        const folderSnap = await db.collection("document_folders")
             .where("path", "==", folderPath)
             .limit(1)
             .get()
@@ -108,7 +111,7 @@ export async function renameFolder(folderPath: string, newName: string): Promise
 
         // Check for duplicate
         if (newPath !== folderPath) {
-            const existing = await adminDb.collection("document_folders")
+            const existing = await db.collection("document_folders")
                 .where("path", "==", newPath)
                 .limit(1)
                 .get()
@@ -117,13 +120,13 @@ export async function renameFolder(folderPath: string, newName: string): Promise
             }
         }
 
-        const batch = adminDb.batch()
+        const batch = db.batch()
 
         // Update the folder itself
         batch.update(folderDoc.ref, { name: safeName, path: newPath })
 
         // Update all child folders (paths that start with old path + "/")
-        const childFolders = await adminDb.collection("document_folders")
+        const childFolders = await db.collection("document_folders")
             .where("path", ">=", folderPath + "/")
             .where("path", "<", folderPath + "0") // lexicographic range
             .get()
@@ -136,7 +139,7 @@ export async function renameFolder(folderPath: string, newName: string): Promise
         }
 
         // Update documents with folderPath starting with old path
-        const standaloneDocs = await adminDb.collection("documents")
+        const standaloneDocs = await db.collection("documents")
             .where("folderPath", ">=", folderPath)
             .where("folderPath", "<", folderPath + "0")
             .get()
@@ -160,11 +163,12 @@ export async function renameFolder(folderPath: string, newName: string): Promise
 // ── Delete Folder (moves contents to parent) ──
 
 export async function deleteFolder(folderPath: string): Promise<{ success: boolean; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Unauthorized" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const folderSnap = await adminDb.collection("document_folders")
+        const folderSnap = await db.collection("document_folders")
             .where("path", "==", folderPath)
             .limit(1)
             .get()
@@ -174,13 +178,13 @@ export async function deleteFolder(folderPath: string): Promise<{ success: boole
         const folderDoc = folderSnap.docs[0]
         const parentPath = folderDoc.data().parentPath as string
 
-        const batch = adminDb.batch()
+        const batch = db.batch()
 
         // Delete the folder itself
         batch.delete(folderDoc.ref)
 
         // Delete all child folders
-        const childFolders = await adminDb.collection("document_folders")
+        const childFolders = await db.collection("document_folders")
             .where("path", ">=", folderPath + "/")
             .where("path", "<", folderPath + "0")
             .get()
@@ -190,7 +194,7 @@ export async function deleteFolder(folderPath: string): Promise<{ success: boole
         }
 
         // Move documents in this folder (and children) to parent
-        const standaloneDocs = await adminDb.collection("documents")
+        const standaloneDocs = await db.collection("documents")
             .where("folderPath", ">=", folderPath)
             .where("folderPath", "<", folderPath + "0")
             .get()
@@ -200,7 +204,7 @@ export async function deleteFolder(folderPath: string): Promise<{ success: boole
         }
 
         // Also move docs with exact match
-        const exactDocs = await adminDb.collection("documents")
+        const exactDocs = await db.collection("documents")
             .where("folderPath", "==", folderPath)
             .get()
 
@@ -225,13 +229,14 @@ export async function moveDocumentToFolder(
     contactId: string,
     folderPath: string
 ): Promise<{ success: boolean; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Unauthorized" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         const docRef = contactId
-            ? adminDb.collection("contacts").doc(contactId).collection("documents").doc(docId)
-            : adminDb.collection("documents").doc(docId)
+            ? db.subcollection("contacts", contactId, "documents").doc(docId)
+            : db.doc("documents", docId)
 
         const folderName = folderPath === "/" ? "General" : folderPath.split("/").pop() || "General"
 

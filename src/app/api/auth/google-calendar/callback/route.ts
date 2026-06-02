@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { google } from "googleapis"
-import { auth } from "@/auth"
-import { adminDb } from "@/lib/firebase-admin"
+import { getAuthSession } from "@/lib/auth-guard"
+import { tenantDb } from "@/lib/tenant-db"
 
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -11,8 +11,11 @@ const oauth2Client = new google.auth.OAuth2(
 
 export async function GET(request: Request) {
     try {
-        const session = await auth()
+        const session = await getAuthSession()
         if (!session?.user) return new NextResponse("Unauthorized", { status: 401 })
+        const workspaceId = (session.user as any).workspaceId
+        if (!workspaceId) return new NextResponse("No workspace found", { status: 403 })
+        const db = tenantDb(workspaceId)
 
         const url = new URL(request.url)
         const code = url.searchParams.get("code")
@@ -28,18 +31,18 @@ export async function GET(request: Request) {
             // No refresh token returned - user may have already authorized. Ensure prompt='consent' is used.
         }
 
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get();
+        const usersSnap = await db.collection('users').where('email', '==', session.user.email).limit(1).get();
         if (usersSnap.empty) return new NextResponse("Unauthorized user", { status: 401 });
         const dbUserId = usersSnap.docs[0].id;
 
         // Store tokens in our dedicated CalendarIntegration table
-        const querySnapshot = await adminDb.collection('calendar_integrations')
+        const querySnapshot = await db.collection('calendar_integrations')
             .where('userId', '==', dbUserId)
             .limit(1)
             .get();
 
         if (querySnapshot.empty) {
-            await adminDb.collection('calendar_integrations').add({
+            await db.add('calendar_integrations', {
                 userId: dbUserId,
                 provider: "google",
                 refreshToken: tokens.refresh_token,

@@ -1,16 +1,19 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin";
-import { auth } from "@/auth";
-import { revalidatePath } from "next/cache";
-import { logAudit } from "@/lib/audit";
-import { requireAdmin } from "@/lib/auth-guard";
+import { tenantDb } from "@/lib/tenant-db"
+import { revalidatePath } from "next/cache"
+import { logAudit } from "@/lib/audit"
+import { requireAdmin, requireAuth } from "@/lib/auth-guard"
 
 // --- Automation Settings ---
 
 export async function getAutomationSettings() {
     try {
-        const doc = await adminDb.collection('settings').doc('automations').get();
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const doc = await db.settingsDoc("automations").get()
         if (!doc.exists) {
             return {
                 success: true,
@@ -53,28 +56,26 @@ export async function updateAutomationSettings(updates: {
     guestCheckInTemplateId?: string | null;
     guestCheckOutTemplateId?: string | null;
 }) {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        const session = await auth();
-        if (!session?.user?.email) return { success: false, error: "Unauthorized" };
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const usersSnap = await adminDb.collection('users').where('email', '==', session.user.email).limit(1).get();
-        if (usersSnap.empty) return { success: false, error: "Unauthorized" };
-
-        await adminDb.collection('settings').doc('automations').set(
+        await db.settingsDoc("automations").set(
             { ...updates, updatedAt: new Date() },
             { merge: true }
         );
 
-        logAudit({
-            userId: usersSnap.docs[0].id,
-            userEmail: session.user.email,
-            userName: usersSnap.docs[0].data()?.name || "",
+        logAudit(workspaceId, {
+            userId: session.user.id || "",
+            userEmail: session.user.email || "",
+            userName: session.user.name || "",
             action: "settings_change",
             entity: "settings",
             entityId: "automations",
@@ -94,7 +95,11 @@ export async function updateAutomationSettings(updates: {
 
 export async function getEmailTemplates() {
     try {
-        const snap = await adminDb.collection('email_templates').orderBy('createdAt', 'desc').get();
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const snap = await db.collection('email_templates').orderBy('createdAt', 'desc').get();
         const templates = snap.docs.map(doc => {
             const data = doc.data();
             const ts = data.createdAt;
@@ -115,14 +120,18 @@ export async function getEmailTemplates() {
 }
 
 export async function createEmailTemplate(data: { name: string; subject: string; body: string }) {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        const ref = await adminDb.collection('email_templates').add({
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const ref = await db.add('email_templates', {
             name: data.name,
             subject: data.subject,
             body: data.body,
@@ -139,14 +148,18 @@ export async function createEmailTemplate(data: { name: string; subject: string;
 }
 
 export async function updateEmailTemplate(id: string, data: { name?: string; subject?: string; body?: string }) {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        await adminDb.collection('email_templates').doc(id).update({
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        await db.doc('email_templates', id).update({
             ...data,
             updatedAt: new Date(),
         });
@@ -163,11 +176,15 @@ export async function updateEmailTemplate(id: string, data: { name?: string; sub
 
 export async function getStalenessSettings() {
     try {
-        const pipelinesSnap = await adminDb.collection("pipelines").orderBy("createdAt", "asc").get()
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const pipelinesSnap = await db.collection("pipelines").orderBy("createdAt", "asc").get()
         const pipelines: { id: string; name: string; stages: { id: string; name: string; stalenessThresholdDays: number | null; probability: number }[] }[] = []
 
         for (const pDoc of pipelinesSnap.docs) {
-            const stagesSnap = await pDoc.ref.collection("stages").orderBy("order", "asc").get()
+            const stagesSnap = await db.subcollection("pipelines", pDoc.id, "stages").orderBy("order", "asc").get()
             const stages = stagesSnap.docs.map(s => ({
                 id: s.id,
                 name: s.data().name || "",
@@ -185,14 +202,18 @@ export async function getStalenessSettings() {
 }
 
 export async function updateStageSettings(pipelineId: string, stageId: string, updates: { stalenessThresholdDays?: number | null; probability?: number }) {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        await adminDb.collection("pipelines").doc(pipelineId).collection("stages").doc(stageId).update(updates)
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        await db.subcollection("pipelines", pipelineId, "stages").doc(stageId).update(updates)
         revalidatePath("/settings")
         return { success: true }
     } catch (error) {
@@ -202,19 +223,23 @@ export async function updateStageSettings(pipelineId: string, stageId: string, u
 }
 
 export async function deleteEmailTemplate(id: string) {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        await adminDb.collection('email_templates').doc(id).delete();
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        await db.doc('email_templates', id).delete();
 
         // If this was the active auto-reply template, clear it
-        const settingsDoc = await adminDb.collection('settings').doc('automations').get();
+        const settingsDoc = await db.settingsDoc('automations').get();
         if (settingsDoc.exists && settingsDoc.data()?.autoReplyTemplateId === id) {
-            await adminDb.collection('settings').doc('automations').update({
+            await db.settingsDoc('automations').update({
                 autoReplyTemplateId: null,
                 autoReplyEnabled: false,
                 updatedAt: new Date(),

@@ -115,8 +115,8 @@ export function ListView({
                         {showBase && <TableHead>Location</TableHead>}
                         {showPriority && <TableHead>Priority</TableHead>}
                         {showValue && <TableHead className="cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => requestSort('value')}>Value <ArrowUpDown className="ml-1 h-3 w-3 inline-block text-muted-foreground" /></TableHead>}
-                        {showDates && <TableHead className="cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => requestSort('startDate')}>Check-in <ArrowUpDown className="ml-1 h-3 w-3 inline-block text-muted-foreground" /></TableHead>}
-                        {showEndDate && <TableHead className="cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => requestSort('endDate')}>Check-out <ArrowUpDown className="ml-1 h-3 w-3 inline-block text-muted-foreground" /></TableHead>}
+                        {showDates && <TableHead className="cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => requestSort('startDate')}>Start <ArrowUpDown className="ml-1 h-3 w-3 inline-block text-muted-foreground" /></TableHead>}
+                        {showEndDate && <TableHead className="cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => requestSort('endDate')}>End <ArrowUpDown className="ml-1 h-3 w-3 inline-block text-muted-foreground" /></TableHead>}
                         {showLengthOfStayProp && <TableHead className="cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => requestSort('lengthOfStay')}>Duration <ArrowUpDown className="ml-1 h-3 w-3 inline-block text-muted-foreground" /></TableHead>}
                         <TableHead>Assignee</TableHead>
                     </TableRow>
@@ -140,19 +140,36 @@ export function ListView({
                                     <div className="flex items-center gap-2">
                                         <span className="font-semibold">{deal.name}</span>
                                         {deal.unread === true && (
-                                            <Badge className="text-[10px] font-bold tracking-wider bg-primary text-primary-foreground border-0 px-1.5 py-0">New</Badge>
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                                <span className="relative flex h-1.5 w-1.5">
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
+                                                </span>
+                                                New
+                                            </span>
                                         )}
                                     </div>
                                     <div className="text-xs text-muted-foreground hidden sm:block">{deal.email} • {deal.phone}</div>
                                 </TableCell>
                                 {statusFilter !== "open" && (
                                     <TableCell>
-                                        <Badge variant="outline" className={`font-normal text-[10px] ${DEAL_STATUS_COLORS[(deal.status || "open") as DealStatus]}`}>
+                                        <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border ${DEAL_STATUS_COLORS[(deal.status || "open") as DealStatus]}`}>
+                                            <span className={`h-1.5 w-1.5 rounded-full ${
+                                                (deal.status || "open") === "open" ? "bg-emerald-500" :
+                                                deal.status === "closed_won" ? "bg-blue-500" :
+                                                deal.status === "closed_lost" ? "bg-red-500" :
+                                                "bg-gray-400"
+                                            }`} />
                                             {DEAL_STATUS_LABELS[(deal.status || "open") as DealStatus]}
-                                        </Badge>
+                                        </span>
                                     </TableCell>
                                 )}
-                                <TableCell><Badge variant="secondary" className="font-medium bg-muted text-muted-foreground border-border">{deal.stage}</Badge></TableCell>
+                                <TableCell>
+                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border bg-muted text-foreground/80 border-border">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                                        {deal.stage}
+                                    </span>
+                                </TableCell>
                                 {showBase && <TableCell className="text-muted-foreground">{deal.base}</TableCell>}
                                 {showPriority && <TableCell>
                                     <Badge variant="outline" className={`text-[10px] font-bold tracking-wider rounded-sm

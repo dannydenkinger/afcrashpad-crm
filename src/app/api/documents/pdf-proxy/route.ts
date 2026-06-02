@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 
+const ALLOWED_HOSTS = new Set([
+    "firebasestorage.app",
+    "firebasestorage.googleapis.com",
+    "storage.googleapis.com",
+])
+
 export async function GET(req: NextRequest) {
     const url = req.nextUrl.searchParams.get("url")
 
@@ -7,8 +13,20 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Missing url parameter" }, { status: 400 })
     }
 
-    // Only allow Firebase Storage URLs
-    if (!url.includes("firebasestorage.app") && !url.includes("storage.googleapis.com")) {
+    let parsed: URL
+    try {
+        parsed = new URL(url)
+    } catch {
+        return NextResponse.json({ error: "Invalid URL" }, { status: 400 })
+    }
+    if (parsed.protocol !== "https:") {
+        return NextResponse.json({ error: "Invalid URL" }, { status: 403 })
+    }
+    const host = parsed.hostname.toLowerCase()
+    const hostAllowed = [...ALLOWED_HOSTS].some(
+        (allowed) => host === allowed || host.endsWith(`.${allowed}`),
+    )
+    if (!hostAllowed) {
         return NextResponse.json({ error: "Invalid URL" }, { status: 403 })
     }
 

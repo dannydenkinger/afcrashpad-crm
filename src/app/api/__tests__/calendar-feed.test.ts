@@ -14,7 +14,7 @@ describe('iCal Feed Generation', () => {
     return [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//AFCrashpad CRM//Calendar Sync//EN',
+      'PRODID:-//Vesta CRM//Calendar Sync//EN',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       `X-WR-CALNAME:${calendarName}'s CRM Schedule`,
@@ -27,7 +27,7 @@ describe('iCal Feed Generation', () => {
     const dtStart = createdAt.toISOString().replace(/[-:]/g, '').split('T')[0]
     return [
       'BEGIN:VEVENT',
-      `UID:opp-${id}@afcrashpad.com`,
+      `UID:opp-${id}@vesta.crm`,
       `DTSTAMP:${nowUtc}`,
       `DTSTART;VALUE=DATE:${dtStart}`,
       `SUMMARY:[Deal] ${name}`,
@@ -42,7 +42,7 @@ describe('iCal Feed Generation', () => {
     const prefix = completed ? '[Done] ' : ''
     return [
       'BEGIN:VEVENT',
-      `UID:task-${id}@afcrashpad.com`,
+      `UID:task-${id}@vesta.crm`,
       `DTSTAMP:${nowUtc}`,
       `DTSTART;VALUE=DATE:${dtStart}`,
       `SUMMARY:${prefix}${title}`,
@@ -81,7 +81,7 @@ describe('iCal Feed Generation', () => {
     it('includes the UID with opp prefix', () => {
       const lines = buildOpportunityEvent('abc123', 'Test', 0, 'LOW', new Date())
       const uid = lines.find(l => l.startsWith('UID:'))
-      expect(uid).toBe('UID:opp-abc123@afcrashpad.com')
+      expect(uid).toBe('UID:opp-abc123@vesta.crm')
     })
 
     it('formats DTSTART as date-only (no time)', () => {

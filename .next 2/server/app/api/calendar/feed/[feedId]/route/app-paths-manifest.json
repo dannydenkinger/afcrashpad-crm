@@ -1,3 +1,0 @@
-{
-  "/api/calendar/feed/[feedId]/route": "app/api/calendar/feed/[feedId]/route.js"
-}

@@ -1,4 +1,4 @@
-import { adminDb } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
 import { randomUUID } from "crypto";
 import { createHash } from "crypto";
 
@@ -28,16 +28,16 @@ export interface TrackingRecord {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function hashIp(ip: string): string {
-    return createHash("sha256").update(ip + (process.env.TRACKING_SALT || "afcrashpad")).digest("hex").slice(0, 16);
+    return createHash("sha256").update(ip + (process.env.TRACKING_SALT || "vesta")).digest("hex").slice(0, 16);
 }
 
 function getBaseUrl(): string {
-    return process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "https://app.afcrashpad.com";
+    return process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "http://localhost:3000";
 }
 
 // ── Create a tracking record & inject pixel + link wrapping ──────────────────
 
-export async function createTrackedEmail({
+export async function createTrackedEmail(workspaceId: string, {
     contactId,
     recipientEmail,
     subject,
@@ -48,6 +48,7 @@ export async function createTrackedEmail({
     subject: string;
     html: string;
 }): Promise<{ trackingId: string; trackedHtml: string }> {
+    const db = tenantDb(workspaceId)
     const trackingId = randomUUID();
     const baseUrl = getBaseUrl();
 
@@ -61,7 +62,7 @@ export async function createTrackedEmail({
     const finalHtml = injectPixel(trackedHtml, pixelImg);
 
     // Store tracking record in Firestore
-    await adminDb.collection("email_tracking").doc(trackingId).set({
+    await db.doc("email_tracking", trackingId).set({
         contactId,
         recipientEmail,
         subject,
@@ -75,6 +76,7 @@ export async function createTrackedEmail({
         linkMap,
         userAgent: null,
         ipHash: null,
+        workspaceId,
     });
 
     return { trackingId, trackedHtml: finalHtml };
@@ -83,9 +85,10 @@ export async function createTrackedEmail({
 /**
  * Update the tracking record with the Resend email ID after sending.
  */
-export async function updateTrackingEmailId(trackingId: string, emailId: string) {
+export async function updateTrackingEmailId(workspaceId: string, trackingId: string, emailId: string) {
     try {
-        await adminDb.collection("email_tracking").doc(trackingId).update({ emailId });
+        const db = tenantDb(workspaceId)
+        await db.doc("email_tracking", trackingId).update({ emailId });
     } catch (err) {
         console.error("Failed to update tracking emailId:", err);
     }
@@ -93,9 +96,10 @@ export async function updateTrackingEmailId(trackingId: string, emailId: string)
 
 // ── Record open event ────────────────────────────────────────────────────────
 
-export async function recordOpen(trackingId: string, userAgent: string | null, ip: string | null) {
+export async function recordOpen(workspaceId: string, trackingId: string, userAgent: string | null, ip: string | null) {
     try {
-        const docRef = adminDb.collection("email_tracking").doc(trackingId);
+        const db = tenantDb(workspaceId)
+        const docRef = db.doc("email_tracking", trackingId);
         const doc = await docRef.get();
         if (!doc.exists) return;
 
@@ -126,13 +130,15 @@ export async function recordOpen(trackingId: string, userAgent: string | null, i
 // ── Record click event ───────────────────────────────────────────────────────
 
 export async function recordClick(
+    workspaceId: string,
     trackingId: string,
     linkId: string,
     userAgent: string | null,
     ip: string | null
 ): Promise<string | null> {
     try {
-        const docRef = adminDb.collection("email_tracking").doc(trackingId);
+        const db = tenantDb(workspaceId)
+        const docRef = db.doc("email_tracking", trackingId);
         const doc = await docRef.get();
         if (!doc.exists) return null;
 
@@ -184,9 +190,10 @@ export async function recordClick(
 
 // ── Fetch tracking data for a contact ────────────────────────────────────────
 
-export async function getTrackingForContact(contactId: string) {
+export async function getTrackingForContact(workspaceId: string, contactId: string) {
     try {
-        const snap = await adminDb
+        const db = tenantDb(workspaceId)
+        const snap = await db
             .collection("email_tracking")
             .where("contactId", "==", contactId)
             .orderBy("sentAt", "desc")

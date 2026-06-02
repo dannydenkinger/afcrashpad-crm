@@ -1,7 +1,7 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { requireAuth } from "@/lib/auth-guard"
 import { revalidatePath } from "next/cache"
 import { sendEmail } from "@/lib/email"
 import crypto from "crypto"
@@ -30,12 +30,13 @@ export async function saveSignatureConfig(
     signers: string[],
     pdfUrl: string
 ): Promise<{ success: boolean; configId?: string; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Unauthorized" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         // Check if a config already exists for this document
-        const existing = await adminDb.collection("document_signature_configs")
+        const existing = await db.collection("document_signature_configs")
             .where("documentId", "==", docId)
             .where("contactId", "==", contactId || "")
             .limit(1)
@@ -44,7 +45,7 @@ export async function saveSignatureConfig(
         if (!existing.empty) {
             // Update existing config
             const configDoc = existing.docs[0]
-            await configDoc.ref.update({
+            await db.doc("document_signature_configs", configDoc.id).update({
                 blocks: blocks.map(b => ({ ...b })),
                 signers,
                 pdfUrl,
@@ -54,7 +55,7 @@ export async function saveSignatureConfig(
         }
 
         // Create new config
-        const ref = await adminDb.collection("document_signature_configs").add({
+        const ref = await db.add("document_signature_configs", {
             documentId: docId,
             contactId: contactId || "",
             blocks: blocks.map(b => ({ ...b })),
@@ -79,11 +80,12 @@ export async function getSignatureConfig(
     docId: string,
     contactId: string
 ): Promise<{ success: boolean; config?: SignatureConfig; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Unauthorized" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const snapshot = await adminDb.collection("document_signature_configs")
+        const snapshot = await db.collection("document_signature_configs")
             .where("documentId", "==", docId)
             .where("contactId", "==", contactId || "")
             .limit(1)
@@ -119,11 +121,12 @@ export async function getSignatureConfig(
 export async function sendPreparedSignatures(
     configId: string
 ): Promise<{ success: boolean; sent?: number; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Unauthorized" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
-        const configDoc = await adminDb.collection("document_signature_configs").doc(configId).get()
+        const configDoc = await db.doc("document_signature_configs", configId).get()
         if (!configDoc.exists) return { success: false, error: "Configuration not found" }
 
         const config = configDoc.data()!
@@ -135,12 +138,12 @@ export async function sendPreparedSignatures(
 
         // Fetch the document for its name
         const docRef = contactId
-            ? adminDb.collection("contacts").doc(contactId).collection("documents").doc(documentId)
-            : adminDb.collection("documents").doc(documentId)
+            ? db.subcollection("contacts", contactId, "documents").doc(documentId)
+            : db.doc("documents", documentId)
         const docSnap = await docRef.get()
         const docName = docSnap.exists ? (docSnap.data()?.name as string) || "Document" : "Document"
 
-        const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "https://app.afcrashpad.com"
+        const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
         const requestIds: string[] = []
 
         for (const email of signers) {
@@ -149,7 +152,7 @@ export async function sendPreparedSignatures(
 
             const token = crypto.randomBytes(32).toString("hex")
 
-            const sigRef = await adminDb.collection("signature_requests").add({
+            const sigRef = await db.add("signature_requests", {
                 documentId,
                 contactId: contactId || "",
                 standalone: !contactId,
@@ -207,7 +210,7 @@ export async function sendPreparedSignatures(
         })
 
         // Update config status
-        await configDoc.ref.update({
+        await db.doc("document_signature_configs", configId).update({
             status: "sent",
             updatedAt: new Date(),
         })
@@ -227,13 +230,14 @@ export async function getDocumentForPrepare(
     docId: string,
     contactId: string
 ): Promise<{ success: boolean; doc?: { name: string; url: string; status: string }; error?: string }> {
-    const session = await auth()
-    if (!session?.user) return { success: false, error: "Unauthorized" }
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     try {
         const docRef = contactId
-            ? adminDb.collection("contacts").doc(contactId).collection("documents").doc(docId)
-            : adminDb.collection("documents").doc(docId)
+            ? db.subcollection("contacts", contactId, "documents").doc(docId)
+            : db.doc("documents", docId)
 
         const snap = await docRef.get()
         if (!snap.exists) return { success: false, error: "Document not found" }

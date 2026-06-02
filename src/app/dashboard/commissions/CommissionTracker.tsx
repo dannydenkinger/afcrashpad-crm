@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, DollarSign, CheckCircle2, Clock, Wallet, TrendingUp, AlertTriangle } from "lucide-react"
+import { Loader2, DollarSign, CheckCircle2, Clock, Wallet, TrendingUp, AlertTriangle, AlertCircle, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import {
     getCommissionsData,
@@ -14,6 +14,7 @@ import {
 } from "./actions"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import type { CommissionsData, CommissionEntry } from "./types"
+import { EmptyState } from "@/components/ui/EmptyState"
 
 function formatCurrency(value: number) {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
@@ -21,9 +22,42 @@ function formatCurrency(value: number) {
     return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function LoadErrorPanel({ message, onRetry }: { message: string | null; onRetry: () => Promise<void> }) {
+    const [retrying, setRetrying] = useState(false)
+    return (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 sm:p-8 text-center">
+            <div className="mx-auto h-10 w-10 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-3">
+                <AlertCircle className="h-5 w-5" />
+            </div>
+            <h3 className="text-sm font-semibold mb-1">Couldn&apos;t load commission data</h3>
+            <p className="text-xs text-muted-foreground max-w-md mx-auto mb-4">
+                {message || "Something went wrong fetching your commissions."} If this is your first time here, the database may still be provisioning indexes — give it a minute and try again.
+            </p>
+            <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                    setRetrying(true)
+                    try { await onRetry() } finally { setRetrying(false) }
+                }}
+                disabled={retrying}
+                className="h-8 text-xs"
+            >
+                {retrying ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                {retrying ? "Retrying…" : "Try again"}
+            </Button>
+        </div>
+    )
+}
+
 export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string; end: string } | null }) {
     const [data, setData] = useState<CommissionsData | null>(null)
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState<string | null>(null)
     const [filter, setFilter] = useState<"all" | "earned" | "paid">("all")
     const [payingId, setPayingId] = useState<string | null>(null)
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -35,8 +69,13 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
     }, [])
 
     async function loadData() {
+        setLoadError(null)
         const res = await getCommissionsData()
-        if (res.success && res.data) setData(res.data)
+        if (res.success && res.data) {
+            setData(res.data)
+        } else {
+            setLoadError(res.error || "Failed to load commission data")
+        }
         setLoading(false)
     }
 
@@ -134,8 +173,8 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
         )
     }
 
-    if (!data) {
-        return <div className="text-center py-20 text-muted-foreground">Failed to load commission data.</div>
+    if (loadError || !data) {
+        return <LoadErrorPanel message={loadError} onRetry={loadData} />
     }
 
     return (
@@ -291,11 +330,12 @@ export function CommissionTracker({ dateFilter }: { dateFilter?: { start: string
                         </div>
                     )}
                     {filteredEntries.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                            <DollarSign className="h-12 w-12 text-muted-foreground/20 mb-4" />
-                            <p className="text-lg font-medium text-foreground mb-1">No commissions yet</p>
-                            <p className="text-sm text-muted-foreground mb-4 max-w-sm">Commissions are automatically created when deals are marked as booked.</p>
-                        </div>
+                        <EmptyState
+                            Icon={DollarSign}
+                            accent="emerald"
+                            title="No commissions yet"
+                            description="Commissions are automatically created when deals are marked as booked."
+                        />
                     ) : (
                         <>
                             {/* Mobile card view */}

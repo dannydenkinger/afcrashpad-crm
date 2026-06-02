@@ -27,7 +27,6 @@ export interface PipelineViewState {
     activePipelineKey: string
     viewMode: "kanban" | "list"
     statusFilter?: DealStatus
-    showBase: boolean
     showValue: boolean
     showPriority: boolean
     showDates: boolean

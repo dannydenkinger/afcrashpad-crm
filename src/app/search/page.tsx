@@ -6,9 +6,11 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Search, User, LayoutGrid, FileText, Loader2, Clock, X } from "lucide-react"
+import { Search, User, LayoutGrid, FileText, Loader2, Clock, X, AlertCircle, RefreshCw } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { globalSearch } from "./actions"
 import type { SearchResult } from "./types"
+import { EmptyState } from "@/components/ui/EmptyState"
 
 export default function SearchPage() {
     return (
@@ -32,35 +34,46 @@ function SearchContent() {
     }>({ contacts: [], opportunities: [], notes: [] })
     const [loading, setLoading] = useState(false)
     const [searched, setSearched] = useState(false)
+    const [searchError, setSearchError] = useState<string | null>(null)
     const [categoryFilter, setCategoryFilter] = useState<"all" | "contacts" | "opportunities" | "notes">("all")
     const [recentSearches, setRecentSearches] = useState<string[]>(() => {
         if (typeof window === 'undefined') return []
         try { return JSON.parse(localStorage.getItem('recent-searches') || '[]') } catch { return [] }
     })
 
+    const runSearch = useCallback(async (q: string, signal: { cancelled: boolean }) => {
+        setLoading(true)
+        setSearchError(null)
+        try {
+            const res = await globalSearch(q)
+            if (signal.cancelled) return
+            setResults(res)
+            setSearched(true)
+            setRecentSearches(prev => {
+                const updated = [q, ...prev.filter(s => s !== q)].slice(0, 5)
+                try { localStorage.setItem('recent-searches', JSON.stringify(updated)) } catch {}
+                return updated
+            })
+        } catch (err) {
+            if (signal.cancelled) return
+            setSearchError(err instanceof Error ? err.message : "Search failed")
+            setSearched(true)
+        } finally {
+            if (!signal.cancelled) setLoading(false)
+        }
+    }, [])
+
     useEffect(() => {
         if (debouncedQuery.length < 2) {
             setResults({ contacts: [], opportunities: [], notes: [] })
             setSearched(false)
+            setSearchError(null)
             return
         }
-        let cancelled = false
-        setLoading(true)
-        globalSearch(debouncedQuery).then((res) => {
-            if (!cancelled) {
-                setResults(res)
-                setSearched(true)
-                setLoading(false)
-                // Save to recent searches
-                setRecentSearches(prev => {
-                    const updated = [debouncedQuery, ...prev.filter(s => s !== debouncedQuery)].slice(0, 5)
-                    localStorage.setItem('recent-searches', JSON.stringify(updated))
-                    return updated
-                })
-            }
-        })
-        return () => { cancelled = true }
-    }, [debouncedQuery])
+        const signal = { cancelled: false }
+        runSearch(debouncedQuery, signal)
+        return () => { signal.cancelled = true }
+    }, [debouncedQuery, runSearch])
 
     const handleNavigate = (result: SearchResult) => {
         if (result.type === "contact") {
@@ -153,12 +166,34 @@ function SearchContent() {
                     </div>
                 )}
 
-                {searched && !loading && totalResults === 0 && (
+                {searchError && !loading && (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 text-center">
+                        <div className="mx-auto h-10 w-10 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-3">
+                            <AlertCircle className="h-5 w-5" />
+                        </div>
+                        <h3 className="text-sm font-semibold mb-1">Search failed</h3>
+                        <p className="text-xs text-muted-foreground max-w-md mx-auto mb-4">{searchError}</p>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => runSearch(debouncedQuery, { cancelled: false })}
+                            className="h-8 text-xs"
+                        >
+                            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                            Try again
+                        </Button>
+                    </div>
+                )}
+
+                {searched && !loading && !searchError && totalResults === 0 && (
                     <Card className="border-none shadow-md bg-card/40 backdrop-blur-md">
-                        <CardContent className="py-12 flex flex-col items-center justify-center text-muted-foreground">
-                            <Search className="h-10 w-10 mb-4 opacity-20" />
-                            <p className="text-base font-medium">No results found</p>
-                            <p className="text-sm mt-1">Try a different search term</p>
+                        <CardContent className="p-0">
+                            <EmptyState
+                                Icon={Search}
+                                title="No results found"
+                                description="Try a different search term."
+                                compact
+                            />
                         </CardContent>
                     </Card>
                 )}

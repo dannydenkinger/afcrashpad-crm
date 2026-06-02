@@ -36,12 +36,15 @@ import {
     Filter,
     ArrowUpCircle,
     ArrowDownCircle,
+    AlertCircle,
+    X,
 } from "lucide-react"
+import Link from "next/link"
 import { toast } from "sonner"
 import ArticleEditor from "./ArticleEditor"
 import ClusterManager from "./ClusterManager"
 import AIGenerateDialog from "./AIGenerateDialog"
-import { getArticles, getArticle, getClusters, deleteArticle, getBlogStats, ensureArticleInCluster, updateArticle } from "./actions"
+import { getArticles, getArticle, getClusters, deleteArticle, getBlogStats, ensureArticleInCluster, updateArticle, getBlogConnectionStatus } from "./actions"
 import type { BlogArticle, ContentCluster, BlogStats, AIGenerateResponse } from "./types"
 
 type ViewMode = "list" | "editor" | "clusters"
@@ -54,6 +57,21 @@ export default function BlogDashboard() {
     const [loading, setLoading] = useState(true)
     const [searchQuery, setSearchQuery] = useState("")
     const [statusFilter, setStatusFilter] = useState<string>("all")
+    const [wpConnected, setWpConnected] = useState<boolean | null>(null)
+    const [wpBannerDismissed, setWpBannerDismissed] = useState(false)
+
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            setWpBannerDismissed(window.localStorage.getItem("blog:wp-banner-dismissed") === "1")
+        }
+    }, [])
+
+    function dismissWpBanner() {
+        setWpBannerDismissed(true)
+        if (typeof window !== "undefined") {
+            window.localStorage.setItem("blog:wp-banner-dismissed", "1")
+        }
+    }
 
     // Editor state
     const [editingArticle, setEditingArticle] = useState<BlogArticle | null>(null)
@@ -65,15 +83,17 @@ export default function BlogDashboard() {
     const loadData = useCallback(async () => {
         setLoading(true)
         try {
-            const [articlesRes, clustersRes, statsRes] = await Promise.all([
+            const [articlesRes, clustersRes, statsRes, connStatus] = await Promise.all([
                 getArticles(),
                 getClusters(),
                 getBlogStats(),
+                getBlogConnectionStatus().catch(() => ({ wordpress: false })),
             ])
 
             if (articlesRes.success && articlesRes.data) setArticles(articlesRes.data)
             if (clustersRes.success && clustersRes.data) setClusters(clustersRes.data)
             if (statsRes.success && statsRes.data) setStats(statsRes.data)
+            setWpConnected(!!connStatus.wordpress)
         } catch (error) {
             console.error("Failed to load blog data:", error)
         }
@@ -293,6 +313,34 @@ export default function BlogDashboard() {
     // ── Render list view (default) ──
     return (
         <div className="space-y-6">
+            {wpConnected === false && !wpBannerDismissed && (
+                <Card className="border-amber-500/40 bg-amber-500/5">
+                    <CardContent className="pt-4 pb-4 flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="flex-1 text-sm">
+                            <div className="font-medium">Connect WordPress to publish posts</div>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                                You can write and save articles without it, but publishing to a live site needs WordPress credentials.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <Link href="/settings/integrations">
+                                <Button size="sm">Connect</Button>
+                            </Link>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                onClick={dismissWpBanner}
+                                aria-label="Dismiss"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             {/* Stats Cards */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">

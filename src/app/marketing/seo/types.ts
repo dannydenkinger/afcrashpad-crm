@@ -45,7 +45,7 @@ export interface PageSpeedMetrics {
 export interface TrackedKeyword {
     id: string
     keyword: string
-    domain: string          // domain to check (e.g. "afcrashpad.com")
+    domain: string          // domain to check (e.g. "yourdomain.com")
     position: number | null // current SERP position (null = not ranked)
     previousPosition: number | null
     searchVolume?: number

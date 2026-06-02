@@ -12,11 +12,31 @@ function getMessagingInstance(): Messaging | null {
     return messagingInstance
 }
 
+/** True only if push is configured and the browser supports it. */
+export function isPushConfigured(): boolean {
+    return !!process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
+}
+
+export class PushNotConfiguredError extends Error {
+    constructor() {
+        super(
+            "Push notifications aren't configured for this deployment. The workspace owner must set NEXT_PUBLIC_FIREBASE_VAPID_KEY in environment variables.",
+        )
+        this.name = "PushNotConfiguredError"
+    }
+}
+
 /**
  * Request notification permission and get the FCM token.
  * Returns the token string, or null if denied/unsupported.
+ * Throws PushNotConfiguredError if VAPID key is missing — callers can
+ * catch and surface a clearer message than "permission denied".
  */
 export async function requestPushToken(): Promise<string | null> {
+    if (!isPushConfigured()) {
+        throw new PushNotConfiguredError()
+    }
+
     const messaging = getMessagingInstance()
     if (!messaging) return null
 

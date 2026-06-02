@@ -1,17 +1,17 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
 import { revalidatePath } from "next/cache"
-import { requireAdmin } from "@/lib/auth-guard"
+import { requireAdmin, requireAuth } from "@/lib/auth-guard"
 import type { AssignmentRule, AssignmentRuleCondition } from "./types"
 
 export async function getAssignmentRules(): Promise<{ success: boolean; rules?: AssignmentRule[]; error?: string }> {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { success: false, error: "Unauthorized" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const snap = await adminDb.collection("assignment_rules").orderBy("createdAt", "desc").get()
+        const snap = await db.collection("assignment_rules").orderBy("createdAt", "desc").get()
         const rules: AssignmentRule[] = snap.docs.map(doc => {
             const data = doc.data()
             const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (data.createdAt || null)
@@ -41,14 +41,18 @@ export async function createAssignmentRule(data: {
     assignToUserId?: string
     assignToUserName?: string
 }): Promise<{ success: boolean; id?: string; error?: string }> {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        const ref = await adminDb.collection("assignment_rules").add({
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const ref = await db.add("assignment_rules", {
             type: data.type,
             teamMembers: data.teamMembers,
             conditions: data.conditions,
@@ -79,14 +83,18 @@ export async function updateAssignmentRule(
         enabled?: boolean
     }
 ): Promise<{ success: boolean; error?: string }> {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        await adminDb.collection("assignment_rules").doc(id).update({
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        await db.doc("assignment_rules", id).update({
             ...updates,
             updatedAt: new Date(),
         })
@@ -100,14 +108,18 @@ export async function updateAssignmentRule(
 }
 
 export async function deleteAssignmentRule(id: string): Promise<{ success: boolean; error?: string }> {
+    let session
     try {
-        await requireAdmin()
+        session = await requireAdmin()
     } catch {
         return { success: false, error: "Admin access required" }
     }
 
     try {
-        await adminDb.collection("assignment_rules").doc(id).delete()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        await db.doc("assignment_rules", id).delete()
         revalidatePath("/settings")
         return { success: true }
     } catch (error) {

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { sanitizeHtml } from "@/lib/sanitize-html"
 import {
     Dialog,
     DialogContent,
@@ -292,7 +293,7 @@ export function DocumentTemplateDialog({
                                     <Input
                                         value={name}
                                         onChange={e => setName(e.target.value)}
-                                        placeholder="e.g. Lease Agreement"
+                                        placeholder="e.g. Service Agreement"
                                         className="h-9 text-sm"
                                     />
                                 </div>
@@ -344,7 +345,7 @@ export function DocumentTemplateDialog({
                                 <Textarea
                                     value={content}
                                     onChange={e => setContent(e.target.value)}
-                                    placeholder={`<h1>Crashpad Lease Agreement</h1>\n<p>This agreement is between AFCrashpad and <strong>{{contactName}}</strong>.</p>\n<p>Move-in date: {{stayStartDate}}</p>\n<p>Move-out date: {{stayEndDate}}</p>\n<p>Date: {{currentDate}}</p>`}
+                                    placeholder={`<h1>Service Agreement</h1>\n<p>This agreement is between our company and <strong>{{contactName}}</strong>.</p>\n<p>Start date: {{startDate}}</p>\n<p>End date: {{endDate}}</p>\n<p>Date: {{currentDate}}</p>`}
                                     className="min-h-[200px] text-xs font-mono"
                                 />
                             </div>
@@ -354,7 +355,7 @@ export function DocumentTemplateDialog({
                                     <Label className="text-xs text-muted-foreground">Preview</Label>
                                     <div
                                         className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-4 bg-white dark:bg-background text-xs"
-                                        dangerouslySetInnerHTML={{ __html: content }}
+                                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(content) }}
                                     />
                                 </div>
                             )}
@@ -377,7 +378,7 @@ export function DocumentTemplateDialog({
                         <div className="space-y-4">
                             <div
                                 className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-white dark:bg-background"
-                                dangerouslySetInnerHTML={{ __html: generatedContent }}
+                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(generatedContent) }}
                             />
                             <div className="flex justify-end gap-2 pt-2">
                                 <Button

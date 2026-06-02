@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 import { sendEmail } from "@/lib/email"
 
 export const dynamic = "force-dynamic"
@@ -23,16 +24,23 @@ function isDue(frequency: string, lastSentAt: Date | null): boolean {
     }
 }
 
-async function generatePipelineSummary(): Promise<string> {
+async function generatePipelineSummary(db: ReturnType<typeof tenantDb>): Promise<string> {
     const [oppsSnap, contactsSnap] = await Promise.all([
-        adminDb.collection("opportunities").get(),
-        adminDb.collection("contacts").get(),
+        db.collection("opportunities").get(),
+        db.collection("contacts").get(),
     ])
 
-    const pipelinesSnap = await adminDb.collection("pipelines").orderBy("createdAt", "asc").get()
+    const pipelinesSnap = await db.collection("pipelines").get()
+    // Sort client-side since Query doesn't support orderBy after where
+    const sortedPipelines = pipelinesSnap.docs.sort((a, b) => {
+        const aTime = a.data().createdAt?.toDate?.()?.getTime() || 0
+        const bTime = b.data().createdAt?.toDate?.()?.getTime() || 0
+        return aTime - bTime
+    })
+
     const stageMap: Record<string, string> = {}
-    for (const pDoc of pipelinesSnap.docs) {
-        const stagesSnap = await pDoc.ref.collection("stages").orderBy("order", "asc").get()
+    for (const pDoc of sortedPipelines) {
+        const stagesSnap = await db.subcollection("pipelines", pDoc.id, "stages").orderBy("order", "asc").get()
         for (const sDoc of stagesSnap.docs) {
             stageMap[sDoc.id] = sDoc.data().name || "Unknown"
         }
@@ -97,8 +105,8 @@ async function generatePipelineSummary(): Promise<string> {
     `
 }
 
-async function generateContactsSummary(): Promise<string> {
-    const contactsSnap = await adminDb.collection("contacts").get()
+async function generateContactsSummary(db: ReturnType<typeof tenantDb>): Promise<string> {
+    const contactsSnap = await db.collection("contacts").get()
     const contacts = contactsSnap.docs.map(d => d.data())
 
     const totalContacts = contacts.length
@@ -124,7 +132,7 @@ async function generateContactsSummary(): Promise<string> {
 
     const recentRows = newContacts
         .slice(0, 10)
-        .map(c => `<tr><td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${c.name || "Unnamed"}</td><td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${c.email || ""}</td><td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${c.militaryBase || "-"}</td></tr>`)
+        .map(c => `<tr><td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${c.name || "Unnamed"}</td><td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${c.email || ""}</td><td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${c.status || "-"}</td></tr>`)
         .join("")
 
     return `
@@ -152,7 +160,7 @@ async function generateContactsSummary(): Promise<string> {
                 ${recentRows ? `
                 <h3 style="margin:0 0 12px;font-size:16px;color:#374151;">Recent Contacts</h3>
                 <table style="width:100%;border-collapse:collapse;font-size:14px;">
-                    <thead><tr style="background:#f9fafb;"><th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">Name</th><th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">Email</th><th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">Base</th></tr></thead>
+                    <thead><tr style="background:#f9fafb;"><th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">Name</th><th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">Email</th><th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">Status</th></tr></thead>
                     <tbody>${recentRows}</tbody>
                 </table>` : ""}
             </div>
@@ -160,8 +168,8 @@ async function generateContactsSummary(): Promise<string> {
     `
 }
 
-async function generateRevenueSummary(): Promise<string> {
-    const oppsSnap = await adminDb.collection("opportunities").get()
+async function generateRevenueSummary(db: ReturnType<typeof tenantDb>): Promise<string> {
+    const oppsSnap = await db.collection("opportunities").get()
     const opps = oppsSnap.docs.map(d => d.data())
 
     const totalValue = opps.reduce((sum, o) => sum + (o.opportunityValue || 0), 0)
@@ -220,64 +228,90 @@ async function generateRevenueSummary(): Promise<string> {
     `
 }
 
+const CRON_NAME = "send-reports"
+
 export async function GET(request: Request) {
-    const { searchParams } = new URL(request.url)
-    const secret = searchParams.get("secret")
-    if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const started = Date.now()
+    const { logCronRun } = await import("@/lib/cron-log")
+    if (process.env.NODE_ENV !== "development") {
+        const authHeader = request.headers.get("authorization") ?? ""
+        const expected = process.env.CRON_SECRET
+        if (!expected) {
+            await logCronRun({ name: CRON_NAME, status: "error", durationMs: Date.now() - started, error: "CRON_SECRET not configured" })
+            return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 })
+        }
+        if (authHeader !== `Bearer ${expected}`) {
+            await logCronRun({ name: CRON_NAME, status: "unauthorized", durationMs: Date.now() - started })
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        }
     }
 
     try {
-        const snap = await adminDb.collection("scheduled_reports").where("enabled", "==", true).get()
-        let sent = 0
-        let skipped = 0
+        // Iterate all active workspaces
+        const workspacesSnap = await adminDb.collection("workspaces").where("status", "==", "active").get()
+        let totalSent = 0
+        let totalSkipped = 0
 
-        for (const doc of snap.docs) {
-            const data = doc.data()
-            const lastSentAt = data.lastSentAt?.toDate?.() || null
+        for (const wsDoc of workspacesSnap.docs) {
+            const db = tenantDb(wsDoc.id)
 
-            if (!isDue(data.frequency, lastSentAt)) {
-                skipped++
-                continue
-            }
+            const snap = await db.collection("scheduled_reports").where("enabled", "==", true).get()
 
-            let html: string
-            let subject: string
+            for (const doc of snap.docs) {
+                const data = doc.data()
+                const lastSentAt = data.lastSentAt?.toDate?.() || null
 
-            switch (data.reportType) {
-                case "pipeline_summary":
-                    html = await generatePipelineSummary()
-                    subject = `Pipeline Summary Report - ${new Date().toLocaleDateString()}`
-                    break
-                case "contacts_summary":
-                    html = await generateContactsSummary()
-                    subject = `Contacts Summary Report - ${new Date().toLocaleDateString()}`
-                    break
-                case "revenue_summary":
-                    html = await generateRevenueSummary()
-                    subject = `Revenue Summary Report - ${new Date().toLocaleDateString()}`
-                    break
-                default:
+                if (!isDue(data.frequency, lastSentAt)) {
+                    totalSkipped++
                     continue
-            }
-
-            // Send to each recipient
-            for (const recipient of (data.recipients || [])) {
-                try {
-                    await sendEmail({ to: recipient, subject, html })
-                } catch (err) {
-                    console.error(`Failed to send report to ${recipient}:`, err)
                 }
-            }
 
-            // Update lastSentAt
-            await doc.ref.update({ lastSentAt: new Date() })
-            sent++
+                let html: string
+                let subject: string
+
+                switch (data.reportType) {
+                    case "pipeline_summary":
+                        html = await generatePipelineSummary(db)
+                        subject = `Pipeline Summary Report - ${new Date().toLocaleDateString()}`
+                        break
+                    case "contacts_summary":
+                        html = await generateContactsSummary(db)
+                        subject = `Contacts Summary Report - ${new Date().toLocaleDateString()}`
+                        break
+                    case "revenue_summary":
+                        html = await generateRevenueSummary(db)
+                        subject = `Revenue Summary Report - ${new Date().toLocaleDateString()}`
+                        break
+                    default:
+                        continue
+                }
+
+                // Send to each recipient
+                for (const recipient of (data.recipients || [])) {
+                    try {
+                        await sendEmail({ to: recipient, subject, html })
+                    } catch (err) {
+                        console.error(`Failed to send report to ${recipient}:`, err)
+                    }
+                }
+
+                // Update lastSentAt
+                await doc.ref.update({ lastSentAt: new Date() })
+                totalSent++
+            }
         }
 
-        return NextResponse.json({ success: true, sent, skipped })
+        await logCronRun({
+            name: CRON_NAME,
+            status: "success",
+            durationMs: Date.now() - started,
+            detail: { sent: totalSent, skipped: totalSkipped, workspacesProcessed: workspacesSnap.size },
+        })
+        return NextResponse.json({ success: true, sent: totalSent, skipped: totalSkipped, workspacesProcessed: workspacesSnap.size })
     } catch (error) {
         console.error("Send reports cron error:", error)
+        const message = error instanceof Error ? error.message : "Failed to process reports"
+        await logCronRun({ name: CRON_NAME, status: "error", durationMs: Date.now() - started, error: message })
         return NextResponse.json({ error: "Failed to process reports" }, { status: 500 })
     }
 }

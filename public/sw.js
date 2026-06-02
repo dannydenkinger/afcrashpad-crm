@@ -1,7 +1,7 @@
-// AFCrashpad CRM Service Worker - Offline Support
-const CACHE_VERSION = "v4";
-const STATIC_CACHE = `afcrashpad-static-${CACHE_VERSION}`;
-const DATA_CACHE = `afcrashpad-data-${CACHE_VERSION}`;
+// Vesta CRM Service Worker - Offline Support
+const CACHE_VERSION = "v1";
+const STATIC_CACHE = `vesta-static-${CACHE_VERSION}`;
+const DATA_CACHE = `vesta-data-${CACHE_VERSION}`;
 const OFFLINE_QUEUE_STORE = "offline-mutations";
 
 // App shell files to pre-cache
@@ -126,7 +126,7 @@ async function networkFirst(request, cacheName) {
 
 function openOfflineDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open("afcrashpad-offline", 1);
+    const req = indexedDB.open("vesta-offline", 1);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(OFFLINE_QUEUE_STORE)) {

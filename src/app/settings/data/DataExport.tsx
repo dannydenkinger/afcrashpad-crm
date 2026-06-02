@@ -1,11 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Download, Database, Loader2 } from "lucide-react"
+import { Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { exportAllData, exportSelectiveData } from "./actions"
 
@@ -47,7 +46,7 @@ export function DataExport() {
             const totalRecords = Object.values(result.data).reduce((sum, arr) => sum + arr.length, 0)
             setProgress("Preparing download...")
             const timestamp = new Date().toISOString().split("T")[0]
-            downloadJson(result, `afcrashpad-backup-${timestamp}.json`)
+            downloadJson(result, `vesta-backup-${timestamp}.json`)
             toast.success(`Export complete: ${totalRecords} records exported`)
         } catch (err: any) {
             toast.error(err.message || "Export failed")
@@ -70,7 +69,7 @@ export function DataExport() {
             setProgress("Preparing download...")
             const timestamp = new Date().toISOString().split("T")[0]
             const suffix = Array.from(selectedCollections).join("-")
-            downloadJson(result, `afcrashpad-${suffix}-${timestamp}.json`)
+            downloadJson(result, `vesta-${suffix}-${timestamp}.json`)
             toast.success(`Export complete: ${totalRecords} records exported`)
         } catch (err: any) {
             toast.error(err.message || "Export failed")
@@ -95,87 +94,74 @@ export function DataExport() {
     const isExporting = isExportingAll || isExportingSelective
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    <Database className="h-4 w-4" />
-                    Data Management
-                </CardTitle>
-                <CardDescription>
-                    Export your CRM data for backup or migration. Downloads are in JSON format.
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-                {/* Full Export */}
-                <div className="p-4 border rounded-lg space-y-3">
-                    <div>
-                        <h4 className="font-medium text-sm">Full Data Export</h4>
-                        <p className="text-xs text-muted-foreground mt-1">
-                            Export all contacts, deals, notes, tasks, templates, pipelines, and settings in a single file.
-                        </p>
-                    </div>
-                    <Button onClick={handleExportAll} disabled={isExporting} className="w-full sm:w-auto">
-                        {isExportingAll ? (
-                            <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                {progress || "Exporting..."}
-                            </>
-                        ) : (
-                            <>
-                                <Download className="mr-2 h-4 w-4" />
-                                Export All Data
-                            </>
-                        )}
-                    </Button>
+        <div className="space-y-6">
+            <div className="p-4 border rounded-lg space-y-3">
+                <div>
+                    <h3 className="font-medium text-sm">Full backup</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Export all contacts, deals, notes, tasks, templates, pipelines, and settings in a single file.
+                    </p>
                 </div>
+                <Button onClick={handleExportAll} disabled={isExporting} size="sm">
+                    {isExportingAll ? (
+                        <>
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                            {progress || "Exporting…"}
+                        </>
+                    ) : (
+                        <>
+                            <Download className="mr-2 h-3.5 w-3.5" />
+                            Export everything
+                        </>
+                    )}
+                </Button>
+            </div>
 
-                {/* Selective Export */}
-                <div className="p-4 border rounded-lg space-y-4">
-                    <div>
-                        <h4 className="font-medium text-sm">Selective Export</h4>
-                        <p className="text-xs text-muted-foreground mt-1">
-                            Choose specific data types to export.
-                        </p>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {EXPORT_OPTIONS.map((option) => (
-                            <label
-                                key={option.key}
-                                className="flex items-start gap-3 p-3 border rounded-md cursor-pointer hover:bg-muted/30 transition-colors"
-                            >
-                                <Checkbox
-                                    checked={selectedCollections.has(option.key)}
-                                    onCheckedChange={() => toggleCollection(option.key)}
-                                    disabled={isExporting}
-                                    className="mt-0.5"
-                                />
-                                <div>
-                                    <Label className="text-sm font-medium cursor-pointer">{option.label}</Label>
-                                    <p className="text-xs text-muted-foreground mt-0.5">{option.description}</p>
-                                </div>
-                            </label>
-                        ))}
-                    </div>
-                    <Button
-                        onClick={handleExportSelective}
-                        disabled={isExporting || selectedCollections.size === 0}
-                        variant="outline"
-                        className="w-full sm:w-auto"
-                    >
-                        {isExportingSelective ? (
-                            <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                {progress || "Exporting..."}
-                            </>
-                        ) : (
-                            <>
-                                <Download className="mr-2 h-4 w-4" />
-                                Export Selected ({selectedCollections.size})
-                            </>
-                        )}
-                    </Button>
+            <div className="p-4 border rounded-lg space-y-4">
+                <div>
+                    <h3 className="font-medium text-sm">Selective export</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Choose specific data types to export.
+                    </p>
                 </div>
-            </CardContent>
-        </Card>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {EXPORT_OPTIONS.map((option) => (
+                        <label
+                            key={option.key}
+                            className="flex items-start gap-3 p-3 border rounded-md cursor-pointer hover:bg-muted/30 transition-colors"
+                        >
+                            <Checkbox
+                                checked={selectedCollections.has(option.key)}
+                                onCheckedChange={() => toggleCollection(option.key)}
+                                disabled={isExporting}
+                                className="mt-0.5"
+                            />
+                            <div>
+                                <Label className="text-sm font-medium cursor-pointer">{option.label}</Label>
+                                <p className="text-xs text-muted-foreground mt-0.5">{option.description}</p>
+                            </div>
+                        </label>
+                    ))}
+                </div>
+                <Button
+                    onClick={handleExportSelective}
+                    disabled={isExporting || selectedCollections.size === 0}
+                    variant="outline"
+                    size="sm"
+                >
+                    {isExportingSelective ? (
+                        <>
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                            {progress || "Exporting…"}
+                        </>
+                    ) : (
+                        <>
+                            <Download className="mr-2 h-3.5 w-3.5" />
+                            Export selected ({selectedCollections.size})
+                        </>
+                    )}
+                </Button>
+            </div>
+        </div>
     )
 }

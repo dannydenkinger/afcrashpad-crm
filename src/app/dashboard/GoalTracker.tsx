@@ -130,8 +130,8 @@ export function GoalTracker({ kpi }: GoalTrackerProps) {
 
     return (
         <>
-        <Card className="border-none shadow-md bg-card/40 backdrop-blur-md h-full">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <Card className="border-none shadow-md bg-card/40 backdrop-blur-md h-full w-full flex flex-col overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 sm:p-5 pb-3 shrink-0">
                 <div className="space-y-1">
                     <CardTitle className="text-base font-semibold flex items-center gap-2">
                         <Target className="h-4 w-4 text-primary" />
@@ -143,7 +143,7 @@ export function GoalTracker({ kpi }: GoalTrackerProps) {
                     <Plus className="h-4 w-4" />
                 </Button>
             </CardHeader>
-            <CardContent className="px-4 pt-0">
+            <CardContent className="px-4 sm:px-5 pt-0 pb-4 flex-1 min-h-0 overflow-auto">
                 <div className="space-y-4">
                     {goals.length === 0 && (
                         <div className="text-center py-6 text-muted-foreground text-sm">

@@ -1,12 +1,16 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
+import { requireAuth } from "@/lib/auth-guard";
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
 
 export async function getContactDocuments(contactId: string) {
     try {
-        const snapshot = await adminDb.collection('contacts').doc(contactId).collection('documents')
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const snapshot = await db.subcollection('contacts', contactId, 'documents')
             .orderBy('createdAt', 'desc')
             .get();
 
@@ -27,10 +31,11 @@ export async function getContactDocuments(contactId: string) {
 
 export async function addDocument(contactId: string, name: string, url: string, status: string = "LINK", folder: string = "General") {
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        await adminDb.collection('contacts').doc(contactId).collection('documents').add({
+        await db.addToSubcollection('contacts', contactId, 'documents', {
             name,
             url,
             status,
@@ -48,10 +53,11 @@ export async function addDocument(contactId: string, name: string, url: string, 
 
 export async function updateDocumentStatus(contactId: string, id: string, status: string) {
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        await adminDb.collection('contacts').doc(contactId).collection('documents').doc(id).update({ 
+        await db.subcollection('contacts', contactId, 'documents').doc(id).update({
             status,
             updatedAt: new Date()
         });
@@ -65,10 +71,11 @@ export async function updateDocumentStatus(contactId: string, id: string, status
 
 export async function deleteDocument(contactId: string, id: string) {
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        await adminDb.collection('contacts').doc(contactId).collection('documents').doc(id).delete();
+        await db.subcollection('contacts', contactId, 'documents').doc(id).delete();
 
         revalidatePath("/contacts");
         return { success: true };
@@ -81,7 +88,11 @@ export async function deleteDocument(contactId: string, id: string) {
 
 export async function getDocumentFolders(contactId: string) {
     try {
-        const snapshot = await adminDb.collection('contacts').doc(contactId).collection('documents').get();
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
+
+        const snapshot = await db.subcollection('contacts', contactId, 'documents').get();
         const folderSet = new Set<string>();
         folderSet.add("General");
 
@@ -115,14 +126,15 @@ export async function getDocumentFolders(contactId: string) {
 
 export async function createFolder(contactId: string, folderName: string) {
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
         if (!folderName.trim()) return { success: false, error: "Folder name is required" };
 
         // Folders are implicit (derived from documents' folder field).
         // We store a metadata doc so empty folders persist.
-        await adminDb.collection('contacts').doc(contactId).collection('document_folders').doc(folderName.trim()).set({
+        await db.subcollection('contacts', contactId, 'document_folders').doc(folderName.trim()).set({
             name: folderName.trim(),
             createdAt: new Date(),
         });
@@ -136,10 +148,11 @@ export async function createFolder(contactId: string, folderName: string) {
 
 export async function moveToFolder(contactId: string, documentId: string, folderName: string) {
     try {
-        const session = await auth();
-        if (!session?.user) return { success: false, error: "Unauthorized" };
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        await adminDb.collection('contacts').doc(contactId).collection('documents').doc(documentId).update({
+        await db.subcollection('contacts', contactId, 'documents').doc(documentId).update({
             folder: folderName,
             updatedAt: new Date(),
         });

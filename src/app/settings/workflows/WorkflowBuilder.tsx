@@ -61,7 +61,7 @@ const CONDITION_FIELDS = [
     { value: "value", label: "Deal Value" },
     { value: "tag", label: "Tag" },
     { value: "source", label: "Lead Source" },
-    { value: "base", label: "Military Base" },
+    { value: "location", label: "Location" },
 ] as const
 
 const CONDITION_OPERATORS = [
@@ -181,6 +181,26 @@ export function WorkflowBuilder() {
         if (formActions.length === 0) {
             toast.error("Add at least one action.")
             return
+        }
+
+        // Validate each action has its required config fields filled.
+        // Without this, workflows save with empty configs and silently fail at runtime.
+        const REQUIRED_FIELDS: Record<string, string[]> = {
+            send_email: ["templateName"],
+            create_task: ["taskTitle"],
+            send_notification: ["message"],
+            update_field: ["fieldName", "fieldValue"],
+            assign_to_user: ["userName"],
+        }
+        for (let i = 0; i < formActions.length; i++) {
+            const action = formActions[i]
+            const required = REQUIRED_FIELDS[action.type] || []
+            const missing = required.find(f => !String(action.config?.[f] || "").trim())
+            if (missing) {
+                const meta = getActionMeta(action.type)
+                toast.error(`Action ${i + 1} (${meta?.label || action.type}) is missing "${missing}".`)
+                return
+            }
         }
 
         setIsSaving(true)

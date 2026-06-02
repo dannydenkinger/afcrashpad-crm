@@ -1,19 +1,32 @@
 import { adminDb, adminMessaging } from "@/lib/firebase-admin";
+import { tenantDb } from "@/lib/tenant-db";
 import { sendEmail } from "@/lib/email";
 
 /**
- * Sends an email notification to all users who have email notifications enabled
- * for the given notification type.
+ * Sends an email notification to all workspace members who have email notifications
+ * enabled for the given notification type.
  */
-export async function sendEmailToEligibleUsers(notification: {
+export async function sendEmailToEligibleUsers(workspaceId: string, notification: {
     title: string;
     message: string;
     type: string;
     linkUrl?: string | null;
 }) {
     try {
-        const usersSnap = await adminDb.collection("users").get();
-        if (usersSnap.empty) return;
+        // Get workspace member IDs
+        const membersSnap = await adminDb
+            .collection("workspace_members")
+            .where("workspaceId", "==", workspaceId)
+            .get();
+
+        if (membersSnap.empty) return;
+
+        // Batch-fetch user docs for all members
+        const memberUserIds = membersSnap.docs.map(d => d.data().userId).filter(Boolean);
+        if (memberUserIds.length === 0) return;
+
+        const userRefs = memberUserIds.map(uid => adminDb.collection("users").doc(uid));
+        const userDocs = await adminDb.getAll(...userRefs);
 
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -28,8 +41,9 @@ export async function sendEmailToEligibleUsers(notification: {
 
         const prefKey = typeToKey[notification.type];
 
-        for (const userDoc of usersSnap.docs) {
-            const user = userDoc.data();
+        for (const userDoc of userDocs) {
+            if (!userDoc.exists) continue;
+            const user = userDoc.data()!;
             if (!user.email) continue;
 
             const prefs = user.notificationPreferences;
@@ -54,7 +68,7 @@ export async function sendEmailToEligibleUsers(notification: {
                         ${linkHtml}
                     </div>
                     <p style="color: #737373; font-size: 12px; margin-top: 16px; text-align: center;">
-                        AFCrashpad CRM &bull; You can manage email preferences in Settings
+                        Vesta CRM &bull; You can manage email preferences in Settings
                     </p>
                 </div>
             `;
@@ -75,18 +89,30 @@ export async function sendEmailToEligibleUsers(notification: {
 }
 
 /**
- * Sends a push notification to all users who have push enabled
+ * Sends a push notification to all workspace members who have push enabled
  * for the given notification type and have FCM tokens stored.
  */
-export async function sendPushToEligibleUsers(notification: {
+export async function sendPushToEligibleUsers(workspaceId: string, notification: {
     title: string;
     message: string;
     type: string;
     linkUrl?: string | null;
 }) {
     try {
-        const usersSnap = await adminDb.collection("users").get();
-        if (usersSnap.empty) return;
+        // Get workspace member IDs
+        const membersSnap = await adminDb
+            .collection("workspace_members")
+            .where("workspaceId", "==", workspaceId)
+            .get();
+
+        if (membersSnap.empty) return;
+
+        // Batch-fetch user docs for all members
+        const memberUserIds = membersSnap.docs.map(d => d.data().userId).filter(Boolean);
+        if (memberUserIds.length === 0) return;
+
+        const userRefs = memberUserIds.map(uid => adminDb.collection("users").doc(uid));
+        const userDocs = await adminDb.getAll(...userRefs);
 
         const typeToKey: Record<string, string> = {
             opportunity: "push_opportunity",
@@ -98,8 +124,9 @@ export async function sendPushToEligibleUsers(notification: {
 
         const prefKey = typeToKey[notification.type];
 
-        for (const userDoc of usersSnap.docs) {
-            const user = userDoc.data();
+        for (const userDoc of userDocs) {
+            if (!userDoc.exists) continue;
+            const user = userDoc.data()!;
             const fcmTokens: string[] = user.fcmTokens || [];
             if (fcmTokens.length === 0) continue;
 

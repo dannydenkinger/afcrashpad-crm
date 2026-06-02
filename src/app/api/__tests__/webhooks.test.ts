@@ -13,7 +13,6 @@ const webhookSchema = z.object({
   endDate: z.string().optional(),
   base: z.string().optional(),
   notes: z.string().optional(),
-  special_accommodations: z.union([z.string(), z.array(z.string())]).optional(),
   reason_for_stay: z.string().optional(),
 })
 
@@ -88,22 +87,6 @@ describe('Webhook Lead Processing', () => {
         phone: '555-0100',
       })
       expect(result.success).toBe(false)
-    })
-
-    it('accepts special_accommodations as string', () => {
-      const result = webhookSchema.safeParse({
-        email: 'test@test.com',
-        special_accommodations: 'Pet Friendly',
-      })
-      expect(result.success).toBe(true)
-    })
-
-    it('accepts special_accommodations as array', () => {
-      const result = webhookSchema.safeParse({
-        email: 'test@test.com',
-        special_accommodations: ['Pet Friendly', 'ADA Accessible'],
-      })
-      expect(result.success).toBe(true)
     })
 
     it('accepts minimal payload (email only)', () => {

@@ -1,14 +1,15 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 import { sendEmail } from "@/lib/email"
 import type { StageAutomationAction, StageAutomationRule } from "./stage-automation-types"
 
 // ── Fetch ────────────────────────────────────────────────────────────────────
 
-export async function getStageAutomations(stageId: string): Promise<StageAutomationRule[]> {
+export async function getStageAutomations(workspaceId: string, stageId: string): Promise<StageAutomationRule[]> {
     try {
-        const snap = await adminDb
+        const db = tenantDb(workspaceId)
+        const snap = await db
             .collection("stage_automations")
             .where("stageId", "==", stageId)
             .where("enabled", "==", true)
@@ -37,15 +38,17 @@ export async function getStageAutomations(stageId: string): Promise<StageAutomat
 // ── Execute ──────────────────────────────────────────────────────────────────
 
 export async function executeStageAutomations(
+    workspaceId: string,
     dealId: string,
     stageId: string,
     userId: string
 ) {
-    const rules = await getStageAutomations(stageId)
+    const db = tenantDb(workspaceId)
+    const rules = await getStageAutomations(workspaceId, stageId)
     if (rules.length === 0) return
 
     // Fetch deal data once for all actions
-    const dealDoc = await adminDb.collection("opportunities").doc(dealId).get()
+    const dealDoc = await db.doc("opportunities", dealId).get()
     if (!dealDoc.exists) return
     const deal = dealDoc.data()!
 
@@ -53,7 +56,7 @@ export async function executeStageAutomations(
     let contactName = deal.name || "Unknown"
     let contactEmail = ""
     if (deal.contactId) {
-        const contactDoc = await adminDb.collection("contacts").doc(deal.contactId).get()
+        const contactDoc = await db.doc("contacts", deal.contactId).get()
         if (contactDoc.exists) {
             contactName = contactDoc.data()?.name || contactName
             contactEmail = contactDoc.data()?.email || ""
@@ -65,19 +68,19 @@ export async function executeStageAutomations(
             try {
                 switch (action.type) {
                     case "send_email":
-                        await executeSendEmail(action.config, deal, contactName, contactEmail)
+                        await executeSendEmail(db, action.config, deal, contactName, contactEmail)
                         break
                     case "create_task":
-                        await executeCreateTask(action.config, dealId, deal, contactName, userId)
+                        await executeCreateTask(db, action.config, dealId, deal, contactName, userId)
                         break
                     case "assign_user":
-                        await executeAssignUser(action.config, dealId)
+                        await executeAssignUser(db, action.config, dealId)
                         break
                     case "create_commission":
-                        await executeCreateCommission(dealId, deal, userId)
+                        await executeCreateCommission(db, dealId, deal, userId)
                         break
                     case "send_notification":
-                        await executeSendNotification(action.config, dealId, deal, contactName, userId)
+                        await executeSendNotification(db, action.config, dealId, deal, contactName, userId)
                         break
                 }
             } catch (err) {
@@ -89,7 +92,10 @@ export async function executeStageAutomations(
 
 // ── Action Executors ─────────────────────────────────────────────────────────
 
+type TenantDbInstance = ReturnType<typeof tenantDb>
+
 async function executeSendEmail(
+    db: TenantDbInstance,
     config: Record<string, string>,
     deal: FirebaseFirestore.DocumentData,
     contactName: string,
@@ -98,7 +104,7 @@ async function executeSendEmail(
     const templateId = config.templateId
     if (!templateId) return
 
-    const templateDoc = await adminDb.collection("email_templates").doc(templateId).get()
+    const templateDoc = await db.doc("email_templates", templateId).get()
     if (!templateDoc.exists) return
 
     const template = templateDoc.data()!
@@ -108,7 +114,6 @@ async function executeSendEmail(
     // Variable substitution
     const vars: Record<string, string> = {
         "{{name}}": contactName,
-        "{{base}}": deal.militaryBase || "",
         "{{deal_name}}": deal.name || "",
         "{{value}}": String(deal.opportunityValue || 0),
     }
@@ -128,7 +133,7 @@ async function executeSendEmail(
 
     // Log the automated email in contact's message history
     if (deal.contactId) {
-        await adminDb.collection("contacts").doc(deal.contactId).collection("messages").add({
+        await db.addToSubcollection("contacts", deal.contactId, "messages", {
             type: "email",
             direction: "outbound",
             contactEmail: recipientEmail,
@@ -142,6 +147,7 @@ async function executeSendEmail(
 }
 
 async function executeCreateTask(
+    db: TenantDbInstance,
     config: Record<string, string>,
     dealId: string,
     deal: FirebaseFirestore.DocumentData,
@@ -160,7 +166,7 @@ async function executeCreateTask(
     const dueDate = new Date()
     dueDate.setDate(dueDate.getDate() + dueDays)
 
-    await adminDb.collection("tasks").add({
+    await db.add("tasks", {
         title,
         description: description || null,
         dueDate,
@@ -176,19 +182,21 @@ async function executeCreateTask(
 }
 
 async function executeAssignUser(
+    db: TenantDbInstance,
     config: Record<string, string>,
     dealId: string
 ) {
     const assigneeId = config.assigneeId
     if (!assigneeId) return
 
-    await adminDb.collection("opportunities").doc(dealId).update({
+    await db.doc("opportunities", dealId).update({
         assigneeId,
         updatedAt: new Date(),
     })
 }
 
 async function executeCreateCommission(
+    db: TenantDbInstance,
     dealId: string,
     deal: FirebaseFirestore.DocumentData,
     userId: string
@@ -197,7 +205,7 @@ async function executeCreateCommission(
     if (!agentId) return
 
     // Check if already recorded
-    const existing = await adminDb
+    const existing = await db
         .collection("commissions")
         .where("opportunityId", "==", dealId)
         .where("agentId", "==", agentId)
@@ -209,29 +217,30 @@ async function executeCreateCommission(
     // Get contact name
     let contactName = "Unknown"
     if (deal.contactId) {
-        const contactDoc = await adminDb.collection("contacts").doc(deal.contactId).get()
+        const contactDoc = await db.doc("contacts", deal.contactId).get()
         if (contactDoc.exists) contactName = contactDoc.data()?.name || "Unknown"
     }
 
-    // Get agent info
+    // Get agent info (users are global, not workspace-scoped)
+    const { adminDb } = await import("@/lib/firebase-admin")
     const agentDoc = await adminDb.collection("users").doc(agentId).get()
     const agentName = agentDoc.exists ? agentDoc.data()?.name || "Unknown" : "Unknown"
 
     // Get commission rate
-    const settingsDoc = await adminDb.collection("settings").doc("commissions").get()
+    const settingsDoc = await db.settingsDoc("commissions").get()
     const defaultRate = settingsDoc.exists ? (settingsDoc.data()?.defaultRate ?? 10) : 10
-    const agentRatesDoc = await adminDb.collection("settings").doc("commission_rates").get()
+    const agentRatesDoc = await db.settingsDoc("commission_rates").get()
     const agentRates = agentRatesDoc.exists ? agentRatesDoc.data() || {} : {}
     const rate = agentRates[agentId] ?? defaultRate
 
     const dealValue = Number(deal.opportunityValue) || 0
     const commissionAmount = Math.round((dealValue * rate) / 100 * 100) / 100
 
-    await adminDb.collection("commissions").add({
+    await db.add("commissions", {
         opportunityId: dealId,
         dealName: deal.name || `${contactName}'s Deal`,
         contactName,
-        base: deal.militaryBase || null,
+        base: null,
         agentId,
         agentName,
         dealValue,
@@ -246,6 +255,7 @@ async function executeCreateCommission(
 }
 
 async function executeSendNotification(
+    db: TenantDbInstance,
     config: Record<string, string>,
     dealId: string,
     deal: FirebaseFirestore.DocumentData,
@@ -261,7 +271,7 @@ async function executeSendNotification(
     if (!recipientId) return
 
     // Create an in-app notification
-    await adminDb.collection("notifications").add({
+    await db.add("notifications", {
         userId: recipientId,
         title: "Stage Automation",
         message,

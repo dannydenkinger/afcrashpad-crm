@@ -27,6 +27,12 @@ interface MiniCalendarProps {
     /** External control for the displayed month */
     month?: Date
     onMonthChange?: (date: Date) => void
+    /**
+     * When true, the day cells flex to fill the available container height
+     * (instead of the default fixed h-7). Used when the calendar lives in
+     * a resizable container — e.g. the dashboard widget grid.
+     */
+    fillHeight?: boolean
 }
 
 export function MiniCalendar({
@@ -35,6 +41,7 @@ export function MiniCalendar({
     onDayClick,
     month: controlledMonth,
     onMonthChange,
+    fillHeight = false,
 }: MiniCalendarProps) {
     const [internalMonth, setInternalMonth] = useState(selectedDate || new Date())
     const currentMonth = controlledMonth || internalMonth
@@ -55,9 +62,13 @@ export function MiniCalendar({
 
     const hasEvent = (day: Date) => eventDates.some(ed => isSameDay(ed, day))
 
+    // Number of week rows in this month — 5 or 6 — used to make day cells
+    // grow proportionally when fillHeight is on.
+    const weekRows = Math.ceil(miniDays.length / 7)
+
     return (
-        <div>
-            <div className="flex items-center justify-between mb-2">
+        <div className={cn(fillHeight && "flex flex-col h-full min-h-0")}>
+            <div className="flex items-center justify-between mb-2 shrink-0">
                 <button
                     onClick={() => setMonth(subMonths(currentMonth, 1))}
                     className="p-1 rounded hover:bg-muted/30"
@@ -74,7 +85,19 @@ export function MiniCalendar({
                     <ChevronRight className="h-3 w-3" />
                 </button>
             </div>
-            <div className="grid grid-cols-7 gap-0">
+            <div
+                className={cn(
+                    "grid grid-cols-7 gap-0",
+                    fillHeight && "flex-1 min-h-0",
+                )}
+                style={
+                    fillHeight
+                        ? {
+                              gridTemplateRows: `auto repeat(${weekRows}, minmax(0, 1fr))`,
+                          }
+                        : undefined
+                }
+            >
                 {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(day => (
                     <div
                         key={day}
@@ -90,7 +113,8 @@ export function MiniCalendar({
                             key={i}
                             onClick={() => onDayClick?.(day)}
                             className={cn(
-                                "relative h-7 w-full text-[10px] rounded-md transition-colors",
+                                "relative w-full text-[10px] rounded-md transition-colors",
+                                fillHeight ? "h-full min-h-[28px]" : "h-7",
                                 !isSameMonth(day, currentMonth) && "text-muted-foreground/30",
                                 isToday(day) && "bg-primary text-primary-foreground font-bold",
                                 selectedDate &&

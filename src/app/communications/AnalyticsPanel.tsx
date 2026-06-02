@@ -206,7 +206,7 @@ export default function AnalyticsPanel({ onClose }: AnalyticsPanelProps) {
                                         key={hour}
                                         className="flex-1 bg-primary/20 hover:bg-primary/40 rounded-t transition-colors cursor-default relative group"
                                         style={{ height: `${height}%` }}
-                                        title={`${formatHour(hour)}: ${count} opens`}
+                                        aria-label={`${formatHour(hour)}: ${count} opens`}
                                     >
                                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-1.5 py-0.5 bg-foreground text-background text-[8px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                                             {formatHour(hour)}: {count}
@@ -257,7 +257,7 @@ export default function AnalyticsPanel({ onClose }: AnalyticsPanelProps) {
                                 <div
                                     key={day.date}
                                     className="flex-1 flex flex-col items-center gap-0 relative group cursor-default"
-                                    title={`${day.date}: ${day.sent} sent, ${day.opened} opened, ${day.clicked} clicked`}
+                                    aria-label={`${day.date}: ${day.sent} sent, ${day.opened} opened, ${day.clicked} clicked`}
                                 >
                                     <div className="w-full flex flex-col-reverse items-center">
                                         {day.sent > 0 && (

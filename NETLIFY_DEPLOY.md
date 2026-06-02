@@ -1,4 +1,4 @@
-# Deploy AFCrashpad CRM to Netlify
+# Deploy Vesta CRM to Netlify
 
 ## 1. Push to Git
 
@@ -14,7 +14,7 @@ git push
 
 1. Go to [app.netlify.com](https://app.netlify.com)
 2. Click **Add new site** → **Import an existing project**
-3. Choose your Git provider and select the `AFCrashpad CRM` repo
+3. Choose your Git provider and select the `Vesta CRM` repo
 4. Netlify will auto-detect Next.js – leave **Build command** as `npm run build` and **Publish directory** empty (handled automatically)
 
 ## 3. Environment variables

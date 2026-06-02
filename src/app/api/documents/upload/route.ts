@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/auth"
+import { getAuthSession } from "@/lib/auth-guard"
 import { getAdminStorageBucket } from "@/lib/firebase-admin"
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 import { revalidatePath } from "next/cache"
 import { rateLimit } from "@/lib/rate-limit"
 
@@ -26,10 +26,15 @@ function sanitizeFileName(name: string): string {
 
 export async function POST(req: NextRequest) {
     try {
-        const session = await auth()
+        const session = await getAuthSession()
         if (!session?.user) {
             return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
         }
+        const workspaceId = (session.user as any).workspaceId
+        if (!workspaceId) {
+            return NextResponse.json({ success: false, error: "No workspace found" }, { status: 403 })
+        }
+        const db = tenantDb(workspaceId)
 
         const { allowed } = rateLimit(`upload:${session.user.id}`, 20)
         if (!allowed) {
@@ -76,7 +81,7 @@ export async function POST(req: NextRequest) {
         const folder = folderPathRaw ? (folderPathRaw.split("/").pop() || "General") : ((formData.get("folder") as string)?.trim() || "General")
         const folderPath = folderPathRaw || ("/" + folder)
 
-        await adminDb.collection("documents").add({
+        await db.add("documents", {
             name: displayName,
             url: signedUrl,
             status: "LINK",

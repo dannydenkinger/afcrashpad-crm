@@ -18,14 +18,33 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts"
 import { SessionTimeoutWarning } from "@/components/SessionTimeoutWarning"
 import { QuickAddFAB } from "@/components/QuickAddFAB"
-import { OnboardingWizard } from "@/components/OnboardingWizard"
+import { AssistantWidget } from "@/components/assistant/AssistantWidget"
+import { FeedbackWelcomeModal } from "@/components/FeedbackWelcomeModal"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { WorkspaceDeletionBanner } from "./WorkspaceDeletionBanner"
+import { PaymentStatusBanner } from "./PaymentStatusBanner"
+import { SupportSessionBanner } from "./SupportSessionBanner"
 import { useIsMobile } from "@/hooks/useIsMobile"
 import { getNotifications } from "@/app/notifications/actions"
 
 // Routes that render without the app shell (sidebar, topnav, etc.)
-const STANDALONE_ROUTES = ["/"]
-const STANDALONE_ROUTE_PREFIXES = ["/sign/"]
+// Anything customer-facing (token-gated forms, signature pages, public
+// booking, unsubscribe, payout claim, contact form embeds) lives outside
+// the chrome — these are typically opened by leads/contacts, not by
+// authenticated CRM users.
+const STANDALONE_ROUTES = ["/", "/login", "/register", "/setup", "/privacy", "/terms", "/pricing", "/changelog", "/verify-email", "/suspended"]
+const STANDALONE_ROUTE_PREFIXES = [
+    "/sign/",
+    "/invite/",
+    "/form/",     // legacy redirect
+    "/forms/",
+    "/book/",     // legacy redirect
+    "/booking/",
+    "/payout/",
+    "/unsub/",
+    "/admin/",    // operator dashboard renders its own chrome
+    "/playground/", // component-demo pages render standalone
+]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
@@ -57,7 +76,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Standalone pages render without the shell
     const isStandalone = STANDALONE_ROUTES.includes(pathname) || STANDALONE_ROUTE_PREFIXES.some(prefix => pathname.startsWith(prefix))
     if (isStandalone) {
-        return <div className="w-full h-full">{children}</div>
+        return <div className="w-full min-h-screen">{children}</div>
     }
 
     // ─── Mobile Layout ──────────────────────────────────────────────
@@ -65,6 +84,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         return (
             <div className="flex flex-col h-dvh w-full bg-background text-foreground">
                 <MobileTopNav onNotificationsClick={() => setNotificationPanelOpen(true)} unreadCount={mobileUnreadCount} />
+                <SupportSessionBanner />
+                <PaymentStatusBanner />
+                <WorkspaceDeletionBanner />
                 <main id="main-content" className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-28" role="main">
                     <ErrorBoundary section="Page content">
                         {children}
@@ -77,13 +99,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <PushNotificationPrompt />
                 <OfflineIndicator />
                 <SessionTimeoutWarning />
+                <FeedbackWelcomeModal />
             </div>
         )
     }
 
     // ─── Desktop Layout ─────────────────────────────────────────────
     return (
-        <>
+        <div className="flex h-screen overflow-hidden">
             {/* Mobile sidebar backdrop */}
             <div
                 className={cn(
@@ -110,6 +133,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </aside>
             <div className="flex flex-1 flex-col h-full min-h-0 overflow-hidden w-full min-w-0">
                 <TopNav onMenuClick={() => setMobileMenuOpen(true)} onNotificationsClick={() => setNotificationPanelOpen(true)} />
+                <SupportSessionBanner />
+                <PaymentStatusBanner />
+                <WorkspaceDeletionBanner />
                 <main id="main-content" className="flex-1 min-h-0 overflow-y-auto bg-muted/20 safe-bottom" role="main">
                     <ErrorBoundary section="Page content">
                         <div className="px-4 sm:px-6 lg:px-8 pt-2">
@@ -127,7 +153,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <KeyboardShortcutsDialog />
             <SessionTimeoutWarning />
             <QuickAddFAB />
-            <OnboardingWizard />
-        </>
+            <AssistantWidget />
+            <FeedbackWelcomeModal />
+        </div>
     )
 }

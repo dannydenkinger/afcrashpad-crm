@@ -1,10 +1,11 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { requireAuth } from "@/lib/auth-guard"
 import { FieldValue } from "firebase-admin/firestore"
 import type { HaroSettings, HaroBatch, HaroQuery, HaroMetrics, DEFAULT_HARO_SETTINGS } from "./types"
 import { sendEmail } from "@/lib/email"
+import { runAI, AIKeyMissingError } from "@/lib/ai/run-ai"
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -15,11 +16,6 @@ function tsToISO(v: unknown): string | null {
     return null
 }
 
-async function requireAuth() {
-    const session = await auth()
-    if (!session?.user) throw new Error("Unauthorized")
-    return session
-}
 
 /** Parse HARO deadline strings like "Mar 15, 2026 - 6:00 PM ET" into ISO timestamps */
 function parseHaroDeadline(deadline: string): string | null {
@@ -52,21 +48,41 @@ function parseHaroDeadline(deadline: string): string | null {
     }
 }
 
+// ─── Connection Status ──────────────────────────────────────────────────────
+
+export async function getHaroConnectionStatus(): Promise<{ gmail: boolean }> {
+    try {
+        const { requireAuth } = await import("@/lib/auth-guard")
+        const { getGmailIntegration } = await import("@/lib/gmail-integration")
+        const session = await requireAuth()
+        const userId = session.user.id
+        if (!userId) return { gmail: false }
+        const integration = await getGmailIntegration(session.user.workspaceId, userId)
+        return { gmail: !!integration?.refreshToken }
+    } catch {
+        return { gmail: false }
+    }
+}
+
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export async function getHaroSettings(): Promise<HaroSettings | null> {
-    await requireAuth()
-    const doc = await adminDb.collection("haro_settings").doc("default").get()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
+    const doc = await db.settingsDoc("haro").get()
     if (!doc.exists) return null
     return doc.data() as HaroSettings
 }
 
 export async function saveHaroSettings(settings: HaroSettings) {
-    await requireAuth()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     try {
         // Convert to plain object to ensure Firestore compatibility
         const data = JSON.parse(JSON.stringify(settings))
-        await adminDb.collection("haro_settings").doc("default").set(data, { merge: true })
+        await db.settingsDoc("haro").set(data, { merge: true })
         return { success: true }
     } catch (err: any) {
         console.error("Failed to save HARO settings:", err)
@@ -77,9 +93,10 @@ export async function saveHaroSettings(settings: HaroSettings) {
 // ─── Batches ────────────────────────────────────────────────────────────────
 
 export async function getHaroBatches(limit = 20): Promise<HaroBatch[]> {
-    await requireAuth()
-    const snap = await adminDb
-        .collection("haro_batches")
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
+    const snap = await db.collection("haro_batches")
         .orderBy("createdAt", "desc")
         .limit(limit)
         .get()
@@ -99,8 +116,10 @@ export async function getHaroQueries(filters?: {
     isRelevant?: boolean
     limit?: number
 }): Promise<HaroQuery[]> {
-    await requireAuth()
-    let query: FirebaseFirestore.Query = adminDb.collection("haro_queries")
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
+    let query: FirebaseFirestore.Query = db.collection("haro_queries")
 
     if (filters?.batchId) query = query.where("batchId", "==", filters.batchId)
     if (filters?.isRelevant !== undefined) query = query.where("isRelevant", "==", filters.isRelevant)
@@ -122,9 +141,11 @@ export async function updateHaroQuery(
     queryId: string,
     updates: Partial<HaroQuery>
 ) {
-    await requireAuth()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     const { id, ...data } = updates as any
-    await adminDb.collection("haro_queries").doc(queryId).update({
+    await db.doc("haro_queries", queryId).update({
         ...data,
         updatedAt: FieldValue.serverTimestamp(),
     })
@@ -132,9 +153,11 @@ export async function updateHaroQuery(
 }
 
 export async function sendHaroResponse(queryId: string) {
-    await requireAuth()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
-    const doc = await adminDb.collection("haro_queries").doc(queryId).get()
+    const doc = await db.doc("haro_queries", queryId).get()
     if (!doc.exists) return { success: false, error: "Query not found" }
 
     const query = doc.data() as HaroQuery
@@ -142,17 +165,14 @@ export async function sendHaroResponse(queryId: string) {
     if (!responseText) return { success: false, error: "No response to send" }
     if (!query.reporterEmail) return { success: false, error: "No reporter email" }
 
-    const settings = await getHaroSettings()
-
     try {
-        const fromEmail = settings?.sendFromEmail || process.env.RESEND_FROM_EMAIL || "support@afcrashpad.com"
         await sendEmail({
             to: query.reporterEmail,
             subject: query.responseSubject || `RE: ${query.title}`,
             html: responseText.replace(/\n/g, "<br>"),
         })
 
-        await adminDb.collection("haro_queries").doc(queryId).update({
+        await db.doc("haro_queries", queryId).update({
             status: "sent",
             sentAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
@@ -160,7 +180,7 @@ export async function sendHaroResponse(queryId: string) {
 
         // Update batch sent count
         if (query.batchId) {
-            await adminDb.collection("haro_batches").doc(query.batchId).update({
+            await db.doc("haro_batches", query.batchId).update({
                 responsesSent: FieldValue.increment(1),
             })
         }
@@ -176,10 +196,12 @@ export async function markPlacement(
     placementUrl: string,
     domainAuthority: number
 ) {
-    await requireAuth()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     // Estimate SEO value: DA * $50 as a rough heuristic
     const estimatedValue = domainAuthority * 50
-    await adminDb.collection("haro_queries").doc(queryId).update({
+    await db.doc("haro_queries", queryId).update({
         placementConfirmed: true,
         placementUrl,
         placementDomainAuthority: domainAuthority,
@@ -273,37 +295,43 @@ ${settings.signoff}`
 }
 
 export async function regenerateHaroResponse(queryId: string) {
-    await requireAuth()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
-    const doc = await adminDb.collection("haro_queries").doc(queryId).get()
+    const doc = await db.doc("haro_queries", queryId).get()
     if (!doc.exists) return { success: false, error: "Query not found" }
 
     const query = { id: doc.id, ...doc.data() } as HaroQuery
     const settings = await getHaroSettings()
     if (!settings) return { success: false, error: "HARO settings not configured" }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) return { success: false, error: "ANTHROPIC_API_KEY not configured" }
-
-    const Anthropic = (await import("@anthropic-ai/sdk")).default
-    const anthropic = new Anthropic({ apiKey })
-
     const cleanDescription = query.description.replace("[Note: No AI Pitches Considered]", "").trim()
 
     try {
-        const responseMsg = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 800,
-            messages: [{
-                role: "user",
-                content: buildResponsePrompt(settings, { title: query.title, reporterName: query.reporterName, mediaOutlet: query.mediaOutlet, description: cleanDescription })
-            }],
-        })
-
-        const aiText = responseMsg.content[0].type === "text" ? responseMsg.content[0].text : ""
+        let aiText = ""
+        try {
+            const ai = await runAI({
+                workspaceId,
+                feature: "haro_reply",
+                prompt: buildResponsePrompt(settings, {
+                    title: query.title,
+                    reporterName: query.reporterName,
+                    mediaOutlet: query.mediaOutlet,
+                    description: cleanDescription,
+                }),
+                maxTokens: 800,
+            })
+            aiText = ai.text
+        } catch (err) {
+            if (err instanceof AIKeyMissingError) {
+                return { success: false, error: "Add an API key in Settings → Integrations to use AI HARO replies." }
+            }
+            throw err
+        }
         if (!aiText) return { success: false, error: "No response generated" }
 
-        await adminDb.collection("haro_queries").doc(queryId).update({
+        await db.doc("haro_queries", queryId).update({
             aiResponse: aiText,
             editedResponse: "",
             responseSubject: `RE: ${query.title} — ${settings.businessName}`,
@@ -461,19 +489,23 @@ function parseHaroEmail(emailText: string): ParsedQuery[] {
 }
 
 export async function processHaroEmail(emailContent: string, emailSubject?: string) {
-    await requireAuth()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     return processHaroEmailInternal(emailContent, emailSubject)
 }
 
 // ─── Metrics ────────────────────────────────────────────────────────────────
 
 export async function getHaroMetrics(): Promise<HaroMetrics> {
-    await requireAuth()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
 
     const [batchesSnap, queriesSnap, placedSnap] = await Promise.all([
-        adminDb.collection("haro_batches").get(),
-        adminDb.collection("haro_queries").get(),
-        adminDb.collection("haro_queries").where("placementConfirmed", "==", true).get(),
+        db.collection("haro_batches").get(),
+        db.collection("haro_queries").get(),
+        db.collection("haro_queries").where("placementConfirmed", "==", true).get(),
     ])
 
     let totalQueriesReceived = 0
@@ -549,21 +581,25 @@ export async function getHaroMetrics(): Promise<HaroMetrics> {
 // ─── Delete / Bulk Actions ──────────────────────────────────────────────────
 
 export async function deleteHaroBatch(batchId: string) {
-    await requireAuth()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     // Delete all queries in this batch
-    const queriesSnap = await adminDb.collection("haro_queries").where("batchId", "==", batchId).get()
-    const batch = adminDb.batch()
+    const queriesSnap = await db.collection("haro_queries").where("batchId", "==", batchId).get()
+    const batch = db.batch()
     queriesSnap.docs.forEach(doc => batch.delete(doc.ref))
-    batch.delete(adminDb.collection("haro_batches").doc(batchId))
+    batch.delete(db.doc("haro_batches", batchId))
     await batch.commit()
     return { success: true }
 }
 
 export async function bulkUpdateQueryStatus(queryIds: string[], status: HaroQuery["status"]) {
-    await requireAuth()
-    const batch = adminDb.batch()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
+    const batch = db.batch()
     for (const id of queryIds) {
-        batch.update(adminDb.collection("haro_queries").doc(id), {
+        batch.update(db.doc("haro_queries", id), {
             status,
             updatedAt: FieldValue.serverTimestamp(),
         })
@@ -576,10 +612,12 @@ export async function bulkUpdateQueryStatus(queryIds: string[], status: HaroQuer
 
 // Step 1: Quick fetch — just get unprocessed HARO emails from Gmail
 export async function fetchNewHaroEmails() {
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     const { fetchHaroEmails } = await import("@/lib/gmail")
 
-    const lastBatch = await adminDb
-        .collection("haro_batches")
+    const lastBatch = await db.collection("haro_batches")
         .orderBy("createdAt", "desc")
         .limit(1)
         .get()
@@ -590,14 +628,14 @@ export async function fetchNewHaroEmails() {
         ? twoDaysAgo.toISOString().split("T")[0]
         : undefined
 
-    const emails = await fetchHaroEmails({ maxResults: 10, afterDate })
+    const emails = await fetchHaroEmails(workspaceId, session.user.id!, { maxResults: 10, afterDate })
     if (emails.length === 0) return { emails: [], message: "No HARO emails found in Gmail" }
 
     // Filter out already-processed emails
     const emailIds = emails.map(e => e.id).slice(0, 10)
     let processedIds = new Set<string>()
     if (emailIds.length > 0) {
-        const processedSnap = await adminDb.collection("haro_batches")
+        const processedSnap = await db.collection("haro_batches")
             .where("gmailMessageId", "in", emailIds)
             .get()
         processedIds = new Set(processedSnap.docs.map(d => d.data().gmailMessageId))
@@ -615,10 +653,13 @@ export async function fetchNewHaroEmails() {
 
 // Step 2: Process a single email by Gmail ID (called one at a time from UI)
 export async function processSingleHaroEmail(gmailMessageId: string) {
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     const { fetchHaroEmails } = await import("@/lib/gmail")
 
     // Fetch this specific email
-    const emails = await fetchHaroEmails({ maxResults: 10 })
+    const emails = await fetchHaroEmails(workspaceId, session.user.id!, { maxResults: 10 })
     const email = emails.find(e => e.id === gmailMessageId)
     if (!email) return { success: false, error: "Email not found in Gmail" }
 
@@ -627,10 +668,12 @@ export async function processSingleHaroEmail(gmailMessageId: string) {
 
 // Full pipeline for cron (non-interactive, processes all at once)
 export async function fetchAndProcessHaroEmails() {
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     const { fetchHaroEmails } = await import("@/lib/gmail")
 
-    const lastBatch = await adminDb
-        .collection("haro_batches")
+    const lastBatch = await db.collection("haro_batches")
         .orderBy("createdAt", "desc")
         .limit(1)
         .get()
@@ -641,13 +684,13 @@ export async function fetchAndProcessHaroEmails() {
         ? twoDaysAgo.toISOString().split("T")[0]
         : undefined
 
-    const emails = await fetchHaroEmails({ maxResults: 10, afterDate })
+    const emails = await fetchHaroEmails(workspaceId, session.user.id!, { maxResults: 10, afterDate })
     if (emails.length === 0) return { success: true, message: "No new HARO emails found", processed: 0 }
 
     const emailIds = emails.map(e => e.id).slice(0, 10)
     let processedIds = new Set<string>()
     if (emailIds.length > 0) {
-        const processedSnap = await adminDb.collection("haro_batches")
+        const processedSnap = await db.collection("haro_batches")
             .where("gmailMessageId", "in", emailIds)
             .get()
         processedIds = new Set(processedSnap.docs.map(d => d.data().gmailMessageId))
@@ -672,8 +715,10 @@ export async function fetchAndProcessHaroEmails() {
 
 // Debug: check what tokens are stored
 export async function debugGmailTokens() {
-    await requireAuth()
-    const tokenDoc = await adminDb.collection("oauth_tokens").doc("gmail").get()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
+    const tokenDoc = await db.settingsDoc("oauth_gmail").get()
     if (!tokenDoc.exists) return { stored: false }
     const data = tokenDoc.data()!
     return {
@@ -691,13 +736,15 @@ export async function debugGmailTokens() {
 // Ensures Gmail tokens are in Firestore, then fetches email list (fast)
 export async function triggerHaroFetch() {
     const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     try {
         // Ensure Gmail tokens exist in Firestore
-        const tokenDoc = await adminDb.collection("oauth_tokens").doc("gmail").get()
+        const tokenDoc = await db.settingsDoc("oauth_gmail").get()
         if (!tokenDoc.exists || !tokenDoc.data()?.refreshToken) {
             const s = session as any
             if (s.refreshToken) {
-                await adminDb.collection("oauth_tokens").doc("gmail").set({
+                await db.settingsDoc("oauth_gmail").set({
                     accessToken: s.accessToken || "",
                     refreshToken: s.refreshToken,
                     accessTokenExpires: s.accessTokenExpires || 0,
@@ -717,7 +764,9 @@ export async function triggerHaroFetch() {
 
 // Process a single email (called from UI one at a time for progress)
 export async function triggerProcessSingleEmail(gmailMessageId: string) {
-    await requireAuth()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     try {
         return await processSingleHaroEmail(gmailMessageId)
     } catch (err: any) {
@@ -728,12 +777,15 @@ export async function triggerProcessSingleEmail(gmailMessageId: string) {
 
 // Internal processor that stores the Gmail message ID
 async function processHaroEmailInternal(emailContent: string, emailSubject?: string, gmailMessageId?: string) {
-    const settingsDoc = await adminDb.collection("haro_settings").doc("default").get()
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
+    const settingsDoc = await db.settingsDoc("haro").get()
     const settings: HaroSettings = settingsDoc.exists
         ? (settingsDoc.data() as HaroSettings)
         : (await import("./types")).DEFAULT_HARO_SETTINGS
 
-    const batchRef = adminDb.collection("haro_batches").doc()
+    const batchRef = db.collectionRef("haro_batches").doc()
     const batch: Record<string, any> = {
         processedAt: new Date().toISOString(),
         emailSubject: emailSubject || "HARO Email",
@@ -761,26 +813,19 @@ async function processHaroEmailInternal(emailContent: string, emailSubject?: str
 
         await batchRef.update({ totalQueries: parsedQueries.length })
 
-        const Anthropic = (await import("@anthropic-ai/sdk")).default
-        const apiKey = process.env.ANTHROPIC_API_KEY
-        if (!apiKey) {
-            await batchRef.update({ status: "error", errorMessage: "ANTHROPIC_API_KEY not configured" })
-            return { success: false, error: "ANTHROPIC_API_KEY not configured", batchId: batchRef.id }
-        }
-        const anthropic = new Anthropic({ apiKey })
-
         const topicsList = settings.expertiseTopics.join(", ")
         const titlesText = parsedQueries.map((q, i) => {
             const cleanDesc = q.description.replace(/\[Note: No AI Pitches Considered\]/g, "").replace(/\n/g, " ").trim()
             return `${i + 1}) Title: ${q.title} (${q.mediaOutlet || "Unknown"})\n   Details: ${cleanDesc.slice(0, 300)}`
         }).join("\n\n")
 
-        const filterResponse = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 1000,
-            messages: [{
-                role: "user",
-                content: `You are filtering journalist queries for relevance. I am an expert in: ${topicsList}.
+        let filterText = ""
+        try {
+            const filterAi = await runAI({
+                workspaceId,
+                feature: "haro_reply",
+                maxTokens: 1000,
+                prompt: `You are filtering journalist queries for relevance. I am an expert in: ${topicsList}.
 
 My business: ${settings.businessName} — ${settings.businessIntro}.
 
@@ -799,12 +844,18 @@ Below are queries from reporters. For each query, read both the title AND detail
 Include ALL queries in the results array. Score from 0-100 for relevance.
 
 Queries:
-${titlesText}`
-            }],
-        })
+${titlesText}`,
+            })
+            filterText = filterAi.text
+        } catch (err) {
+            if (err instanceof AIKeyMissingError) {
+                await batchRef.update({ status: "error", errorMessage: "AI key not configured" })
+                return { success: false, error: "Add an API key in Settings → Integrations to use AI HARO replies.", batchId: batchRef.id }
+            }
+            throw err
+        }
 
         let relevanceResults: { index: number; relevant: boolean; score: number; reason: string }[] = []
-        const filterText = filterResponse.content[0].type === "text" ? filterResponse.content[0].text : ""
         const jsonMatch = filterText.match(/\{[\s\S]*"results"[\s\S]*\}/)
         if (jsonMatch) {
             try {
@@ -821,7 +872,7 @@ ${titlesText}`
             const isRelevant = relevance?.relevant || false
             if (isRelevant) relevantCount++
 
-            const queryRef = adminDb.collection("haro_queries").doc()
+            const queryRef = db.collectionRef("haro_queries").doc()
             const queryDoc: Omit<HaroQuery, "id"> = {
                 batchId: batchRef.id,
                 title: pq.title,
@@ -860,20 +911,23 @@ ${titlesText}`
             // Strip the no-AI marker from the description before sending to Claude
             const cleanDescription = sq.description.replace("[Note: No AI Pitches Considered]", "").trim()
             try {
-                const responseMsg = await anthropic.messages.create({
-                    model: "claude-sonnet-4-20250514",
-                    max_tokens: 800,
-                    messages: [{
-                        role: "user",
-                        content: buildResponsePrompt(settings, { title: sq.title, reporterName: sq.reporterName, mediaOutlet: sq.mediaOutlet, description: cleanDescription })
-                    }],
+                const responseAi = await runAI({
+                    workspaceId,
+                    feature: "haro_reply",
+                    maxTokens: 800,
+                    prompt: buildResponsePrompt(settings, {
+                        title: sq.title,
+                        reporterName: sq.reporterName,
+                        mediaOutlet: sq.mediaOutlet,
+                        description: cleanDescription,
+                    }),
                 })
 
-                const aiText = responseMsg.content[0].type === "text" ? responseMsg.content[0].text : ""
+                const aiText = responseAi.text
                 if (aiText) {
                     // Force "reviewing" for no-AI flagged queries to prevent accidental auto-send
                     const status = noAI ? "reviewing" : (settings.sendMode === "draft" ? "reviewing" : "approved")
-                    await adminDb.collection("haro_queries").doc(sq.id).update({
+                    await db.doc("haro_queries", sq.id).update({
                         aiResponse: aiText,
                         responseSubject: `RE: ${sq.title} — ${settings.businessName}`,
                         status,
@@ -907,12 +961,15 @@ ${titlesText}`
 
 /** Check for expiring/expired HARO queries. Called from cron. */
 export async function checkHaroDeadlines() {
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
     const { createNotification } = await import("@/app/notifications/actions")
     const now = new Date()
     const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000)
 
     // Get all pending/reviewing queries that have a parsed deadline
-    const snap = await adminDb.collection("haro_queries")
+    const snap = await db.collection("haro_queries")
         .where("status", "in", ["pending", "reviewing", "approved"])
         .get()
 

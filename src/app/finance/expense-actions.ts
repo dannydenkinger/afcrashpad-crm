@@ -1,7 +1,7 @@
 "use server"
 
-import { adminDb } from "@/lib/firebase-admin"
-import { auth } from "@/auth"
+import { tenantDb } from "@/lib/tenant-db"
+import { requireAuth } from "@/lib/auth-guard"
 
 interface ExpenseData {
     description: string
@@ -13,10 +13,11 @@ interface ExpenseData {
 
 export async function getExpenses() {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { success: false, error: "Not authenticated" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const snap = await adminDb.collection("expenses").orderBy("date", "desc").limit(500).get()
+        const snap = await db.collection("expenses").orderBy("date", "desc").limit(500).get()
         const data = snap.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
@@ -32,10 +33,11 @@ export async function getExpenses() {
 
 export async function createExpense(data: ExpenseData) {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { success: false, error: "Not authenticated" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        const doc = await adminDb.collection("expenses").add({
+        const doc = await db.add("expenses", {
             ...data,
             createdBy: session.user.email,
             createdAt: new Date(),
@@ -49,10 +51,11 @@ export async function createExpense(data: ExpenseData) {
 
 export async function updateExpense(id: string, data: Partial<ExpenseData>) {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { success: false, error: "Not authenticated" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        await adminDb.collection("expenses").doc(id).update({
+        await db.doc("expenses", id).update({
             ...data,
             updatedAt: new Date(),
             updatedBy: session.user.email,
@@ -66,10 +69,11 @@ export async function updateExpense(id: string, data: Partial<ExpenseData>) {
 
 export async function deleteExpense(id: string) {
     try {
-        const session = await auth()
-        if (!session?.user?.email) return { success: false, error: "Not authenticated" }
+        const session = await requireAuth()
+        const workspaceId = session.user.workspaceId
+        const db = tenantDb(workspaceId)
 
-        await adminDb.collection("expenses").doc(id).delete()
+        await db.doc("expenses", id).delete()
         return { success: true }
     } catch (error: any) {
         return { success: false, error: error.message }

@@ -5,7 +5,7 @@
  * based on configured assignment rules.
  */
 
-import { adminDb } from "@/lib/firebase-admin"
+import { tenantDb } from "@/lib/tenant-db"
 
 interface LeadContext {
     leadSource?: string | null
@@ -29,8 +29,10 @@ interface AssigneeResult {
  * 1. Rule-based rules are checked first (more specific)
  * 2. Round-robin rules are checked second (catch-all)
  */
-export async function determineAssignee(context: LeadContext): Promise<AssigneeResult | null> {
-    const snap = await adminDb
+export async function determineAssignee(workspaceId: string, context: LeadContext): Promise<AssigneeResult | null> {
+    const db = tenantDb(workspaceId)
+
+    const snap = await db
         .collection("assignment_rules")
         .where("enabled", "==", true)
         .get()

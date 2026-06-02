@@ -9,24 +9,60 @@ import {
     DialogHeader,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Search, User, LayoutGrid, FileText, Plus, Mail, CheckSquare, Clock } from "lucide-react"
+import {
+    Search, User, LayoutGrid, FileText, Plus, Mail, CheckSquare, Clock,
+    LayoutDashboard, Calendar, MessageSquare, Wallet, Megaphone, Workflow,
+    Settings, Keyboard, Users, ArrowRight,
+} from "lucide-react"
 import { globalSearch } from "@/app/search/actions"
 import type { SearchResult } from "@/app/search/types"
 
-// ─── Action commands ─────────────────────────────────────────────
-interface ActionCommand {
+// ─── Commands ───────────────────────────────────────────────────
+interface PaletteCommand {
     id: string
     label: string
-    href: string
     icon: React.ReactNode
     keywords: string[]
+    /** Either navigate to href OR call onSelect (closes palette automatically). */
+    href?: string
+    onSelect?: () => void
 }
 
-const ACTION_COMMANDS: ActionCommand[] = [
+const ACTION_COMMANDS: PaletteCommand[] = [
     { id: "new-deal", label: "Create deal", href: "/pipeline?action=new-deal", icon: <Plus className="h-4 w-4" />, keywords: ["create", "deal", "new", "opportunity", "pipeline"] },
     { id: "new-contact", label: "Add contact", href: "/contacts?action=new-contact", icon: <User className="h-4 w-4" />, keywords: ["add", "contact", "new", "person"] },
     { id: "new-task", label: "New task", href: "/tasks?action=new-task", icon: <CheckSquare className="h-4 w-4" />, keywords: ["new", "task", "todo", "create"] },
     { id: "new-email", label: "New email", href: "/communications?action=new", icon: <Mail className="h-4 w-4" />, keywords: ["new", "email", "message", "send", "communication"] },
+]
+
+const NAV_COMMANDS: PaletteCommand[] = [
+    { id: "go-dashboard", label: "Go to Dashboard", href: "/dashboard", icon: <LayoutDashboard className="h-4 w-4" />, keywords: ["dashboard", "home", "overview"] },
+    { id: "go-pipeline", label: "Go to Pipeline", href: "/pipeline", icon: <LayoutGrid className="h-4 w-4" />, keywords: ["pipeline", "deals", "kanban", "opportunities"] },
+    { id: "go-contacts", label: "Go to Contacts", href: "/contacts", icon: <Users className="h-4 w-4" />, keywords: ["contacts", "people", "leads"] },
+    { id: "go-calendar", label: "Go to Calendar", href: "/calendar", icon: <Calendar className="h-4 w-4" />, keywords: ["calendar", "events", "schedule"] },
+    { id: "go-tasks", label: "Go to Tasks", href: "/tasks", icon: <CheckSquare className="h-4 w-4" />, keywords: ["tasks", "todo"] },
+    { id: "go-communications", label: "Go to Communications", href: "/communications", icon: <MessageSquare className="h-4 w-4" />, keywords: ["communications", "inbox", "messages", "email"] },
+    { id: "go-marketing", label: "Go to Marketing", href: "/marketing", icon: <Megaphone className="h-4 w-4" />, keywords: ["marketing", "campaigns", "email"] },
+    { id: "go-finance", label: "Go to Finance", href: "/finance", icon: <Wallet className="h-4 w-4" />, keywords: ["finance", "revenue", "money", "commissions"] },
+    { id: "go-automations", label: "Go to Automations", href: "/automations", icon: <Workflow className="h-4 w-4" />, keywords: ["automations", "workflows"] },
+    { id: "go-settings", label: "Go to Settings", href: "/settings", icon: <Settings className="h-4 w-4" />, keywords: ["settings", "config"] },
+]
+
+const HELP_COMMANDS: PaletteCommand[] = [
+    {
+        id: "show-shortcuts",
+        label: "Show keyboard shortcuts",
+        icon: <Keyboard className="h-4 w-4" />,
+        keywords: ["shortcuts", "keyboard", "help", "?"],
+        onSelect: () => window.dispatchEvent(new CustomEvent("crm:show-shortcuts")),
+    },
+    {
+        id: "open-help",
+        label: "Open help & docs",
+        href: "/help",
+        icon: <FileText className="h-4 w-4" />,
+        keywords: ["help", "docs", "documentation", "how", "guide", "support"],
+    },
 ]
 
 // ─── Recent searches (localStorage) ─────────────────────────────
@@ -71,14 +107,18 @@ export function CommandPalette() {
         }
     }, [open])
 
-    // Filter action commands by query
-    const matchedActions = useMemo(() => {
-        if (query.length === 0) return ACTION_COMMANDS
-        const q = query.toLowerCase()
-        return ACTION_COMMANDS.filter(
-            (cmd) => cmd.label.toLowerCase().includes(q) || cmd.keywords.some((kw) => kw.includes(q))
+    // Filter command groups by query
+    const filterCommands = (cmds: PaletteCommand[], q: string) => {
+        if (!q) return cmds
+        const lower = q.toLowerCase()
+        return cmds.filter(
+            (cmd) => cmd.label.toLowerCase().includes(lower) || cmd.keywords.some((kw) => kw.includes(lower))
         )
-    }, [query])
+    }
+
+    const matchedActions = useMemo(() => filterCommands(ACTION_COMMANDS, query), [query])
+    const matchedNav = useMemo(() => filterCommands(NAV_COMMANDS, query), [query])
+    const matchedHelp = useMemo(() => filterCommands(HELP_COMMANDS, query), [query])
 
     const searchItems: { item: SearchResult; href: string }[] = [
         ...results.contacts.map((r) => ({ item: r, href: `/contacts?contact=${r.id}` })),
@@ -86,8 +126,13 @@ export function CommandPalette() {
         ...results.notes.map((r) => r.type === "note" ? { item: r, href: `/contacts?contact=${r.contactId}` } : null).filter(Boolean) as { item: SearchResult; href: string }[],
     ]
 
-    // Combined selectable items: actions first, then search results
-    const allSelectableCount = matchedActions.length + searchItems.length + (query.length === 0 ? recentSearches.length : 0)
+    // Combined selectable items
+    const allSelectableCount =
+        matchedActions.length +
+        matchedNav.length +
+        matchedHelp.length +
+        searchItems.length +
+        (query.length === 0 ? recentSearches.length : 0)
 
     useEffect(() => {
         if (debouncedQuery.length < 2) {
@@ -135,34 +180,54 @@ export function CommandPalette() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, allSelectableCount, selectedIndex])
 
+    const runCommand = (cmd: PaletteCommand) => {
+        if (cmd.onSelect) {
+            cmd.onSelect()
+        } else if (cmd.href) {
+            router.push(cmd.href)
+        }
+        setOpen(false)
+    }
+
     const handleSelectByIndex = (idx: number) => {
-        // Actions come first
+        // Actions
         if (idx < matchedActions.length) {
-            const action = matchedActions[idx]
-            if (action) {
-                router.push(action.href)
-                setOpen(false)
-            }
+            const cmd = matchedActions[idx]
+            if (cmd) runCommand(cmd)
             return
         }
+        let cursor = idx - matchedActions.length
 
-        const afterActions = idx - matchedActions.length
+        // Navigation
+        if (cursor < matchedNav.length) {
+            const cmd = matchedNav[cursor]
+            if (cmd) runCommand(cmd)
+            return
+        }
+        cursor -= matchedNav.length
 
-        // If no query, recent searches come next
-        if (query.length === 0 && afterActions < recentSearches.length) {
-            const recentQuery = recentSearches[afterActions]
+        // Help
+        if (cursor < matchedHelp.length) {
+            const cmd = matchedHelp[cursor]
+            if (cmd) runCommand(cmd)
+            return
+        }
+        cursor -= matchedHelp.length
+
+        // Recent searches (only when no query)
+        if (query.length === 0 && cursor < recentSearches.length) {
+            const recentQuery = recentSearches[cursor]
             if (recentQuery) {
                 setQuery(recentQuery)
                 setSelectedIndex(0)
             }
             return
         }
+        if (query.length === 0) cursor -= recentSearches.length
 
-        // Then search results
-        const searchIdx = query.length === 0 ? afterActions - recentSearches.length : afterActions
-        if (searchItems[searchIdx]) {
-            const href = searchItems[searchIdx].href
-            // Save search to recents
+        // Search results
+        if (searchItems[cursor]) {
+            const href = searchItems[cursor].href
             if (query.length >= 2) addRecentSearch(query)
             router.push(href)
             setOpen(false)
@@ -171,11 +236,6 @@ export function CommandPalette() {
 
     const handleSelect = (href: string) => {
         if (query.length >= 2) addRecentSearch(query)
-        router.push(href)
-        setOpen(false)
-    }
-
-    const handleSelectAction = (href: string) => {
         router.push(href)
         setOpen(false)
     }
@@ -197,50 +257,76 @@ export function CommandPalette() {
             </button>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="sm:max-w-[560px] p-0 gap-0 overflow-hidden">
+                <DialogContent className="sm:max-w-[600px] p-0 gap-0 overflow-hidden">
                     <DialogHeader className="sr-only">Quick search and commands</DialogHeader>
-                    <div className="flex border-b">
-                        <Search className="h-4 w-4 text-muted-foreground shrink-0 ml-4 self-center" />
+                    <div className="flex items-center border-b px-4">
+                        <Search className="h-4 w-4 text-muted-foreground shrink-0" />
                         <Input
-                            placeholder="Search or type a command..."
+                            placeholder="Search contacts, deals, notes — or type a command..."
                             value={query}
                             onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0) }}
-                            className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 h-12"
+                            className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 h-12 bg-transparent"
                             autoFocus
                         />
                     </div>
-                    <div className="max-h-[400px] overflow-y-auto">
-                        {/* Action commands */}
+                    <div className="max-h-[440px] overflow-y-auto py-1">
+                        {/* Actions */}
                         {matchedActions.length > 0 && (
-                            <div className="py-1">
-                                <div className="px-4 py-1.5">
-                                    <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Actions</span>
-                                </div>
-                                {matchedActions.map((action) => {
+                            <CommandSection label="Actions">
+                                {matchedActions.map((cmd) => {
                                     const idx = runningIndex++
-                                    const isSelected = idx === selectedIndex
                                     return (
-                                        <button
-                                            key={action.id}
-                                            type="button"
-                                            onClick={() => handleSelectAction(action.href)}
+                                        <CommandRow
+                                            key={cmd.id}
+                                            command={cmd}
+                                            isSelected={idx === selectedIndex}
+                                            onSelect={() => runCommand(cmd)}
                                             onMouseEnter={() => setSelectedIndex(idx)}
-                                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? "bg-muted" : "hover:bg-muted/50"}`}
-                                        >
-                                            <span className="text-muted-foreground shrink-0">{action.icon}</span>
-                                            <span className="text-sm font-medium">{action.label}</span>
-                                        </button>
+                                        />
                                     )
                                 })}
-                            </div>
+                            </CommandSection>
+                        )}
+
+                        {/* Navigation */}
+                        {matchedNav.length > 0 && (
+                            <CommandSection label="Navigation">
+                                {matchedNav.map((cmd) => {
+                                    const idx = runningIndex++
+                                    return (
+                                        <CommandRow
+                                            key={cmd.id}
+                                            command={cmd}
+                                            isSelected={idx === selectedIndex}
+                                            onSelect={() => runCommand(cmd)}
+                                            onMouseEnter={() => setSelectedIndex(idx)}
+                                        />
+                                    )
+                                })}
+                            </CommandSection>
+                        )}
+
+                        {/* Help */}
+                        {matchedHelp.length > 0 && (
+                            <CommandSection label="Help">
+                                {matchedHelp.map((cmd) => {
+                                    const idx = runningIndex++
+                                    return (
+                                        <CommandRow
+                                            key={cmd.id}
+                                            command={cmd}
+                                            isSelected={idx === selectedIndex}
+                                            onSelect={() => runCommand(cmd)}
+                                            onMouseEnter={() => setSelectedIndex(idx)}
+                                        />
+                                    )
+                                })}
+                            </CommandSection>
                         )}
 
                         {/* Recent searches (only when no query) */}
                         {query.length === 0 && recentSearches.length > 0 && (
-                            <div className="py-1 border-t">
-                                <div className="px-4 py-1.5">
-                                    <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Recent searches</span>
-                                </div>
+                            <CommandSection label="Recent searches">
                                 {recentSearches.map((recent) => {
                                     const idx = runningIndex++
                                     const isSelected = idx === selectedIndex
@@ -250,28 +336,42 @@ export function CommandPalette() {
                                             type="button"
                                             onClick={() => { setQuery(recent); setSelectedIndex(0) }}
                                             onMouseEnter={() => setSelectedIndex(idx)}
-                                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? "bg-muted" : "hover:bg-muted/50"}`}
+                                            className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors rounded-md mx-1 ${isSelected ? "bg-primary/10 text-foreground" : "hover:bg-muted/50"}`}
                                         >
                                             <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
                                             <span className="text-sm text-muted-foreground">{recent}</span>
                                         </button>
                                     )
                                 })}
-                            </div>
+                            </CommandSection>
                         )}
 
                         {/* Search results */}
                         {query.length >= 2 && (
                             <>
                                 {loading ? (
-                                    <div className="p-6 text-center text-sm text-muted-foreground">Searching...</div>
-                                ) : searchItems.length === 0 ? (
-                                    <div className="p-6 text-center text-sm text-muted-foreground">No results found</div>
-                                ) : (
-                                    <div className="py-1 border-t">
-                                        <div className="px-4 py-1.5">
-                                            <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Results</span>
-                                        </div>
+                                    <div className="p-6 text-center text-sm text-muted-foreground">Searching…</div>
+                                ) : searchItems.length === 0 && matchedActions.length === 0 && matchedNav.length === 0 && matchedHelp.length === 0 ? (
+                                    <div className="p-8 text-center">
+                                        <Search className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
+                                        <p className="text-sm text-muted-foreground">No results for &ldquo;{query}&rdquo;</p>
+                                        <p className="text-xs text-muted-foreground/70 mt-1">Try a different search term</p>
+                                    </div>
+                                ) : searchItems.length > 0 ? (
+                                    <CommandSection label="Results">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (query.length >= 2) addRecentSearch(query)
+                                                router.push(`/search?q=${encodeURIComponent(query)}`)
+                                                setOpen(false)
+                                            }}
+                                            className="w-full flex items-center gap-3 px-3 py-1.5 text-left transition-colors rounded-md mx-1 hover:bg-muted/50 text-xs text-muted-foreground"
+                                        >
+                                            <Search className="h-3.5 w-3.5" />
+                                            See all results for &ldquo;{query}&rdquo;
+                                            <ArrowRight className="h-3 w-3 ml-auto" />
+                                        </button>
                                         {searchItems.map(({ item, href }) => {
                                             const idx = runningIndex++
                                             const isSelected = idx === selectedIndex
@@ -281,7 +381,7 @@ export function CommandPalette() {
                                                     type="button"
                                                     onClick={() => handleSelect(href)}
                                                     onMouseEnter={() => setSelectedIndex(idx)}
-                                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? "bg-muted" : "hover:bg-muted/50"}`}
+                                                    className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors rounded-md mx-1 ${isSelected ? "bg-primary/10 text-foreground" : "hover:bg-muted/50"}`}
                                                 >
                                                     {item.type === "contact" && <User className="h-4 w-4 text-muted-foreground shrink-0" />}
                                                     {item.type === "opportunity" && <LayoutGrid className="h-4 w-4 text-muted-foreground shrink-0" />}
@@ -302,20 +402,97 @@ export function CommandPalette() {
                                                 </button>
                                             )
                                         })}
-                                    </div>
-                                )}
+                                    </CommandSection>
+                                ) : null}
                             </>
                         )}
 
-                        {/* Empty state when no query and no recents */}
-                        {query.length === 0 && recentSearches.length === 0 && matchedActions.length > 0 && (
-                            <div className="px-4 pb-3 pt-1 text-center text-xs text-muted-foreground">
+                        {/* Hint when no query */}
+                        {query.length === 0 && recentSearches.length === 0 && (
+                            <div className="px-4 pb-2 pt-2 text-center text-xs text-muted-foreground">
                                 Type to search contacts, deals, and notes
                             </div>
                         )}
                     </div>
+                    {/* Footer with hints */}
+                    <div className="border-t bg-muted/30 px-3 py-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <div className="flex items-center gap-3">
+                            <KbdHint keys={["↑", "↓"]} label="Navigate" />
+                            <KbdHint keys={["↵"]} label="Select" />
+                            <KbdHint keys={["Esc"]} label="Close" />
+                        </div>
+                        <div className="hidden sm:flex items-center gap-1.5 text-muted-foreground/70">
+                            <span>Press</span>
+                            <kbd className="rounded border bg-background px-1 py-0 font-mono text-[9px]">?</kbd>
+                            <span>for shortcuts</span>
+                        </div>
+                    </div>
                 </DialogContent>
             </Dialog>
         </>
+    )
+}
+
+// ─── Visual helpers ─────────────────────────────────────────────
+function CommandSection({ label, children }: { label: string; children: React.ReactNode }) {
+    return (
+        <div className="py-1">
+            <div className="px-4 pt-2 pb-1 flex items-center gap-1.5">
+                <span className="h-1 w-1 rounded-full bg-primary/50" />
+                <span className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+                    {label}
+                </span>
+            </div>
+            {children}
+        </div>
+    )
+}
+
+function CommandRow({
+    command,
+    isSelected,
+    onSelect,
+    onMouseEnter,
+}: {
+    command: PaletteCommand
+    isSelected: boolean
+    onSelect: () => void
+    onMouseEnter: () => void
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onSelect}
+            onMouseEnter={onMouseEnter}
+            className={`group w-full flex items-center gap-3 px-3 py-2 text-left transition-colors rounded-md mx-1 ${
+                isSelected ? "bg-primary/10 text-foreground" : "hover:bg-muted/50"
+            }`}
+        >
+            <span className={`shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`}>
+                {command.icon}
+            </span>
+            <span className="text-sm font-medium flex-1 truncate">{command.label}</span>
+            <ArrowRight
+                className={`h-3.5 w-3.5 shrink-0 transition-opacity ${
+                    isSelected ? "opacity-60 text-primary" : "opacity-0 group-hover:opacity-40"
+                }`}
+            />
+        </button>
+    )
+}
+
+function KbdHint({ keys, label }: { keys: string[]; label: string }) {
+    return (
+        <div className="flex items-center gap-1">
+            {keys.map((k) => (
+                <kbd
+                    key={k}
+                    className="inline-flex h-4 min-w-[16px] items-center justify-center rounded border bg-background px-1 font-mono text-[9px] font-medium"
+                >
+                    {k}
+                </kbd>
+            ))}
+            <span>{label}</span>
+        </div>
     )
 }

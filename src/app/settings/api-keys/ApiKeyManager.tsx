@@ -1,12 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Key, Plus, Copy, Trash2, Eye, EyeOff, AlertTriangle } from "lucide-react"
+import { Key, Plus, Copy, Trash2, AlertTriangle } from "lucide-react"
 import {
     Dialog,
     DialogContent,
@@ -99,83 +98,72 @@ export function ApiKeyManager() {
 
     return (
         <>
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Key className="h-4 w-4" />
-                        API Keys
-                    </CardTitle>
-                    <CardDescription>
-                        Generate and manage API keys for external integrations and webhooks.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="flex justify-end">
-                        <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-                            <Plus className="mr-1.5 h-3.5 w-3.5" />
-                            Generate New Key
-                        </Button>
-                    </div>
+            <div className="space-y-4">
+                <div className="flex justify-end">
+                    <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                        Generate new key
+                    </Button>
+                </div>
 
-                    {loading ? (
-                        <div className="text-center py-8 text-sm text-muted-foreground">Loading API keys...</div>
-                    ) : keys.length === 0 ? (
-                        <div className="text-center py-8 border rounded-lg border-dashed">
-                            <Key className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
-                            <p className="text-sm text-muted-foreground">No API keys generated yet.</p>
-                            <p className="text-xs text-muted-foreground mt-1">API keys allow external services to authenticate with your CRM.</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-2">
-                            {activeKeys.map((key) => (
-                                <div key={key.id} className="flex items-center gap-3 p-3 border rounded-lg group">
-                                    <Key className="h-4 w-4 text-muted-foreground shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-sm font-medium">{key.name}</span>
-                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400 border-green-200 dark:border-green-800">
-                                                Active
-                                            </Badge>
-                                        </div>
-                                        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                                            <code className="bg-muted px-1.5 py-0.5 rounded">{key.keyPrefix}</code>
-                                            <span>Created {key.createdAt ? new Date(key.createdAt).toLocaleDateString() : "N/A"}</span>
-                                            {key.lastUsedAt && (
-                                                <span>Last used {new Date(key.lastUsedAt).toLocaleDateString()}</span>
-                                            )}
+                {loading ? (
+                    <div className="text-center py-8 text-sm text-muted-foreground">Loading API keys…</div>
+                ) : keys.length === 0 ? (
+                    <div className="text-center py-8 border rounded-lg border-dashed">
+                        <Key className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
+                        <p className="text-sm text-muted-foreground">No API keys generated yet.</p>
+                        <p className="text-xs text-muted-foreground mt-1">API keys allow external services to authenticate with your CRM.</p>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {activeKeys.map((key) => (
+                            <div key={key.id} className="flex items-center gap-3 p-3 border rounded-lg group">
+                                <Key className="h-4 w-4 text-muted-foreground shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium">{key.name}</span>
+                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400 border-green-200 dark:border-green-800">
+                                            Active
+                                        </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                                        <code className="bg-muted px-1.5 py-0.5 rounded">{key.keyPrefix}</code>
+                                        <span>Created {key.createdAt ? new Date(key.createdAt).toLocaleDateString() : "N/A"}</span>
+                                        {key.lastUsedAt && (
+                                            <span>Last used {new Date(key.lastUsedAt).toLocaleDateString()}</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => setRevokeTarget(key)}
+                                >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                            </div>
+                        ))}
+                        {revokedKeys.length > 0 && (
+                            <div className="pt-2">
+                                <p className="text-xs text-muted-foreground mb-2">Revoked keys</p>
+                                {revokedKeys.map((key) => (
+                                    <div key={key.id} className="flex items-center gap-3 p-3 border rounded-lg opacity-50">
+                                        <Key className="h-4 w-4 text-muted-foreground shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-medium line-through">{key.name}</span>
+                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">Revoked</Badge>
+                                            </div>
+                                            <code className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{key.keyPrefix}</code>
                                         </div>
                                     </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                        onClick={() => setRevokeTarget(key)}
-                                    >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                </div>
-                            ))}
-                            {revokedKeys.length > 0 && (
-                                <div className="pt-2">
-                                    <p className="text-xs text-muted-foreground mb-2">Revoked Keys</p>
-                                    {revokedKeys.map((key) => (
-                                        <div key={key.id} className="flex items-center gap-3 p-3 border rounded-lg opacity-50">
-                                            <Key className="h-4 w-4 text-muted-foreground shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-medium line-through">{key.name}</span>
-                                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">Revoked</Badge>
-                                                </div>
-                                                <code className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{key.keyPrefix}</code>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
 
             {/* Generate Key Dialog */}
             <Dialog open={createDialogOpen} onOpenChange={(open) => !open && closeCreateDialog()}>

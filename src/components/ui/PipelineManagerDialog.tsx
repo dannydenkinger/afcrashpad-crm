@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Plus, Trash2, GripVertical, Save, Edit2, X } from "lucide-react"
 import { createPipeline, createPipelineStage, updatePipelineStage, deletePipelineStage, deletePipeline } from "@/app/pipeline/actions"
+import { toast } from "sonner"
 
 interface Stage {
     id: string
@@ -64,10 +65,13 @@ export function PipelineManagerDialog({ isOpen, onClose, pipelines, onPipelinesC
         setIsLoading(true)
         const res = await createPipeline(newPipelineName)
         if (res.success && res.pipeline) {
+            toast.success(`Pipeline "${newPipelineName}" created`)
             setNewPipelineName("")
             setIsCreatingPipeline(false)
             onPipelinesChange()
             setSelectedPipelineId(res.pipeline.id)
+        } else {
+            toast.error("Failed to create pipeline")
         }
         setIsLoading(false)
     }
@@ -83,9 +87,12 @@ export function PipelineManagerDialog({ isOpen, onClose, pipelines, onPipelinesC
 
         const res = await createPipelineStage(selectedPipelineId, newStageName, nextOrder)
         if (res.success) {
+            toast.success(`Added "${newStageName}" stage`)
             setNewStageName("")
             setIsCreatingStage(false)
             onPipelinesChange()
+        } else {
+            toast.error("Failed to add stage")
         }
         setIsLoading(false)
     }
@@ -95,8 +102,11 @@ export function PipelineManagerDialog({ isOpen, onClose, pipelines, onPipelinesC
         setIsLoading(true)
         const res = await updatePipelineStage(stageId, editingStageName, currentOrder)
         if (res.success) {
+            toast.success("Stage renamed")
             setEditingStageId(null)
             onPipelinesChange()
+        } else {
+            toast.error("Failed to rename stage")
         }
         setIsLoading(false)
     }
@@ -106,7 +116,10 @@ export function PipelineManagerDialog({ isOpen, onClose, pipelines, onPipelinesC
         setIsLoading(true)
         const res = await deletePipelineStage(stageId)
         if (res.success) {
+            toast.success("Stage deleted")
             onPipelinesChange()
+        } else {
+            toast.error("Failed to delete stage")
         }
         setIsLoading(false)
     }
@@ -116,8 +129,11 @@ export function PipelineManagerDialog({ isOpen, onClose, pipelines, onPipelinesC
         setIsLoading(true)
         const res = await deletePipeline(pipelineId)
         if (res.success) {
+            toast.success("Pipeline deleted")
             setSelectedPipelineId(null)
             onPipelinesChange()
+        } else {
+            toast.error("Failed to delete pipeline")
         }
         setIsLoading(false)
     }

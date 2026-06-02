@@ -106,7 +106,7 @@ export function HaroSettings({ settings: initial, onBack, onSaved }: Props) {
                             <Textarea
                                 value={settings.businessIntro}
                                 onChange={e => update("businessIntro", e.target.value)}
-                                placeholder="a successful military lodging provider doing over 300k/yr"
+                                placeholder="a successful business owner in the [industry] space"
                                 className="text-sm min-h-[60px]"
                             />
                             <p className="text-[10px] text-muted-foreground">Used as: &quot;I&apos;m [name], founder of [business], [this intro]&quot;</p>
