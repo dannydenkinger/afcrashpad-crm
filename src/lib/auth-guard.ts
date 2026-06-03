@@ -45,43 +45,25 @@ async function ensureUserAndWorkspace(email: string, name: string | null | undef
         .get()
 
     if (memberSnap.empty) {
-        // Create workspace + membership
+        // Single-org mode: NEVER mint a new workspace — that would orphan all
+        // existing data. Attach the user to the fixed AFCrashpad workspace,
+        // preserving their existing users.role if present.
         const now = new Date()
-        const wsName = `${userName}'s Workspace`
-        const slug = wsName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60)
-
-        const workspaceRef = await adminDb.collection("workspaces").add({
-            name: wsName,
-            slug,
-            ownerId: userId,
-            plan: "free",
-            status: "active",
-            memberCount: 1,
-            contactCount: 0,
-            createdAt: now,
-            updatedAt: now,
-        })
+        const workspaceId = process.env.DEFAULT_WORKSPACE_ID || "afcrashpad"
+        const role = userSnap.empty ? "AGENT" : (userSnap.docs[0].data().role || "AGENT")
 
         await adminDb.collection("workspace_members").add({
-            workspaceId: workspaceRef.id,
+            workspaceId,
             userId,
-            role: "OWNER",
+            role,
             status: "active",
             joinedAt: now,
             invitedBy: null,
         })
 
-        // Provision default workspace data
-        try {
-            const { provisionWorkspace } = await import("@/lib/workspace-defaults")
-            await provisionWorkspace(workspaceRef.id, wsName)
-        } catch (err) {
-            console.error("[AUTH-GUARD] Failed to provision workspace defaults:", err)
-        }
+        console.log("[AUTH-GUARD] Attached user", userId, "to fixed workspace", workspaceId)
 
-        console.log("[AUTH-GUARD] Created workspace:", workspaceRef.id, "for user:", userId)
-
-        return { userId, workspaceId: workspaceRef.id, role: "OWNER" }
+        return { userId, workspaceId, role }
     }
 
     const membership = memberSnap.docs[0].data()

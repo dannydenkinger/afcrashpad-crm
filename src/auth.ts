@@ -242,12 +242,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                             .limit(1)
                             .get()
 
-                        // Auto-create user + workspace for new Google OAuth sign-ins
+                        // Single-org mode: NEVER mint a new workspace — that would
+                        // orphan all existing data behind a stray workspaceId. Create
+                        // the user and attach them to the fixed AFCrashpad workspace as
+                        // an AGENT. Self-signup + multi-workspace creation are disabled;
+                        // the OWNER membership (afcrashpad@gmail.com) is created by the
+                        // data backfill. To restrict access entirely, gate this branch
+                        // on an email allowlist.
                         if (usersSnap.empty && account?.provider === "google") {
                             const now = new Date()
                             const userName = token.name || user?.name || email.split("@")[0]
+                            const workspaceId = process.env.DEFAULT_WORKSPACE_ID || "afcrashpad"
 
-                            // Create user doc
                             const userRef = await adminDb.collection("users").add({
                                 name: userName,
                                 email,
@@ -255,42 +261,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                                 updatedAt: now,
                             })
 
-                            // Create workspace
-                            const wsName = `${userName}'s Workspace`
-                            const slug = wsName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60)
-                            const workspaceRef = await adminDb.collection("workspaces").add({
-                                name: wsName,
-                                slug,
-                                ownerId: userRef.id,
-                                plan: "free",
-                                status: "active",
-                                memberCount: 1,
-                                contactCount: 0,
-                                createdAt: now,
-                                updatedAt: now,
-                            })
-
-                            // Create workspace membership
                             await adminDb.collection("workspace_members").add({
-                                workspaceId: workspaceRef.id,
+                                workspaceId,
                                 userId: userRef.id,
-                                role: "OWNER",
+                                role: "AGENT",
                                 status: "active",
                                 joinedAt: now,
                                 invitedBy: null,
                             })
 
-                            // Provision default workspace data (handled by auth-guard.ts fallback)
-                            try {
-                                const { provisionWorkspace } = await import("@/lib/workspace-defaults")
-                                await provisionWorkspace(workspaceRef.id, wsName)
-                            } catch (provisionErr) {
-                                console.error("[AUTH] Failed to provision workspace defaults:", provisionErr)
-                            }
-
                             token.dbUserId = userRef.id
-                            token.workspaceId = workspaceRef.id
-                            token.role = "OWNER"
+                            token.workspaceId = workspaceId
+                            token.role = "AGENT"
                         } else if (!usersSnap.empty) {
                             const userDoc = usersSnap.docs[0]
                             token.dbUserId = userDoc.id
@@ -317,7 +299,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                                 token.workspaceId = membership.workspaceId
                                 token.role = membership.role || "AGENT"
                             } else {
-                                // Fallback: legacy user without workspace membership
+                                // Existing user without a membership: pin to the fixed
+                                // workspace rather than orphaning them (auth-guard creates
+                                // the membership doc on the next getAuthSession call).
+                                token.workspaceId = process.env.DEFAULT_WORKSPACE_ID || "afcrashpad"
                                 token.role = userDoc.data().role || "AGENT"
                             }
                         } else {

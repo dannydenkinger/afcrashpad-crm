@@ -3,98 +3,25 @@
 import { requireAuth } from "@/lib/auth-guard"
 import { adminDb } from "@/lib/firebase-admin"
 import { z } from "zod"
-import { requirePlan } from "@/lib/billing/plans-server"
 
 const createWorkspaceSchema = z.object({
     name: z.string().min(1).max(80).trim(),
 })
 
 /**
- * Any signed-in user can create a new workspace. They become its OWNER.
- * No admin check — this is a self-serve action like signing up for a new
- * account. Caller is responsible for switching the session to the new
- * workspace afterward (via NextAuth's `update({ workspaceId })`).
+ * Single-org mode: creating additional workspaces is DISABLED. AFCrashpad runs
+ * as one fixed workspace (DEFAULT_WORKSPACE_ID); the WorkspaceSwitcher "create"
+ * UI is removed. Kept as a no-op so any lingering caller fails safely instead
+ * of minting a workspace that would fragment the single-org data.
  */
 export async function createWorkspace(input: { name: string }) {
     const parsed = createWorkspaceSchema.safeParse(input)
     if (!parsed.success) {
         return { success: false, error: parsed.error.issues[0].message }
     }
-    const session = await requireAuth()
-    const userId = session.user.id
-    if (!userId) return { success: false, error: "Not authenticated" }
-
-    // Multiple workspaces is Max-only. The user's currently-active
-    // workspace must be on Max for them to create another one.
-    try {
-        await requirePlan(
-            session.user.workspaceId!,
-            "max",
-            "Multiple workspaces",
-        )
-    } catch (err) {
-        return {
-            success: false,
-            error: err instanceof Error ? err.message : "Max plan required",
-        }
-    }
-
-    try {
-        const now = new Date()
-        const slugBase = parsed.data.name
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, "")
-            .slice(0, 60)
-        // Slugs are global; append a short suffix if taken.
-        let slug = slugBase || "workspace"
-        const slugSnap = await adminDb.collection("workspaces")
-            .where("slug", "==", slug)
-            .limit(1)
-            .get()
-        if (!slugSnap.empty) {
-            slug = `${slug}-${Math.random().toString(36).slice(2, 7)}`
-        }
-
-        const workspaceRef = await adminDb.collection("workspaces").add({
-            name: parsed.data.name,
-            slug,
-            ownerId: userId,
-            plan: "free",
-            status: "active",
-            memberCount: 1,
-            contactCount: 0,
-            email_credit_balance: 0,
-            marketing_tier: "none",
-            createdAt: now,
-            updatedAt: now,
-        })
-
-        // Make this user the OWNER. Stamp lastActiveAt so the next sign-in
-        // also lands here (matches the auth-callback workspace-pick logic).
-        await adminDb.collection("workspace_members").add({
-            workspaceId: workspaceRef.id,
-            userId,
-            role: "OWNER",
-            status: "active",
-            joinedAt: now,
-            lastActiveAt: now,
-            invitedBy: null,
-        })
-
-        // Seed defaults (pipelines, stages, statuses, tags). Non-fatal if it
-        // fails — the workspace is usable, defaults can be added by the user.
-        try {
-            const { provisionWorkspace } = await import("@/lib/workspace-defaults")
-            await provisionWorkspace(workspaceRef.id, parsed.data.name)
-        } catch (err) {
-            console.error("[createWorkspace] Failed to provision defaults:", err)
-        }
-
-        return { success: true, workspaceId: workspaceRef.id }
-    } catch (err) {
-        console.error("[createWorkspace] error:", err)
-        return { success: false, error: err instanceof Error ? err.message : "Failed to create workspace" }
+    return {
+        success: false,
+        error: "Creating additional workspaces is disabled in single-org mode.",
     }
 }
 

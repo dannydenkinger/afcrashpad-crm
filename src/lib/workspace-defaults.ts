@@ -38,7 +38,9 @@ export async function provisionWorkspace(
         const settingsRef = adminDb
             .collection("settings")
             .doc(`${workspaceId}_${key}`)
-        batch.set(settingsRef, { ...data, createdAt: now })
+        // merge:true so re-provisioning a workspace never clobbers existing
+        // settings (branding, integration keys, pipeline config, etc.).
+        batch.set(settingsRef, { ...data, createdAt: now }, { merge: true })
     }
     await batch.commit()
 }

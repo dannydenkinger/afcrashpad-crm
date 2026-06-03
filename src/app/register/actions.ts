@@ -28,7 +28,7 @@ export async function registerUser(data: { name: string; email: string; password
         return { success: false, error: parsed.error.issues[0].message }
     }
 
-    const { name, email, password, workspaceName } = parsed.data
+    const { name, email, password } = parsed.data
 
     const ip = await clientIp()
     const ipLimit = rateLimit(`register-ip:${ip}`, 10)
@@ -64,56 +64,14 @@ export async function registerUser(data: { name: string; email: string; password
             return { success: true }
         }
 
-        // New user — create user + workspace
-        const passwordHash = await bcrypt.hash(password, 12)
-        const now = new Date()
-
-        // Create user document (global — no workspaceId)
-        const userRef = await adminDb.collection("users").add({
-            name,
-            email,
-            passwordHash,
-            createdAt: now,
-            updatedAt: now,
-        })
-
-        // Create workspace
-        const slug = (workspaceName || name + "'s Workspace")
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, "")
-            .slice(0, 60)
-
-        const wsName = workspaceName || `${name}'s Workspace`
-        const workspaceRef = await adminDb.collection("workspaces").add({
-            name: wsName,
-            slug,
-            ownerId: userRef.id,
-            plan: "free",
-            status: "active",
-            memberCount: 1,
-            contactCount: 0,
-            email_credit_balance: 0,
-            marketing_tier: "none",
-            createdAt: now,
-            updatedAt: now,
-        })
-
-        // Create workspace membership (OWNER)
-        await adminDb.collection("workspace_members").add({
-            workspaceId: workspaceRef.id,
-            userId: userRef.id,
-            role: "OWNER",
-            status: "active",
-            joinedAt: now,
-            invitedBy: null,
-        })
-
-        // Provision default workspace data (pipeline, stages, tags, etc.)
-        const { provisionWorkspace } = await import("@/lib/workspace-defaults")
-        await provisionWorkspace(workspaceRef.id, wsName)
-
-        return { success: true }
+        // Single-org mode: self-signup is DISABLED. A new email cannot create
+        // its own account/workspace. An OWNER/ADMIN invites users from
+        // Settings → Users (which pre-creates the user doc); the invited user
+        // then sets their password via the branch above.
+        return {
+            success: false,
+            error: "Self-signup is disabled. Ask an administrator to invite you.",
+        }
     } catch (err) {
         console.error("[REGISTER] Error:", err)
         return { success: false, error: "Something went wrong. Please try again." }
