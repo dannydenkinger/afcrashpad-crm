@@ -1,5 +1,6 @@
 {
   "firestore": {
+    "database": "afcrashpadcrm",
     "indexes": "firestore.indexes.json"
   },
   "storage": {
