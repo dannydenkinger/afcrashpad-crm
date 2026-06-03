@@ -7,7 +7,7 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["googleapis", "node-ical", "firebase-admin"],
+  serverExternalPackages: ["googleapis", "node-ical", "firebase-admin", "resend", "twilio", "stripe", "@aws-sdk/client-sesv2", "@google/genai", "openai", "posthog-node"],
   experimental: {
     optimizePackageImports: ["lucide-react", "date-fns", "recharts", "framer-motion"],
     // Cache client-side navigations so going back to a visited page is instant
