@@ -10,11 +10,15 @@ Project: `afcrashpad-crm-6c216` · Named database: `afcrashpadcrm`
 A point-in-time snapshot you can restore from. Nothing else touches production until this exists.
 
 ### Easiest: Google Cloud Console (no CLI)
-1. Open: https://console.cloud.google.com/firestore/import-export?project=afcrashpad-crm-6c216
-2. Click **Export**.
-3. Database: select **afcrashpadcrm**. Export scope: **Entire database**.
-4. Destination: click **Browse** → create/select a bucket (name it `afcrashpad-crm-6c216-backups`) → **Export**.
+NOTE: AFCrashpad uses a NAMED database `afcrashpadcrm` (there is NO `(default)` database — a
+link to the default DB will say "database not found"). Use the database-scoped link:
+1. Open the database list: https://console.cloud.google.com/firestore/databases?project=afcrashpad-crm-6c216
+2. Click the **afcrashpadcrm** database.
+3. Left sidebar → **Import/Export** → **Export**.
+4. Scope: **Entire database**. Destination: **Browse** → create/select bucket `afcrashpad-crm-6c216-backups` → **Export**.
 5. **Worked?** The **Operations** tab shows the export with state **Succeeded**.
+
+   (Direct link: https://console.cloud.google.com/firestore/databases/afcrashpadcrm/import-export?project=afcrashpad-crm-6c216 )
 
 ### Or via CLI (if you have gcloud installed)
 ```bash
@@ -38,9 +42,10 @@ firebase login
 
 firebase deploy --only firestore:indexes --project afcrashpad-crm-6c216
 
-firebase firestore:indexes --project afcrashpad-crm-6c216
+firebase firestore:indexes --project afcrashpad-crm-6c216 --database afcrashpadcrm
 ```
-- If asked to **delete** any indexes: there should be none — review before confirming.
+- If asked to **delete** any indexes: choose **No** — those are your existing single-tenant indexes; keep them so `main` stays a working rollback.
+- NOTE: `firestore:indexes` needs `--database afcrashpadcrm` (without it, it 404s on the nonexistent `(default)` DB).
 - **Worked?** The last command lists indexes and they read **READY/Enabled** (not "Building"). Large index sets can take a few minutes to finish building.
 - ⚠️ Run exactly `--only firestore:indexes`. Do **not** run a bare `firebase deploy` (that would also push storage rules, which we haven't reviewed yet).
 

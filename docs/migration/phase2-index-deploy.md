@@ -27,8 +27,9 @@ firebase deploy --only firestore:indexes --project afcrashpad-crm-6c216
 #    (AFCrashpad had no indexes). Review the list before confirming.
 
 # 4. Confirm every index is Enabled (not Building) BEFORE the backfill verify / smoke test
-firebase firestore:indexes --project afcrashpad-crm-6c216
-#    (or Firebase console → Firestore → afcrashpadcrm → Indexes)
+#    NOTE: requires --database (without it, defaults to nonexistent (default) DB → 404)
+firebase firestore:indexes --project afcrashpad-crm-6c216 --database afcrashpadcrm
+#    (or console: https://console.firebase.google.com/project/afcrashpad-crm-6c216/firestore/databases/afcrashpadcrm/indexes )
 ```
 
 ## Important notes
