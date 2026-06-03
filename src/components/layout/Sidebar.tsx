@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import NextImage from "next/image"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Users, Calendar, Settings, ChevronLeft, ChevronRight, Megaphone, LayoutGrid, MessageSquare, X, Wallet, LogOut, CheckSquare, FileText, Workflow, UserCircle } from "lucide-react"
+import { LayoutDashboard, Users, Calendar, Settings, ChevronLeft, ChevronRight, Megaphone, LayoutGrid, MessageSquare, X, Wallet, LogOut, CheckSquare, FileText, Workflow, UserCircle, Calculator } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useSession, signOut } from "next-auth/react"
@@ -28,6 +28,7 @@ const navItems: NavItem[] = [
     ...(FEATURES.DOCUMENTS ? [{ name: "Documents", href: "/documents", icon: FileText }] : []),
     { name: "Communications", href: "/communications", icon: MessageSquare },
     { name: "Tasks", href: "/tasks", icon: CheckSquare },
+    { name: "Tools", href: "/tools", icon: Calculator },
     ...(FEATURES.FINANCE || FEATURES.MARKETING ? [{ separator: "Finance & Growth" } as NavItem] : []),
     ...(FEATURES.FINANCE ? [{ name: "Finance", href: "/finance", icon: Wallet }] : []),
     ...(FEATURES.MARKETING ? [{ name: "Marketing", href: "/marketing", icon: Megaphone }] : []),
