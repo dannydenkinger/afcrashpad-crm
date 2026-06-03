@@ -5,13 +5,11 @@ import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { getCurrentUserRole } from "./users/actions"
 import {
-    CreditCard,
     Database,
     GitBranch,
     Palette,
     Settings as SettingsIcon,
     Sparkles,
-    Star,
     User,
     Users,
 } from "lucide-react"
@@ -37,10 +35,8 @@ const ITEMS: NavItem[] = [
     { href: "/settings/workspace", label: "Workspace", Icon: SettingsIcon, adminOnly: true },
     { href: "/settings/branding", label: "Branding", Icon: Palette, adminOnly: true },
     { href: "/settings/team", label: "Team", Icon: Users, adminOnly: true },
-    { href: "/settings/billing", label: "Billing", Icon: CreditCard, adminOnly: true },
     { href: "/settings/integrations", label: "Integrations", Icon: GitBranch, adminOnly: true },
     { href: "/settings/data", label: "Data", Icon: Database, adminOnly: true },
-    { href: "/settings/reputation", label: "Reputation", Icon: Star, adminOnly: true },
 ]
 
 export function SettingsSubNav() {

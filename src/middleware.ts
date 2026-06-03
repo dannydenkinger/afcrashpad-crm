@@ -8,10 +8,8 @@ export const runtime = "nodejs"
 const publicRoutes = [
     "/",
     "/login",
-    "/register",
     "/privacy",
     "/terms",
-    "/pricing",
     "/verify-email",
 ]
 

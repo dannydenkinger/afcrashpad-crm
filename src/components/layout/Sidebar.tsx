@@ -4,8 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import NextImage from "next/image"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Users, Calendar, Settings, ChevronLeft, ChevronRight, Megaphone, LayoutGrid, MessageSquare, X, Wallet, LogOut, CheckSquare, FileText, Workflow, HelpCircle, Activity, BookOpen, UserCircle, MessageCircle } from "lucide-react"
-import { FeedbackDialog } from "@/components/FeedbackDialog"
+import { LayoutDashboard, Users, Calendar, Settings, ChevronLeft, ChevronRight, Megaphone, LayoutGrid, MessageSquare, X, Wallet, LogOut, CheckSquare, FileText, Workflow, UserCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useSession, signOut } from "next-auth/react"
@@ -57,7 +56,6 @@ function SidebarInner({ onNavigate, className, mobileCollapsed }: SidebarProps) 
     const [displayName, setDisplayName] = useState<string | null>(null)
     const [branding, setBranding] = useState<{ logoUrl?: string; primaryColor?: string; companyName?: string } | null>(null)
     const [overdueCount, setOverdueCount] = useState(0)
-    const [feedbackOpen, setFeedbackOpen] = useState(false)
     const gPressedRef = useRef(false)
 
     // G-key navigation shortcuts
@@ -265,36 +263,12 @@ function SidebarInner({ onNavigate, className, mobileCollapsed }: SidebarProps) 
                         </Link>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                        <Link href="/help">
-                            <HelpCircle className="h-4 w-4 mr-2" />
-                            Help &amp; docs
-                        </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                        <Link href="/changelog">
-                            <BookOpen className="h-4 w-4 mr-2" />
-                            What&apos;s new
-                        </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                        <Link href="/status">
-                            <Activity className="h-4 w-4 mr-2" />
-                            System status
-                        </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setFeedbackOpen(true)}>
-                        <MessageCircle className="h-4 w-4 mr-2" />
-                        Share feedback
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })} className="text-destructive focus:text-destructive">
                         <LogOut className="h-4 w-4 mr-2" />
                         Sign Out
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
-            <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
         </div>
     )
 }

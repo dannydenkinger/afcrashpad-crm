@@ -46,3 +46,10 @@ next-env.d.ts
 
 # Local Netlify folder
 .netlify
+
+# iCloud Drive conflict-copy directories (this project sits on an iCloud-synced
+# Desktop, which creates "name 2"/"name 3" duplicates). Never commit them.
+* 2/
+* 3/
+* copy/
+* copy */

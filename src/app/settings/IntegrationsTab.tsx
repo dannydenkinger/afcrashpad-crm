@@ -212,26 +212,6 @@ export function IntegrationsTab({
                     library for system notifications when neither is set up. */}
 
                 <IntegrationRow
-                    icon={<MessageSquare className="h-5 w-5" />}
-                    name="Zernio (Social Planner)"
-                    accent="violet"
-                    description={
-                        status.zernio.connected
-                            ? `${status.zernio.accountCount} social ${status.zernio.accountCount === 1 ? "account" : "accounts"} linked via Zernio.`
-                            : "Schedule posts to Facebook, Instagram, X, LinkedIn, TikTok and more via Zernio."
-                    }
-                    connected={status.zernio.connected}
-                    action={
-                        <a href="/settings/integrations/zernio">
-                            <Button variant="outline" size="sm">
-                                {status.zernio.connected ? "Manage" : "Set up"}
-                                <ExternalLink className="h-3.5 w-3.5 ml-1.5" />
-                            </Button>
-                        </a>
-                    }
-                />
-
-                <IntegrationRow
                     icon={<Mail className="h-5 w-5" />}
                     name="Amazon SES"
                     accent="amber"

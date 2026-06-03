@@ -166,15 +166,6 @@ function SignInContent() {
                             Continue with Google
                         </button>
 
-                        <p className="animate-element animate-delay-900 text-center text-sm text-muted-foreground">
-                            New to the platform?{" "}
-                            <button
-                                onClick={() => router.push("/register")}
-                                className="text-violet-400 hover:underline transition-colors"
-                            >
-                                Create Account
-                            </button>
-                        </p>
                     </div>
                 </div>
             </section>
