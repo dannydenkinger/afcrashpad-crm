@@ -297,12 +297,17 @@ async function verify() {
         else if (total) ok(`${col.id}: ${scoped}/${total}`)
     }
 
-    // collectionGroup targets: filtered count == raw count (no invisible leaves).
+    // collectionGroup targets: every leaf carries workspaceId. Fetch via an
+    // UNFILTERED collectionGroup query (no custom index needed) and check in
+    // memory — avoids requiring a single-field COLLECTION_GROUP index on
+    // workspaceId (which the app's real queries don't need, since they filter
+    // with a composite index).
     for (const sub of ["messages", "documents", "stages", "document_folders"]) {
-        const raw = (await adminDb.collectionGroup(sub).count().get()).data().count
-        const scoped = (await adminDb.collectionGroup(sub).where("workspaceId", "==", WORKSPACE_ID).count().get()).data().count
+        const snap = await adminDb.collectionGroup(sub).get()
+        const raw = snap.size
+        const scoped = snap.docs.filter((d) => d.data().workspaceId === WORKSPACE_ID).length
         if (raw !== scoped) fail(`collectionGroup(${sub}): ${scoped}/${raw} carry workspaceId`)
-        else ok(`collectionGroup(${sub}): ${scoped}/${raw}`)
+        else ok(`collectionGroup(${sub}): ${scoped}/${raw} (${raw} leaves)`)
     }
 
     // Memberships ≥ real users (email-bearing); settings copied; workspace on max.
@@ -310,9 +315,14 @@ async function verify() {
     const realUsers = usersSnap.docs.filter((u) => typeof u.data().email === "string" && u.data().email).length
     const mem = (await adminDb.collection("workspace_members").where("workspaceId", "==", WORKSPACE_ID).where("status", "==", "active").count().get()).data().count
     if (mem < realUsers) fail(`memberships ${mem} < real users ${realUsers}`); else ok(`memberships ${mem} ≥ real users ${realUsers}`)
+    // Only flag a settings key if a BARE doc exists but its workspace-scoped
+    // copy is missing. Keys with no bare doc (never configured in AFCrashpad)
+    // are correctly absent — Vesta uses defaults for those.
     for (const key of SETTINGS_KEYS) {
-        const exists = (await adminDb.collection("settings").doc(`${WORKSPACE_ID}_${key}`).get()).exists
-        if (!exists) fail(`settings/${WORKSPACE_ID}_${key} missing`)
+        const bare = (await adminDb.collection("settings").doc(key).get()).exists
+        const scoped = (await adminDb.collection("settings").doc(`${WORKSPACE_ID}_${key}`).get()).exists
+        if (bare && !scoped) fail(`settings/${WORKSPACE_ID}_${key} missing (bare settings/${key} exists but wasn't copied)`)
+        else if (scoped) ok(`settings/${WORKSPACE_ID}_${key}`)
     }
     const ws = (await adminDb.collection("workspaces").doc(WORKSPACE_ID).get()).data()
     if (ws?.plan !== "max") fail(`workspace plan is ${ws?.plan}, expected max`); else ok(`workspace plan=max`)
