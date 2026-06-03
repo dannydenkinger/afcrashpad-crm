@@ -176,8 +176,15 @@ async function run() {
     // ── Step 2: workspace_members for every user (idempotent) ──
     console.log("\n── Step 2: memberships ──")
     const users = await adminDb.collection("users").get()
+    // Only REAL accounts have an email (sign-in looks users up by email). Some
+    // docs in `users` are stray preference fragments (only onboardingCompleted /
+    // setupChecklistDismissed, written under a non-user id by old client code) —
+    // they are NOT real users and must not get memberships.
+    const realUsers = users.docs.filter((u) => typeof u.data().email === "string" && u.data().email)
+    const junk = users.size - realUsers.length
+    if (junk) console.log(`  ⏭ skipping ${junk} non-user pref fragment(s) in users/ (no email)`)
     let members = 0
-    for (const u of users.docs) {
+    for (const u of realUsers) {
         const exists = await adminDb.collection("workspace_members")
             .where("userId", "==", u.id).where("workspaceId", "==", WORKSPACE_ID).limit(1).get()
         if (!exists.empty) continue
@@ -193,7 +200,7 @@ async function run() {
             console.log(`  ✓ member ${email} (${role})`)
         }
     }
-    console.log(`  ${members} membership(s) ${DRY_RUN ? "would be " : ""}created (of ${users.size} users)`)
+    console.log(`  ${members} membership(s) ${DRY_RUN ? "would be " : ""}created (of ${realUsers.length} real user(s); ${users.size} total docs)`)
 
     // ── Step 3: stamp every tenant-scoped top-level collection (DYNAMIC) ──
     // Discover collections at runtime so we can never miss one (the verifier's
@@ -248,12 +255,12 @@ async function run() {
     // ── Step 6: derived counters ──
     console.log("\n── Step 6: counters ──")
     const contactCount = (await adminDb.collection("contacts").count().get()).data().count
-    if (DRY_RUN) console.log(`  would set contactCount=${contactCount}, memberCount=${users.size}`)
+    if (DRY_RUN) console.log(`  would set contactCount=${contactCount}, memberCount=${realUsers.length}`)
     else if (APPLY) {
         await adminDb.collection("workspaces").doc(WORKSPACE_ID).set(
-            { contactCount, memberCount: users.size }, { merge: true },
+            { contactCount, memberCount: realUsers.length }, { merge: true },
         )
-        console.log(`  ✓ contactCount=${contactCount}, memberCount=${users.size}`)
+        console.log(`  ✓ contactCount=${contactCount}, memberCount=${realUsers.length}`)
     }
 
     // ── Optional post-cutover cleanup: delete bare settings (deep-equal gated) ──
@@ -298,10 +305,11 @@ async function verify() {
         else ok(`collectionGroup(${sub}): ${scoped}/${raw}`)
     }
 
-    // Memberships == users; settings copied; workspace on max.
-    const users = (await adminDb.collection("users").count().get()).data().count
+    // Memberships ≥ real users (email-bearing); settings copied; workspace on max.
+    const usersSnap = await adminDb.collection("users").get()
+    const realUsers = usersSnap.docs.filter((u) => typeof u.data().email === "string" && u.data().email).length
     const mem = (await adminDb.collection("workspace_members").where("workspaceId", "==", WORKSPACE_ID).where("status", "==", "active").count().get()).data().count
-    if (mem < users) fail(`memberships ${mem} < users ${users}`); else ok(`memberships ${mem} ≥ users ${users}`)
+    if (mem < realUsers) fail(`memberships ${mem} < real users ${realUsers}`); else ok(`memberships ${mem} ≥ real users ${realUsers}`)
     for (const key of SETTINGS_KEYS) {
         const exists = (await adminDb.collection("settings").doc(`${WORKSPACE_ID}_${key}`).get()).exists
         if (!exists) fail(`settings/${WORKSPACE_ID}_${key} missing`)
