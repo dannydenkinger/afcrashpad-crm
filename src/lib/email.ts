@@ -35,10 +35,7 @@ export async function sendEmail({
     subject: string;
     html: string;
 }) {
-    const from = process.env.RESEND_FROM_EMAIL;
-    if (!from) {
-        throw new Error("RESEND_FROM_EMAIL is not set — refusing to send from placeholder address");
-    }
+    const from = process.env.RESEND_FROM_EMAIL || "AFCrashpad <noreply@afcrashpad.com>";
 
     const { data, error } = await getResend().emails.send({
         from,
@@ -82,10 +79,7 @@ export async function sendTrackedEmail({
         html,
     });
 
-    const from = process.env.RESEND_FROM_EMAIL;
-    if (!from) {
-        throw new Error("RESEND_FROM_EMAIL is not set — refusing to send from placeholder address");
-    }
+    const from = process.env.RESEND_FROM_EMAIL || "AFCrashpad <noreply@afcrashpad.com>";
 
     const { data, error } = await getResend().emails.send({
         from,

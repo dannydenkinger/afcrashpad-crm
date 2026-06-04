@@ -117,7 +117,7 @@ export const DEFAULT_HARO_SETTINGS: HaroSettings = {
     linkedIn: "",
     instagram: "",
     twitter: "",
-    website: "",
+    website: "https://afcrashpad.com",
     headshotUrl: "",
     signoff: "",
     expertiseTopics: [],

@@ -9,13 +9,13 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Vesta CRM",
-  description: "Modern sales CRM for growing teams",
+  title: "AFCrashpad CRM",
+  description: "CRM for Air Force crashpad and military lodging management",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Vesta CRM",
+    title: "AFCrashpad CRM",
   },
   other: {
     "mobile-web-app-capable": "yes",

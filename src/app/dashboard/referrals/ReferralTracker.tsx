@@ -38,7 +38,7 @@ const STATUS_CONFIG: Record<ReferralStatus, { label: string; color: string; acce
     booked: { label: "Signed", color: "bg-violet-500/10 text-violet-500 border-violet-500/20", accent: "bg-violet-500" },
     // Storage key kept as "active_tenant" for back-compat with existing data
     // — display label is now generic.
-    active_tenant: { label: "Active", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20", accent: "bg-emerald-500" },
+    active_tenant: { label: "Active Tenant", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20", accent: "bg-emerald-500" },
     paid: { label: "Paid", color: "bg-emerald-500/10 text-emerald-600 border-emerald-600/30", accent: "bg-emerald-600" },
     lost: { label: "Lost", color: "bg-red-500/10 text-red-500 border-red-500/20", accent: "bg-red-500" },
 }
@@ -270,7 +270,7 @@ export function ReferralTracker({ dateFilter, viewContext = "referrals" }: { dat
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{data.totalReferrals}</div>
-                            <p className="text-xs text-muted-foreground mt-1">{data.conversionRate}% convert to active</p>
+                            <p className="text-xs text-muted-foreground mt-1">{data.conversionRate}% convert to active tenant</p>
                         </CardContent>
                     </Card>
                     <Card className="border-none shadow-sm bg-card/40 backdrop-blur-md">
@@ -321,7 +321,7 @@ export function ReferralTracker({ dateFilter, viewContext = "referrals" }: { dat
                                     </Badge>
                                 </div>
                             ))}
-                            <span className="text-muted-foreground ml-1">· Payout unlocks at Active</span>
+                            <span className="text-muted-foreground ml-1">· Payout unlocks at Active Tenant</span>
                         </div>
                     </CardContent>
                 </Card>
@@ -519,7 +519,7 @@ export function ReferralTracker({ dateFilter, viewContext = "referrals" }: { dat
                             }
                             description={
                                 viewContext === "payouts"
-                                    ? "Payouts appear here when a referred contact becomes an active customer. Record referrals first so they can convert into payouts."
+                                    ? "Payouts appear here when a referred contact becomes an active tenant. Record referrals first so they can convert into payouts."
                                     : "Record referrals when past customers recommend friends. Once they convert, payouts unlock automatically."
                             }
                             action={
@@ -684,7 +684,7 @@ export function ReferralTracker({ dateFilter, viewContext = "referrals" }: { dat
                                                             <SelectItem value="pending">Pending</SelectItem>
                                                             <SelectItem value="contacted">Contacted</SelectItem>
                                                             <SelectItem value="booked">Signed</SelectItem>
-                                                            <SelectItem value="active_tenant">Active</SelectItem>
+                                                            <SelectItem value="active_tenant">Active Tenant</SelectItem>
                                                             <SelectItem value="lost">Lost</SelectItem>
                                                         </SelectContent>
                                                     </Select>

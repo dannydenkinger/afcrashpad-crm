@@ -6,7 +6,7 @@ import type { MetadataRoute } from "next"
  * indexed — they're also excluded by robots.ts.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vesta-crm.com"
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://afcrashpad.com"
     const lastModified = new Date()
 
     const routes: Array<{

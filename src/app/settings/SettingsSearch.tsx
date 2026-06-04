@@ -1,45 +1,45 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { Search, X } from "lucide-react"
 
-const SETTINGS_MAP: Record<string, { tab: string; keywords: string[] }> = {
-    "profile": { tab: "profile", keywords: ["profile", "name", "email", "avatar", "account", "personal"] },
-    "notifications": { tab: "profile", keywords: ["notification", "push", "email alerts", "preferences"] },
-    "branding": { tab: "profile", keywords: ["branding", "logo", "color", "company name", "brand"] },
-    "workspace": { tab: "workspace", keywords: ["workspace", "bases", "lead sources", "tags", "status", "accommodations", "pipeline", "priority"] },
-    "users": { tab: "users", keywords: ["users", "team", "roles", "permissions", "invite", "admin", "owner", "agent"] },
-    "integrations": { tab: "integrations", keywords: ["integrations", "google", "calendar", "ical", "sync", "api", "connect"] },
-    "automations": { tab: "automations", keywords: ["automations", "email template", "sequence", "scheduled", "workflow", "follow-up", "reminders"] },
-    "custom-fields": { tab: "custom-fields", keywords: ["custom fields", "fields", "metadata", "properties"] },
-    "api-keys": { tab: "api-keys", keywords: ["api keys", "api", "token", "secret", "key"] },
-    "reports": { tab: "reports", keywords: ["reports", "scheduled reports", "export", "analytics"] },
-    "workflows": { tab: "workflows", keywords: ["workflows", "automation", "rules", "triggers"] },
-    "assignment": { tab: "assignment", keywords: ["assignment", "auto-assign", "round robin", "rules"] },
-    "audit": { tab: "audit", keywords: ["audit", "log", "history", "changes", "security"] },
-    "data": { tab: "data", keywords: ["data", "export", "csv", "backup"] },
+/**
+ * Quick settings search. Each entry maps a set of keywords to a real
+ * settings route — selecting (or matching) one navigates there. Settings
+ * is now a set of routed sub-pages, so we push the URL rather than clicking
+ * a tab trigger.
+ */
+const SETTINGS_MAP: Record<string, { path: string; keywords: string[] }> = {
+    "profile": { path: "/settings/profile", keywords: ["profile", "name", "email", "avatar", "account", "personal"] },
+    "notifications": { path: "/settings/profile", keywords: ["notification", "push", "email alerts", "preferences"] },
+    "branding": { path: "/settings/branding", keywords: ["branding", "logo", "color", "company name", "brand"] },
+    "workspace": { path: "/settings/workspace", keywords: ["workspace", "lead sources", "tags", "status", "pipeline", "priority"] },
+    "bases": { path: "/settings/bases", keywords: ["bases", "military bases", "base", "lodging", "zip code", "seasonal rate", "periods"] },
+    "accommodations": { path: "/settings/workspace/statuses", keywords: ["accommodations", "special accommodations", "pets", "spouse", "dependents"] },
+    "statuses": { path: "/settings/workspace/statuses", keywords: ["statuses", "custom statuses", "lifecycle", "lead", "active client"] },
+    "users": { path: "/settings/team", keywords: ["users", "team", "roles", "permissions", "invite", "admin", "owner", "agent"] },
+    "integrations": { path: "/settings/integrations/services", keywords: ["integrations", "google", "calendar", "ical", "sync", "api", "connect"] },
+    "automations": { path: "/settings/automations", keywords: ["automations", "email template", "sequence", "scheduled", "workflow", "follow-up", "reminders"] },
+    "custom-fields": { path: "/settings/workspace/fields", keywords: ["custom fields", "fields", "metadata", "properties"] },
+    "api-keys": { path: "/settings/integrations/webhooks", keywords: ["api keys", "api", "token", "secret", "key", "webhooks"] },
+    "reports": { path: "/settings/data", keywords: ["reports", "scheduled reports", "export", "analytics"] },
+    "audit": { path: "/settings/team", keywords: ["audit", "log", "history", "changes", "security"] },
+    "data": { path: "/settings/data", keywords: ["data", "export", "csv", "backup", "import"] },
 }
 
 export function SettingsSearch() {
     const [query, setQuery] = useState("")
+    const router = useRouter()
 
     const handleSearch = useCallback((value: string) => {
         setQuery(value)
-        if (!value.trim()) return
-
-        const term = value.toLowerCase()
-        for (const [, config] of Object.entries(SETTINGS_MAP)) {
-            if (config.keywords.some(k => k.includes(term))) {
-                // Find and click the matching tab trigger
-                const trigger = document.querySelector(`[role="tab"][value="${config.tab}"]`) as HTMLElement
-                if (trigger) {
-                    trigger.click()
-                    trigger.scrollIntoView({ behavior: "smooth", block: "nearest" })
-                }
-                return
-            }
-        }
     }, [])
+
+    const go = useCallback((path: string) => {
+        setQuery("")
+        router.push(path)
+    }, [router])
 
     const matches = query.trim()
         ? Object.entries(SETTINGS_MAP).filter(([, config]) =>
@@ -55,6 +55,7 @@ export function SettingsSearch() {
                 placeholder="Search settings..."
                 value={query}
                 onChange={(e) => handleSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && matches.length > 0) go(matches[0][1].path) }}
                 className="w-full sm:w-72 h-9 pl-9 pr-8 text-sm rounded-md border bg-muted/20 focus:outline-none focus:ring-1 focus:ring-ring"
             />
             {query && (
@@ -71,11 +72,7 @@ export function SettingsSearch() {
                         <button
                             key={key}
                             className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 capitalize"
-                            onClick={() => {
-                                const trigger = document.querySelector(`[role="tab"][value="${config.tab}"]`) as HTMLElement
-                                if (trigger) trigger.click()
-                                setQuery("")
-                            }}
+                            onClick={() => go(config.path)}
                         >
                             {key.replace("-", " ")}
                             <span className="text-xs text-muted-foreground ml-2">

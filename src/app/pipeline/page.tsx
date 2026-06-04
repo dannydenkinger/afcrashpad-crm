@@ -111,6 +111,8 @@ function PipelineContent() {
     const [isSaving, setIsSaving] = useState(false)
     const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
     const [allUsers, setAllUsers] = useState<any[]>([])
+    const [baseNames, setBaseNames] = useState<string[]>([])
+    const [specialAccommodations, setSpecialAccommodations] = useState<{ id: string; name: string }[]>([])
     const [priorityRanges, setPriorityRanges] = useState({ urgentDays: 14, soonDays: 30 })
     const [draggedDealId, setDraggedDealId] = useState<string | null>(null)
     const [dragOverStageId, setDragOverStageId] = useState<string | null>(null)
@@ -223,6 +225,8 @@ function PipelineContent() {
                 }
             }
             setAllUsers(res.users || []);
+            setBaseNames(res.baseNames || []);
+            setSpecialAccommodations(res.specialAccommodations || []);
             setPriorityRanges(res.priorityRanges || { urgentDays: 14, soonDays: 30 });
             setIsLoading(false);
             if (res.advancedCount && res.advancedCount > 0) {
@@ -338,6 +342,7 @@ function PipelineContent() {
         margin: 0,
         notes: '',
         assigneeId: null,
+        specialAccommodationId: null,
         contactId: null as string | null,
         assignee: session?.user?.name ? session.user.name.split(" ").map((w: string) => w[0]).join("").toUpperCase() : "—"
     });
@@ -601,6 +606,8 @@ function PipelineContent() {
                         margin: selectedDeal.margin,
                         notes: selectedDeal.notes,
                         assigneeId: selectedDeal.assigneeId,
+                        base: selectedDeal.base,
+                        specialAccommodationId: selectedDeal.specialAccommodationId,
                     }, activePipelineKey),
                     { onRetry: (attempt) => toast.info(`Retrying... (attempt ${attempt + 1}/4)`, { id: "retry-toast", duration: 2000 }) }
                 );
@@ -629,6 +636,8 @@ function PipelineContent() {
                     assigneeId: selectedDeal.assigneeId ?? null,
                 };
                 if (pipelineStageId) payload.pipelineStageId = String(pipelineStageId);
+                payload.base = selectedDeal.base != null ? String(selectedDeal.base) : "";
+                payload.specialAccommodationId = selectedDeal.specialAccommodationId ?? null;
                 if (selectedDeal.notes != null) payload.notes = String(selectedDeal.notes);
                 if (selectedDeal.contactId != null) payload.contactId = String(selectedDeal.contactId);
                 if (Array.isArray(selectedDeal.tags)) payload.tagIds = selectedDeal.tags.map((t: any) => String(t.tagId || t.id));
@@ -672,6 +681,7 @@ function PipelineContent() {
     const [showPriority, setShowPriority] = useState(true)
     const [showDates, setShowDates] = useState(true)
     const [showEndDate, setShowEndDate] = useState(false)
+    const [showBase, setShowBase] = useState(false)
     const [showLengthOfStay, setShowLengthOfStay] = useState(false)
     const [showQuickActions, setShowQuickActions] = useState(true)
     /**
@@ -692,6 +702,40 @@ function PipelineContent() {
     useEffect(() => {
         try { localStorage.setItem("pipeline:kanban-density", kanbanDensity) } catch { /* ignore */ }
     }, [kanbanDensity])
+
+    // Persist the rest of the pipeline view options (view mode, card-field
+    // toggles, sort) across navigation/reloads. Restored once on mount; the
+    // persist effect skips its first run so it can't overwrite saved values
+    // with the initial defaults before the restore applies.
+    const viewOptionsFirstPersist = useRef(true)
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        try {
+            const raw = localStorage.getItem("pipeline:view-options")
+            if (raw) {
+                const v = JSON.parse(raw)
+                if (v.viewMode === "kanban" || v.viewMode === "list") setViewMode(v.viewMode)
+                if (typeof v.showValue === "boolean") setShowValue(v.showValue)
+                if (typeof v.showPriority === "boolean") setShowPriority(v.showPriority)
+                if (typeof v.showDates === "boolean") setShowDates(v.showDates)
+                if (typeof v.showEndDate === "boolean") setShowEndDate(v.showEndDate)
+                if (typeof v.showBase === "boolean") setShowBase(v.showBase)
+                if (typeof v.showLengthOfStay === "boolean") setShowLengthOfStay(v.showLengthOfStay)
+                if (typeof v.showQuickActions === "boolean") setShowQuickActions(v.showQuickActions)
+                if (v.sortConfig === null || (v.sortConfig && typeof v.sortConfig === "object")) setSortConfig(v.sortConfig)
+            }
+        } catch { /* ignore */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        if (viewOptionsFirstPersist.current) { viewOptionsFirstPersist.current = false; return }
+        try {
+            localStorage.setItem("pipeline:view-options", JSON.stringify({
+                viewMode, showValue, showPriority, showDates, showEndDate, showBase, showLengthOfStay, showQuickActions, sortConfig,
+            }))
+        } catch { /* ignore */ }
+    }, [viewMode, showValue, showPriority, showDates, showEndDate, showBase, showLengthOfStay, showQuickActions, sortConfig])
 
     const currentPipeline = pipelines[activePipelineKey] || { name: "", stages: [], deals: [] }
     const pipelineKeys = Object.keys(pipelines)
@@ -764,6 +808,7 @@ function PipelineContent() {
         showPriority,
         showDates,
         showEndDate,
+        showBase,
         showLengthOfStay,
         showQuickActions,
         sortConfig,
@@ -779,6 +824,7 @@ function PipelineContent() {
         setShowPriority(state.showPriority)
         setShowDates(state.showDates)
         setShowEndDate(state.showEndDate)
+        setShowBase(state.showBase ?? false)
         setShowLengthOfStay(state.showLengthOfStay)
         setShowQuickActions(state.showQuickActions)
         setSortConfig(state.sortConfig)
@@ -915,6 +961,8 @@ function PipelineContent() {
                     currentPipeline={currentPipeline}
                     activePipelineKey={activePipelineKey}
                     allUsers={allUsers}
+                    baseNames={baseNames}
+                    specialAccommodations={specialAccommodations}
 
                     userRole={userRole}
                     session={session}
@@ -1016,10 +1064,13 @@ function PipelineContent() {
                                 Show Priority Badge
                             </DropdownMenuCheckboxItem>
                             <DropdownMenuCheckboxItem checked={showDates} onCheckedChange={setShowDates} className="cursor-pointer">
-                                Show Start Date
+                                Show Check-in Date
                             </DropdownMenuCheckboxItem>
                             <DropdownMenuCheckboxItem checked={showEndDate} onCheckedChange={setShowEndDate} className="cursor-pointer">
-                                Show End Date
+                                Show Check-out Date
+                            </DropdownMenuCheckboxItem>
+                            <DropdownMenuCheckboxItem checked={showBase} onCheckedChange={setShowBase} className="cursor-pointer">
+                                Show Base Location
                             </DropdownMenuCheckboxItem>
                             <DropdownMenuCheckboxItem checked={showLengthOfStay} onCheckedChange={setShowLengthOfStay} className="cursor-pointer">
                                 Show Duration
@@ -1359,7 +1410,7 @@ function PipelineContent() {
                         mobileSelectedStage={mobileSelectedStage}
                         setMobileSelectedStage={setMobileSelectedStage}
                         density={kanbanDensity}
-                        showBase={false}
+                        showBase={showBase}
                         showValue={showValue}
                         showPriority={showPriority}
                         showDates={showDates}
@@ -1484,7 +1535,7 @@ function PipelineContent() {
 
                         <ListView
                             sortedDeals={sortedDeals}
-                            showBase={false}
+                            showBase={showBase}
                             showValue={showValue}
                             showPriority={showPriority}
                             showDates={showDates}
@@ -1510,6 +1561,8 @@ function PipelineContent() {
                 currentPipeline={currentPipeline}
                 activePipelineKey={activePipelineKey}
                 allUsers={allUsers}
+                baseNames={baseNames}
+                specialAccommodations={specialAccommodations}
                 userRole={userRole}
                 session={session}
                 isSaving={isSaving}

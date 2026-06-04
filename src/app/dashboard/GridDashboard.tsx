@@ -269,12 +269,12 @@ function renderWidget(id: string, ctx: RenderCtx): React.ReactNode {
         case "kpi-active-customers":
             return (
                 <KpiInline
-                    label="Active customers"
+                    label="Active Tenants"
                     value={ctx.kpi.activeStayCount}
                     sublabel={`${ctx.kpi.totalContacts} total contacts`}
                     Icon={Home}
                     accent="primary"
-                    onClick={() => ctx.router.push("/contacts?status=Customer")}
+                    onClick={() => ctx.router.push("/contacts?status=Active+Stay")}
                 />
             )
         case "kpi-closed-profit":
@@ -416,8 +416,8 @@ function renderWidget(id: string, ctx: RenderCtx): React.ReactNode {
         case "bases":
             return (
                 <DistributionList
-                    title="Inquiry tracker"
-                    description="Deals by location"
+                    title="Inquiry Tracker"
+                    description="Deals per Military Base"
                     Icon={Workflow}
                     accent="rose"
                     items={ctx.baseData.map((b) => ({

@@ -137,7 +137,7 @@ export async function recordCommission(opportunityId: string, agentId: string) {
             opportunityId,
             dealName: oppData.name || `${contactName}'s Deal`,
             contactName,
-            base: null,
+            base: oppData.militaryBase || null,
             agentId,
             agentName,
             dealValue,

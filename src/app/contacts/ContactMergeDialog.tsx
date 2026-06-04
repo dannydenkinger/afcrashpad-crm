@@ -38,6 +38,7 @@ const MERGE_FIELDS = [
     { key: "name", label: "Name" },
     { key: "email", label: "Email" },
     { key: "phone", label: "Phone" },
+    { key: "militaryBase", label: "Military Base" },
     { key: "businessName", label: "Business Name" },
     { key: "status", label: "Status" },
 ]

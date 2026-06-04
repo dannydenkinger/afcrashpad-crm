@@ -4,7 +4,7 @@ import { AdminNav } from "./AdminNav"
 export const dynamic = "force-dynamic"
 
 export const metadata = {
-    title: "Admin · Vesta",
+    title: "Admin · AFCrashpad",
 }
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

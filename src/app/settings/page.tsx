@@ -121,7 +121,7 @@ const GROUPS: TileGroup[] = [
                 href: "/settings/integrations/webhooks",
                 Icon: Webhook,
                 title: "Webhooks & API",
-                desc: "POST CRM events to your own systems — Vesta JSON envelope or Slack message format. Generate workspace-scoped REST API keys with the embed snippet.",
+                desc: "POST CRM events to your own systems — AFCrashpad JSON envelope or Slack message format. Generate workspace-scoped REST API keys with the embed snippet.",
                 accent: "sky",
                 badge: "New",
                 adminOnly: true,

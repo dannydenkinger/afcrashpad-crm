@@ -14,7 +14,7 @@ describe('iCal Feed Generation', () => {
     return [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Vesta CRM//Calendar Sync//EN',
+      'PRODID:-//AFCrashpad CRM//Calendar Sync//EN',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       `X-WR-CALNAME:${calendarName}'s CRM Schedule`,

@@ -8,6 +8,7 @@ import { getCachedPipelines, getCachedStageMap, getCachedUsers } from "@/lib/cac
 import { SMART_PROBABILITY_MIN_SAMPLES } from "@/app/settings/pipeline/types"
 
 const STAGE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4']
+const BASE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4']
 function formatShortDate(d: Date): string {
     return `${d.getMonth() + 1}/${d.getDate()}`
 }
@@ -111,6 +112,13 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
             return new Date()
         }
 
+        // Contact base map for fallback (deal base falls back to its contact's militaryBase)
+        const contactBaseMap: Record<string, string> = {}
+        contactsSnap.docs.forEach(doc => {
+            const base = doc.data().militaryBase
+            if (base) contactBaseMap[doc.id] = base
+        })
+
         // Process opportunities
         const allOpps = oppsSnap.docs.map(doc => {
             const d = doc.data()
@@ -121,6 +129,7 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 stageName: stageInfo?.name || 'Unknown',
                 status: (d.status as string) || 'open',
                 value: Number(d.opportunityValue) || 0,
+                militaryBase: d.militaryBase || (d.contactId ? contactBaseMap[d.contactId as string] : null) || null,
                 utmSource: (d.utmSource as string) || null,
                 createdAt: toDate(d.createdAt),
                 estimatedProfit: Number(doc.data().estimatedProfit) || 0,
@@ -316,11 +325,21 @@ export async function getDashboardData(startDate?: string, endDate?: string): Pr
                 { name: 'Archived', count: archivedCount, color: '#6b7280' },
             ].filter(s => s.count > 0)
 
+            // Deals by base (top-8 military bases by deal count)
+            const baseCounts: Record<string, number> = {}
+            for (const opp of pipelineOpps) {
+                if (opp.militaryBase) baseCounts[opp.militaryBase] = (baseCounts[opp.militaryBase] || 0) + 1
+            }
+            const dealsByBase = Object.entries(baseCounts)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 8)
+                .map(([name, deals], i) => ({ name, deals, color: BASE_COLORS[i % BASE_COLORS.length] }))
+
             pipelineData[pipeline.id] = {
                 stageDistribution,
                 statusDistribution,
                 valueOverTime: { "1m": daily, "6m": weekly, "1y": monthly },
-                dealsByBase: [],
+                dealsByBase,
                 totalValue: pipelineOpps.reduce((s, o) => s + o.value, 0),
                 totalDeals: pipelineOpps.length,
             }
@@ -652,7 +671,7 @@ export async function getLeaderboardData(): Promise<{ success: boolean; data?: L
         ])
 
         // Build stage lookup from cache — identify won stages
-        const bookedNames = new Set(['Closed Won', 'Won', 'Booked', 'Signed', 'Closed'])
+        const bookedNames = new Set(['Closed Won', 'Won', 'Booked', 'Signed', 'Closed', 'Lease Signed'])
         const bookedStageIds = new Set<string>()
         for (const p of cachedPipelinesLb) {
             for (const s of p.stages) {

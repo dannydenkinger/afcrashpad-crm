@@ -53,7 +53,7 @@ export default async function IntegrationsPage() {
             <header>
                 <h1 className="text-2xl font-semibold tracking-tight">Integrations</h1>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                    Health of the third-party services Vesta depends on.
+                    Health of the third-party services AFCrashpad depends on.
                 </p>
             </header>
 

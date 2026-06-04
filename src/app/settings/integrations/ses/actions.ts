@@ -130,7 +130,7 @@ const grantSchema = z.object({
 
 const testSendSchema = z.object({
     to: z.string().email(),
-    subject: z.string().min(1).max(200).default("Test from Vesta CRM"),
+    subject: z.string().min(1).max(200).default("Test from AFCrashpad CRM"),
     message: z.string().min(1).max(5000).default("This is a test email from your CRM's SES integration."),
 })
 
@@ -142,8 +142,8 @@ export async function sendTestEmail(input: z.infer<typeof testSendSchema>) {
     }
 
     const { to, subject, message } = parsed.data
-    const html = `<!DOCTYPE html><html><body style="font-family: sans-serif; color: #111;"><p>${message.replace(/</g, "&lt;").replace(/\n/g, "<br>")}</p><hr><p style="font-size:12px;color:#888;">Sent via Amazon SES integration on Vesta CRM.</p></body></html>`
-    const text = `${message}\n\n--\nSent via Amazon SES integration on Vesta CRM.`
+    const html = `<!DOCTYPE html><html><body style="font-family: sans-serif; color: #111;"><p>${message.replace(/</g, "&lt;").replace(/\n/g, "<br>")}</p><hr><p style="font-size:12px;color:#888;">Sent via Amazon SES integration on AFCrashpad CRM.</p></body></html>`
+    const text = `${message}\n\n--\nSent via Amazon SES integration on AFCrashpad CRM.`
 
     try {
         const result = await sendEmail({

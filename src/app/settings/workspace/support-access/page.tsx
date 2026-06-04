@@ -30,7 +30,7 @@ export default async function SupportAccessPage() {
             <div className="pb-4 border-b mb-6">
                 <h1 className="text-2xl font-semibold tracking-tight">Support access</h1>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                    Grant a time-bound, audited login to the Vesta support team. They&apos;ll
+                    Grant a time-bound, audited login to the AFCrashpad support team. They&apos;ll
                     act inside your workspace exactly as you would; every action is logged
                     below. Revoke any time.
                 </p>

@@ -174,7 +174,7 @@ export function WebsiteFormEmbed() {
 }
 
 function generateTrackingSnippet(webhookUrl: string, apiKey: string): string {
-    return `<!-- Vesta CRM Lead Tracking -->
+    return `<!-- AFCrashpad CRM Lead Tracking -->
 <script>
 (function(){
   var VESTA_URL='${webhookUrl}';

@@ -73,9 +73,9 @@ function formatSlackPayload(event: string, data: Record<string, unknown>): strin
  *
  * - Signing: receivers verify by computing
  *   `HMAC-SHA256(secret, raw_request_body)` and comparing it against
- *   the X-Vesta-Signature header. Timing-safe comparison on the
+ *   the X-AFCrashpad-Signature header. Timing-safe comparison on the
  *   receiver side is the receiver's responsibility, but we provide a
- *   timestamp in X-Vesta-Timestamp so they can also reject replays.
+ *   timestamp in X-AFCrashpad-Timestamp so they can also reject replays.
  *
  * - Workspace-scoped. Subscriptions live under
  *   `workspace_webhooks` keyed by workspaceId. There's no cross-tenant
@@ -108,11 +108,11 @@ async function deliverOnce(
     const signature = crypto.createHmac("sha256", sub.secret).update(bodyJson).digest("hex")
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "X-Vesta-Event": eventName,
-        "X-Vesta-Delivery-Id": deliveryId,
-        "X-Vesta-Signature": `sha256=${signature}`,
-        "X-Vesta-Timestamp": new Date().toISOString(),
-        "User-Agent": "Vesta-Webhooks/1.0",
+        "X-AFCrashpad-Event": eventName,
+        "X-AFCrashpad-Delivery-Id": deliveryId,
+        "X-AFCrashpad-Signature": `sha256=${signature}`,
+        "X-AFCrashpad-Timestamp": new Date().toISOString(),
+        "User-Agent": "AFCrashpad-Webhooks/1.0",
     }
 
     let lastError: string | undefined
@@ -216,7 +216,7 @@ export function dispatchTestWebhook(
                 workspaceId,
                 createdAt: new Date().toISOString(),
                 data: {
-                    message: "Test delivery from Vesta. If you can read this, your receiver is wired up correctly.",
+                    message: "Test delivery from AFCrashpad. If you can read this, your receiver is wired up correctly.",
                     triggeredBy: triggeredByEmail,
                     subscriptionId,
                 },

@@ -39,7 +39,7 @@ export default function DataImportPage() {
     return (
         <SettingsSubPage
             title="Import"
-            description="Upload CSVs to bring data into Vesta. We jump you to the right page for each entity."
+            description="Upload CSVs to bring data into AFCrashpad. We jump you to the right page for each entity."
             flush
         >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

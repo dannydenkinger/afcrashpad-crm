@@ -79,7 +79,7 @@ const DealCard = React.memo(function DealCard({
             onDragStart={(e) => onDragStart(e, deal.id)}
             onDragEnd={onDragEnd}
             onClick={() => onOpenDeal(deal)}
-            className={`bg-card cursor-grab border hover:border-primary/40 active:scale-[0.98] transition-all rounded-xl p-4 shadow-sm group relative overflow-hidden flex flex-col gap-3 touch-manipulation min-h-[44px] ${isDragged ? "opacity-50 scale-95" : ""} ${isNewInquiry ? "border-primary/60 ring-1 ring-primary/40 bg-primary/[0.03]" : "border-border/60 hover:shadow-md"}`}
+            className={`bg-card cursor-grab border hover:border-primary/40 active:scale-[0.98] transition-all rounded-xl p-4 shadow-sm group relative overflow-hidden flex flex-col gap-3 touch-manipulation min-h-[44px] ${isDragged ? "opacity-50 scale-95" : ""} ${isNewInquiry ? "border-primary/80 ring-2 ring-primary bg-primary/10 shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse" : "border-border/60 hover:shadow-lg"}`}
         >
             {/* Colored accent bar on the left based on priority */}
             <div className={`absolute left-0 top-0 bottom-0 w-1 ${deal.startDate && deal.startDate !== "-" ? priorityColorClass : (deal.priority === "HIGH" ? "bg-red-500" : deal.priority === "MEDIUM" ? "bg-amber-500" : "bg-blue-500")}`}></div>
@@ -95,13 +95,7 @@ const DealCard = React.memo(function DealCard({
                         <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-sm group-hover:text-primary transition-colors tracking-tight truncate">{deal.name}</span>
                             {isNewInquiry && (
-                                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                                    <span className="relative flex h-1.5 w-1.5">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
-                                    </span>
-                                    New
-                                </span>
+                                <Badge className="shrink-0 text-xs font-bold tracking-wider bg-primary text-primary-foreground border-0 px-1.5 py-0">New</Badge>
                             )}
                         </div>
                         {showBase && (
@@ -201,45 +195,59 @@ const DealCard = React.memo(function DealCard({
             })()}
 
             {(showValue || showPriority) && (
-                <div className="flex items-center justify-between gap-2 pl-1">
+                <div className="grid grid-cols-2 gap-2 text-xs pl-1">
                     {showValue && (
-                        <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                            <DollarSign className="h-3.5 w-3.5" />
-                            <span className="font-semibold text-sm tabular-nums">{deal.value.toLocaleString()}</span>
+                        <div className="flex flex-col gap-1">
+                            <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Value</span>
+                            <div className="flex items-center gap-1">
+                                <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
+                                <span className="font-mono font-semibold text-sm">${deal.value.toLocaleString()}</span>
+                            </div>
                         </div>
                     )}
                     {showPriority && (
-                        <span
-                            className={`inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded
-                                ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-red-500") || (!deal.startDate && deal.priority === "HIGH") ? "bg-red-500/10 text-red-600 dark:text-red-400" : ""}
-                                ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-yellow-500") || (!deal.startDate && deal.priority === "MEDIUM") ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" : ""}
-                                ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-blue-500") || (!deal.startDate && deal.priority === "LOW") ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : ""}
-                                ${priorityColorClass === "bg-emerald-500" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : ""}
-                                ${priorityColorClass === "bg-gray-500" ? "bg-zinc-500/10 text-muted-foreground" : ""}
-                            `}
-                        >
-                            {deal.startDate && deal.startDate !== "-" ? priorityLabel : deal.priority}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                            <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Priority</span>
+                            <Badge
+                                variant="outline"
+                                className={`text-xs font-bold tracking-wider rounded-sm
+                                    ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-red-500") || (!deal.startDate && deal.priority === "HIGH") ? "bg-red-500/10 text-red-600 border-red-500/20" : ""}
+                                    ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-yellow-500") || (!deal.startDate && deal.priority === "MEDIUM") ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : ""}
+                                    ${(deal.startDate && deal.startDate !== "-" && priorityColorClass === "bg-blue-500") || (!deal.startDate && deal.priority === "LOW") ? "bg-blue-500/10 text-blue-600 border-blue-500/20" : ""}
+                                    ${priorityColorClass === "bg-emerald-500" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : ""}
+                                    ${priorityColorClass === "bg-gray-500" ? "bg-gray-500/10 text-gray-500 border-gray-500/20" : ""}
+                                `}
+                            >
+                                {deal.startDate && deal.startDate !== "-" ? priorityLabel : deal.priority}
+                            </Badge>
+                        </div>
                     )}
                 </div>
             )}
 
             {(showDates || showEndDate || showLengthOfStayProp) && (
-                <div className="flex items-center justify-between pt-3 border-t border-border/50 pl-1 gap-3 text-xs">
+                <div className="flex items-stretch justify-between pt-3 border-t border-border/50 pl-1 gap-2">
                     {(showDates || showEndDate) && (
-                        <div className="flex items-center gap-2 flex-1 min-w-0 text-muted-foreground">
-                            <CalendarIcon className="h-3.5 w-3.5 text-primary/70 shrink-0" />
-                            <span className="truncate tabular-nums">
-                                {showDates && formatDisplayDate(deal.startDate)}
-                                {showDates && showEndDate && <span className="text-muted-foreground/50 mx-1">→</span>}
-                                {showEndDate && formatDisplayDate(deal.endDate)}
-                            </span>
+                        <div className="flex flex-col gap-1.5 flex-1 bg-muted/20 border border-border/40 p-2 rounded-md justify-center">
+                            {showDates && (
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                                    <CalendarIcon className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+                                    <span className="truncate"><span className="opacity-70 font-normal mr-1">Start:</span>{formatDisplayDate(deal.startDate)}</span>
+                                </div>
+                            )}
+                            {showEndDate && (
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                                    <CalendarIcon className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+                                    <span className="truncate"><span className="opacity-70 font-normal mr-1">End:</span>{formatDisplayDate(deal.endDate)}</span>
+                                </div>
+                            )}
                         </div>
                     )}
                     {showLengthOfStayProp && (
-                        <span className="shrink-0 inline-flex items-center text-[10px] font-medium uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded tabular-nums">
-                            {getLengthOfStay(deal.startDate, deal.endDate)}
-                        </span>
+                        <div className="flex flex-col items-center justify-center bg-muted/20 border border-border/40 p-2 rounded-md shrink-0 min-w-[70px]">
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-0.5">Duration</span>
+                            <span className="text-xs font-bold text-primary/80">{getLengthOfStay(deal.startDate, deal.endDate)}</span>
+                        </div>
                     )}
                 </div>
             )}
@@ -381,9 +389,9 @@ interface KanbanViewProps {
 }
 
 const COLUMN_MIN_WIDTH: Record<NonNullable<KanbanViewProps["density"]>, number> = {
-    compact: 200,
-    cozy: 260,
-    comfortable: 320,
+    compact: 320,
+    cozy: 400,
+    comfortable: 480,
 }
 
 const STAGE_COLORS = [

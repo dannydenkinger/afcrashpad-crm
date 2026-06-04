@@ -28,7 +28,7 @@ interface ConversionData {
 // rename their final stages — these defaults catch the most common labels
 // across CRM templates. (Snapshot system will let workspaces flag stages
 // explicitly later.)
-const CLOSED_WON_NAMES = new Set(["Closed Won", "Won", "Booked", "Signed", "Closed"])
+const CLOSED_WON_NAMES = new Set(["Closed Won", "Won", "Booked", "Signed", "Closed", "Current Tenant"])
 const CLOSED_LOST_NAMES = new Set(["Closed Lost", "Lost", "Abandoned"])
 
 export async function getPipelineConversionMetrics(pipelineId: string): Promise<{ success: boolean; data?: ConversionData; error?: string }> {

@@ -29,6 +29,7 @@ function substituteTemplate(text: string, vars: Record<string, string>): string 
         .replace(/\{\{name\}\}/g, vars.name || "Guest")
         .replace(/\{\{startDate\}\}/g, vars.startDate || "")
         .replace(/\{\{endDate\}\}/g, vars.endDate || "")
+        .replace(/\{\{base\}\}/g, vars.base || "your location")
         .replace(/\{\{days\}\}/g, vars.days || "");
 }
 
@@ -77,10 +78,12 @@ export async function checkStayReminders(workspaceId: string) {
                 } catch { /* use fallback */ }
             }
 
+            const baseName = data.militaryBase || "";
             const templateVars = {
                 name: contactName,
                 startDate: "",
                 endDate: "",
+                base: baseName,
                 days: "",
             };
 
@@ -95,6 +98,7 @@ export async function checkStayReminders(workspaceId: string) {
                     triggerSequence(workspaceId, "pre_checkin", data.contactId || oppId, contactEmail, contactName, {
                         startDate: templateVars.startDate,
                         endDate: templateVars.endDate,
+                        base: baseName,
                     }).catch(() => {});
                 }
                 for (const d of checkInDays) {
@@ -102,7 +106,7 @@ export async function checkStayReminders(workspaceId: string) {
                         const dedupeKey = `checkin_${oppId}_${d}d_${startDate.toISOString().slice(0, 10)}`;
                         await createNotification({
                             title: `Check-in in ${d} day${d > 1 ? "s" : ""}`,
-                            message: `${contactName}`,
+                            message: `${contactName}${baseName ? ` — ${baseName}` : ""}`,
                             type: "checkin",
                             linkUrl: `/pipeline?deal=${oppId}`,
                             dedupeKey,
@@ -152,6 +156,7 @@ export async function checkStayReminders(workspaceId: string) {
                     triggerSequence(workspaceId, "post_checkout", data.contactId || oppId, contactEmail, contactName, {
                         startDate: templateVars.startDate,
                         endDate: templateVars.endDate,
+                        base: baseName,
                     }).catch(() => {});
                 }
                 for (const d of checkOutDays) {
@@ -159,7 +164,7 @@ export async function checkStayReminders(workspaceId: string) {
                         const dedupeKey = `checkout_${oppId}_${d}d_${endDate.toISOString().slice(0, 10)}`;
                         await createNotification({
                             title: `Check-out in ${d} day${d > 1 ? "s" : ""}`,
-                            message: `${contactName}`,
+                            message: `${contactName}${baseName ? ` — ${baseName}` : ""}`,
                             type: "checkout",
                             linkUrl: `/pipeline?deal=${oppId}`,
                             dedupeKey,

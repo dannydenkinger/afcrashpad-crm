@@ -416,7 +416,7 @@ function AppleCalendarCard({
                             Apple doesn&apos;t expose a write API, so we publish a live calendar feed that
                             your Mac and iPhone can subscribe to. New deals, tasks, and bookings show up
                             in Apple Calendar within ~15 minutes. Edits made on the Apple side don&apos;t
-                            sync back — to change events, edit them in Vesta.
+                            sync back — to change events, edit them in AFCrashpad.
                         </p>
                     </div>
                 </div>

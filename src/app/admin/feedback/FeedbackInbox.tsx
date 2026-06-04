@@ -186,7 +186,7 @@ function FeedbackDetail({
     saving: boolean
 }) {
     const mailto = entry.userEmail
-        ? `mailto:${entry.userEmail}?subject=Re:%20your%20feedback%20on%20Vesta&body=${encodeURIComponent("Hey — thanks for the note about:\n\n> " + entry.message.slice(0, 500) + "\n\n")}`
+        ? `mailto:${entry.userEmail}?subject=Re:%20your%20feedback%20on%20AFCrashpad&body=${encodeURIComponent("Hey — thanks for the note about:\n\n> " + entry.message.slice(0, 500) + "\n\n")}`
         : null
 
     return (

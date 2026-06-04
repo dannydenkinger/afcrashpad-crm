@@ -2,7 +2,7 @@ import { PublicNav } from "@/components/marketing/PublicNav"
 import { PublicFooter } from "@/components/marketing/PublicFooter"
 
 export const metadata = {
-    title: "Terms of Service | Vesta CRM",
+    title: "Terms of Service | AFCrashpad CRM",
 }
 
 export default function TermsPage() {
@@ -25,7 +25,7 @@ export default function TermsPage() {
                 <div className="prose dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:text-muted-foreground prose-li:text-muted-foreground prose-a:text-violet-500 prose-strong:text-foreground">
                     <h2>1. Acceptance of Terms</h2>
                     <p>
-                        By accessing or using Vesta CRM, you agree to be bound by these Terms of Service.
+                        By accessing or using AFCrashpad CRM, you agree to be bound by these Terms of Service.
                         If you do not agree to these terms, do not use our service.
                     </p>
 
@@ -49,7 +49,7 @@ export default function TermsPage() {
 
                     <h2>4. Service & Data</h2>
                     <p>
-                        You retain ownership of all data you upload to Vesta CRM. We do not claim any
+                        You retain ownership of all data you upload to AFCrashpad CRM. We do not claim any
                         intellectual property rights over your content. We will not access your data except
                         as necessary to provide the service or comply with law.
                     </p>
@@ -71,7 +71,7 @@ export default function TermsPage() {
 
                     <h2>7. Limitation of Liability</h2>
                     <p>
-                        Vesta CRM is provided &ldquo;as is&rdquo; without warranties of any kind. We are not liable
+                        AFCrashpad CRM is provided &ldquo;as is&rdquo; without warranties of any kind. We are not liable
                         for any indirect, incidental, special, or consequential damages arising from your
                         use of the service.
                     </p>
@@ -86,7 +86,7 @@ export default function TermsPage() {
                     <h2>9. Contact</h2>
                     <p>
                         Questions about these terms? Contact us at{" "}
-                        <a href="mailto:support@vestacrm.com">support@vestacrm.com</a>.
+                        <a href="mailto:support@afcrashpad.com">support@afcrashpad.com</a>.
                     </p>
                 </div>
             </main>

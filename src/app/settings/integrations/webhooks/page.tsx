@@ -17,7 +17,7 @@ export default async function WebhooksPage() {
     return (
         <SettingsSubPage
             title="Webhooks"
-            description="POST CRM events to your own systems — Vesta JSON or Slack format."
+            description="POST CRM events to your own systems — AFCrashpad JSON or Slack format."
         >
             {meetsPlan(plan.tier, "pro") ? (
                 <WebhooksManager />

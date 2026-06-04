@@ -2,7 +2,7 @@ import { PublicNav } from "@/components/marketing/PublicNav"
 import { PublicFooter } from "@/components/marketing/PublicFooter"
 
 export const metadata = {
-    title: "Privacy Policy | Vesta CRM",
+    title: "Privacy Policy | AFCrashpad CRM",
 }
 
 export default function PrivacyPage() {
@@ -47,7 +47,7 @@ export default function PrivacyPage() {
                     </p>
 
                     <h2>4. Third-Party Services</h2>
-                    <p>We use the following third-party services to operate Vesta CRM:</p>
+                    <p>We use the following third-party services to operate AFCrashpad CRM:</p>
                     <ul>
                         <li><strong>Google Firebase</strong> &mdash; Database and file storage</li>
                         <li><strong>Google OAuth</strong> &mdash; Optional sign-in with Google</li>
@@ -85,7 +85,7 @@ export default function PrivacyPage() {
                     <h2>9. Contact</h2>
                     <p>
                         If you have questions about this privacy policy, please contact us at{" "}
-                        <a href="mailto:support@vestacrm.com">support@vestacrm.com</a>.
+                        <a href="mailto:support@afcrashpad.com">support@afcrashpad.com</a>.
                     </p>
                 </div>
             </main>

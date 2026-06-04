@@ -6,8 +6,8 @@ import {
 } from "lucide-react"
 
 export const metadata: Metadata = {
-    title: "Help | Vesta CRM",
-    description: "How-to guides for using Vesta CRM — pipeline, contacts, email, automations, AI, and integrations.",
+    title: "Help | AFCrashpad CRM",
+    description: "How-to guides for using AFCrashpad CRM — pipeline, contacts, email, automations, AI, and integrations.",
 }
 
 const SECTIONS = [
@@ -32,7 +32,7 @@ export default function HelpPage() {
                     className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-6"
                 >
                     <ArrowLeft className="h-3 w-3" />
-                    Back to Vesta CRM
+                    Back to AFCrashpad CRM
                 </Link>
 
                 <h1 className="text-3xl font-semibold tracking-tight mb-2">Help & docs</h1>
@@ -65,7 +65,7 @@ export default function HelpPage() {
                         <section id="getting-started" className="scroll-mt-6">
                             <h2 className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-primary" />Getting started</h2>
                             <p>
-                                Welcome. Vesta is a multi-purpose CRM for tracking contacts, managing a sales pipeline, sending email + SMS, and automating follow-ups. This page covers the basics; everything else has its own section below.
+                                Welcome. AFCrashpad is a multi-purpose CRM for tracking contacts, managing a sales pipeline, sending email + SMS, and automating follow-ups. This page covers the basics; everything else has its own section below.
                             </p>
 
                             <h3>Your first 10 minutes</h3>
@@ -97,7 +97,7 @@ export default function HelpPage() {
                             </p>
                             <ul>
                                 <li><strong>Manual</strong>: <em>Contacts → Add contact</em>. Best for one-offs.</li>
-                                <li><strong>CSV import</strong>: <em>Contacts → Import</em>. Map your CSV columns to Vesta fields. Duplicates by email are skipped automatically.</li>
+                                <li><strong>CSV import</strong>: <em>Contacts → Import</em>. Map your CSV columns to AFCrashpad fields. Duplicates by email are skipped automatically.</li>
                                 <li><strong>API / Form embed</strong>: paste the form snippet from <em>Settings → Integrations → Form embed</em> into your website. Submissions become contacts in real time.</li>
                             </ul>
 
@@ -170,7 +170,7 @@ export default function HelpPage() {
 
                             <h3>Marketing vs transactional sending</h3>
                             <p>
-                                Vesta uses Amazon SES for marketing/bulk sends and your connected Gmail account for personal transactional sends. SES is per-workspace credits — buy them at <em>Settings → Integrations → Amazon SES</em>. Gmail uses your own account, so individual emails come from your address and land in your Sent folder.
+                                AFCrashpad uses Amazon SES for marketing/bulk sends and your connected Gmail account for personal transactional sends. SES is per-workspace credits — buy them at <em>Settings → Integrations → Amazon SES</em>. Gmail uses your own account, so individual emails come from your address and land in your Sent folder.
                             </p>
                         </section>
 
@@ -184,10 +184,10 @@ export default function HelpPage() {
                                 <li>Sign up at <a href="https://www.twilio.com" target="_blank" rel="noreferrer">twilio.com</a> and buy a phone number.</li>
                                 <li>For US/Canada commercial sends, register an A2P 10DLC campaign through Twilio (required by carriers).</li>
                                 <li>In <em>Settings → Integrations → Twilio</em>, paste your Account SID, Auth Token, and From number.</li>
-                                <li>Configure the Inbound webhook URL Twilio shows in your number&apos;s "A message comes in" field — Vesta logs replies to the matching contact.</li>
+                                <li>Configure the Inbound webhook URL Twilio shows in your number&apos;s "A message comes in" field — AFCrashpad logs replies to the matching contact.</li>
                             </ol>
                             <p>
-                                STOP / UNSUBSCRIBE / CANCEL replies automatically opt the contact out. Vesta never sends to contacts marked DND.
+                                STOP / UNSUBSCRIBE / CANCEL replies automatically opt the contact out. AFCrashpad never sends to contacts marked DND.
                             </p>
                         </section>
 
@@ -219,7 +219,7 @@ export default function HelpPage() {
 
                             <h3>Bring your own keys</h3>
                             <p>
-                                Vesta supports three AI providers: Anthropic (Claude), OpenAI (GPT), and Google Gemini. Each is a separate API key you save in <em>Settings → Integrations</em>. You aren&apos;t locked to one — you can save all three and route different features to different providers.
+                                AFCrashpad supports three AI providers: Anthropic (Claude), OpenAI (GPT), and Google Gemini. Each is a separate API key you save in <em>Settings → Integrations</em>. You aren&apos;t locked to one — you can save all three and route different features to different providers.
                             </p>
 
                             <h3>Per-feature routing</h3>
@@ -242,17 +242,17 @@ export default function HelpPage() {
 
                             <h3>Webhooks</h3>
                             <p>
-                                Webhooks let Vesta POST events to your own systems. Add a receiver URL at <em>Settings → Integrations → Webhooks</em>, pick which events to subscribe to (contact.created, deal.stage_changed, deal.closed_won, etc.), and Vesta will fire signed JSON payloads to your URL when those events happen. Every payload includes an HMAC-SHA256 signature in the <code>X-Vesta-Signature</code> header — verify it before trusting the body.
+                                Webhooks let AFCrashpad POST events to your own systems. Add a receiver URL at <em>Settings → Integrations → Webhooks</em>, pick which events to subscribe to (contact.created, deal.stage_changed, deal.closed_won, etc.), and AFCrashpad will fire signed JSON payloads to your URL when those events happen. Every payload includes an HMAC-SHA256 signature in the <code>X-AFCrashpad-Signature</code> header — verify it before trusting the body.
                             </p>
 
                             <h3>Slack notifications</h3>
                             <p>
-                                For Slack specifically, paste a Slack incoming-webhook URL and pick "Slack message" as the format when creating the webhook. Vesta will format each event as a readable Slack message instead of the raw envelope. No extra middleware needed.
+                                For Slack specifically, paste a Slack incoming-webhook URL and pick "Slack message" as the format when creating the webhook. AFCrashpad will format each event as a readable Slack message instead of the raw envelope. No extra middleware needed.
                             </p>
 
                             <h3>Google Calendar / Apple Calendar</h3>
                             <p>
-                                Google Calendar is a per-user OAuth — connect it in <em>Settings → Integrations → Google Calendar</em>. Two-way sync: events in Vesta appear in Google, and vice versa.
+                                Google Calendar is a per-user OAuth — connect it in <em>Settings → Integrations → Google Calendar</em>. Two-way sync: events in AFCrashpad appear in Google, and vice versa.
                             </p>
                             <p>
                                 Apple Calendar uses a one-way subscribe URL because Apple doesn&apos;t expose a write API. Click the <strong>Subscribe</strong> button on the Apple Calendar card to launch Apple Calendar with the feed pre-filled.
@@ -318,7 +318,7 @@ export default function HelpPage() {
 
                             <h3>Still stuck?</h3>
                             <p>
-                                Email <a href="mailto:support@vestacrm.com">support@vestacrm.com</a>. Include your workspace name, the action you were trying to take, and any error message. Screenshots help.
+                                Email <a href="mailto:support@afcrashpad.com">support@afcrashpad.com</a>. Include your workspace name, the action you were trying to take, and any error message. Screenshots help.
                             </p>
                         </section>
                     </article>

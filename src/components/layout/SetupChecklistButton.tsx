@@ -152,7 +152,7 @@ export function SetupChecklistButton({ collapsed }: { collapsed?: boolean }) {
                         <div className="flex items-center justify-between p-3.5 border-b">
                             <div>
                                 <div className="text-sm font-semibold">
-                                    {allDone ? "🎉 You're all set" : "Get started with Vesta"}
+                                    {allDone ? "🎉 You're all set" : "Get started with AFCrashpad"}
                                 </div>
                                 <div className="text-[11px] text-muted-foreground mt-0.5">
                                     {allDone

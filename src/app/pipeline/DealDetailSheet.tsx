@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
-    DollarSign, MapPin, Phone, Mail, FileText, CheckCircle2, MoreVertical, MessageSquare, User, Trash2, FileDown, Ban, Plus, X, CreditCard, Banknote, Wallet, UserPlus, ArrowRight, ChevronDown, Check
+    DollarSign, MapPin, Phone, Mail, FileText, CheckCircle2, MoreVertical, MessageSquare, Calculator, User, Trash2, FileDown, Ban, Plus, X, CreditCard, Banknote, Wallet, UserPlus, ArrowRight, ChevronDown, Check, Upload, Loader2
 } from "lucide-react"
 import { exportToPDF } from "@/lib/export-pdf"
 import { buildDealProfileHtml } from "@/components/PrintableProfile"
@@ -54,12 +54,60 @@ const NotesEditor = dynamic(() => import("@/components/NotesEditor").then(mod =>
     loading: () => <div className="h-32 bg-muted animate-pulse rounded-md" />,
     ssr: false,
 })
+// AFCrashpad: military housing-allowance calculators, surfaced inside the deal.
+const OnBaseLodgingCalculator = dynamic(() => import("@/components/calculators/OnBaseLodgingCalculator").then(mod => mod.OnBaseLodgingCalculator), {
+    loading: () => <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">Loading On-Base Calculator…</div>,
+    ssr: false,
+})
+const OffBaseLodgingCalculator = dynamic(() => import("@/components/calculators/OffBaseLodgingCalculator"), {
+    loading: () => <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">Loading Off-Base Calculator…</div>,
+    ssr: false,
+})
 import { CustomFieldsSection } from "@/components/CustomFieldsSection"
-import { updateRequiredDocs, claimOpportunity, updateBlockers, addPayment, getPayments, updateDealExpenses, getDealExpenses, updateOpportunity } from "./actions"
+import { updateRequiredDocs, moveToLeaseSigned, claimOpportunity, updateBlockers, addPayment, getPayments, updateDealExpenses, getDealExpenses, updateOpportunity } from "./actions"
 import type { DealStatus } from "@/types"
 import { DEAL_STATUS_LABELS, DEAL_STATUS_COLORS } from "@/types"
 import { toast } from "sonner"
 import dynamic from "next/dynamic"
+
+// AFCrashpad: searchable military-base picker (ported from the original deal sheet).
+function BaseCombobox({ value, bases, onChange }: { value: string; bases: string[]; onChange: (val: string) => void }) {
+    const [search, setSearch] = useState(value || "")
+    const [open, setOpen] = useState(false)
+    const containerRef = useRef<HTMLDivElement>(null)
+    useEffect(() => { setSearch(value || "") }, [value])
+    useEffect(() => {
+        const handler = (e: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false) }
+        document.addEventListener("mousedown", handler)
+        return () => document.removeEventListener("mousedown", handler)
+    }, [])
+    const filtered = search ? bases.filter(b => b.toLowerCase().includes(search.toLowerCase())) : bases
+    return (
+        <div className="relative" ref={containerRef}>
+            <MapPin className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground z-10" />
+            <Input
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setOpen(true); onChange(e.target.value) }}
+                onFocus={() => { if (search) setOpen(true) }}
+                className="h-8 pl-8 text-sm"
+                placeholder="Type to search bases..."
+            />
+            {open && filtered.length > 0 && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
+                    {filtered.map(base => (
+                        <div
+                            key={base}
+                            className={`px-3 py-1.5 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors ${base === value ? "bg-accent/50 font-medium" : ""}`}
+                            onMouseDown={(e) => { e.preventDefault(); setSearch(base); onChange(base); setOpen(false) }}
+                        >
+                            {base}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
 
 interface DealDetailSheetProps {
     selectedDeal: any
@@ -69,6 +117,8 @@ interface DealDetailSheetProps {
     currentPipeline: any
     activePipelineKey: string
     allUsers: any[]
+    baseNames?: string[]
+    specialAccommodations?: { id: string; name: string }[]
     userRole: string
     session: any
     isSaving: boolean
@@ -94,6 +144,8 @@ export function DealDetailSheet({
     currentPipeline,
     activePipelineKey,
     allUsers,
+    baseNames = [],
+    specialAccommodations = [],
     userRole,
     session,
     isSaving,
@@ -160,6 +212,139 @@ export function DealDetailSheet({
     const [expensesData, setExpensesData] = useState({ monthlyRent: 0, cleaningFee: 0, petFee: 0, nonrefundableDeposit: 0 })
     const [expensesLoading, setExpensesLoading] = useState(false)
     const [savingExpenses, setSavingExpenses] = useState(false)
+    const [isCalcOpen, setIsCalcOpen] = useState(false)
+    // Sheet-wide file drag-and-drop (mirrors the contact sheet): drop files
+    // anywhere on the deal sheet to attach them to the deal's linked contact.
+    const [isDragOverSheet, setIsDragOverSheet] = useState(false)
+    const [isUploadingDrop, setIsUploadingDrop] = useState(false)
+    const [docsRefreshKey, setDocsRefreshKey] = useState(0)
+    const dragCounterRef = useRef(0)
+
+    // ── Auto-organized "Tenants" folder tree ──
+    // Uploads on a deal's Docs tab are filed under /Tenants/{contactName}/ in
+    // the workspace /documents page. The contact name comes from the deal's
+    // linked contact (selectedDeal.name). Sanitize out path delimiters.
+    const sanitizeFolderSegment = (raw: string | undefined | null): string =>
+        (raw || "").replace(/\//g, " ").trim() || "Unknown"
+    const tenantName = sanitizeFolderSegment(selectedDeal?.name)
+    const tenantFolderPath = `/Tenants/${tenantName}`
+
+    // Per-required-doc upload: each checklist row gets its own hidden input +
+    // uploading spinner. Files land in /Tenants/{name}/{label}/.
+    const [uploadingDocId, setUploadingDocId] = useState<string | null>(null)
+    const requiredDocInputRef = useRef<HTMLInputElement>(null)
+    const pendingRequiredDocRef = useRef<{ id: string; label: string } | null>(null)
+
+    const handleRequiredDocPick = useCallback(async (files: FileList | null) => {
+        const target = pendingRequiredDocRef.current
+        pendingRequiredDocRef.current = null
+        if (requiredDocInputRef.current) requiredDocInputRef.current.value = ""
+        if (!target || !files || files.length === 0) return
+        if (!selectedDeal || selectedDeal.id === "new") return
+        if (!selectedDeal.contactId) {
+            toast.error("Link a contact to this deal before adding documents.")
+            return
+        }
+
+        const label = sanitizeFolderSegment(target.label) === "Unknown" ? "General" : sanitizeFolderSegment(target.label)
+        const leafPath = `${tenantFolderPath}/${label}`
+
+        setUploadingDocId(target.id)
+        try {
+            const [{ uploadDocument }, { ensureFolderPath }] = await Promise.all([
+                import("@/lib/upload-document"),
+                import("@/app/documents/folder-actions"),
+            ])
+            await ensureFolderPath(leafPath)
+
+            let succeeded = 0
+            const failed: string[] = []
+            for (const file of Array.from(files)) {
+                const res = await uploadDocument(file, {
+                    contactId: selectedDeal.contactId,
+                    folderPath: leafPath,
+                    displayName: target.label,
+                })
+                if (res.success) succeeded++
+                else failed.push(`${file.name}: ${res.error}`)
+            }
+
+            if (succeeded > 0) {
+                // Auto-check the row (local + persisted) once a file lands.
+                setSelectedDeal((prev: any) => prev ? {
+                    ...prev,
+                    requiredDocs: { ...prev.requiredDocs, [target.id]: true },
+                } : null)
+                if (selectedDeal.id !== "new") {
+                    try {
+                        await updateRequiredDocs(selectedDeal.id, target.id, true)
+                    } catch {
+                        toast.error("Uploaded, but failed to update checklist status")
+                    }
+                }
+            }
+
+            if (failed.length === 0) toast.success(`${succeeded} file${succeeded !== 1 ? "s" : ""} uploaded to ${label}`)
+            else if (succeeded === 0) toast.error(`Upload failed: ${failed[0]}${failed.length > 1 ? ` (and ${failed.length - 1} more)` : ""}`)
+            else toast.warning(`Uploaded ${succeeded} of ${files.length}. ${failed.length} failed.`, { duration: 6000 })
+
+            setDocsRefreshKey(k => k + 1)
+        } finally {
+            setUploadingDocId(null)
+        }
+    }, [selectedDeal, tenantFolderPath, setSelectedDeal])
+
+    const triggerRequiredDocUpload = useCallback((doc: { id: string; label: string }) => {
+        if (!selectedDeal?.contactId) {
+            toast.error("Link a contact to this deal before adding documents.")
+            return
+        }
+        pendingRequiredDocRef.current = doc
+        requiredDocInputRef.current?.click()
+    }, [selectedDeal])
+
+    const handleSheetDragEnter = useCallback((e: React.DragEvent) => {
+        e.preventDefault(); e.stopPropagation()
+        if (!selectedDeal?.contactId || selectedDeal.id === "new") return
+        dragCounterRef.current += 1
+        if (dragCounterRef.current === 1 && e.dataTransfer.types.includes("Files")) setIsDragOverSheet(true)
+    }, [selectedDeal])
+    const handleSheetDragLeave = useCallback((e: React.DragEvent<HTMLElement>) => {
+        e.preventDefault(); e.stopPropagation()
+        dragCounterRef.current = Math.max(0, dragCounterRef.current - 1)
+        const ct = e.currentTarget as HTMLElement
+        const rt = e.relatedTarget as Node | null
+        if (!rt || !ct.contains(rt) || dragCounterRef.current === 0) { dragCounterRef.current = 0; setIsDragOverSheet(false) }
+    }, [])
+    const handleSheetDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation() }, [])
+    const handleSheetDrop = useCallback(async (e: React.DragEvent) => {
+        e.preventDefault(); e.stopPropagation()
+        dragCounterRef.current = 0
+        setIsDragOverSheet(false)
+        if (!selectedDeal || selectedDeal.id === "new") return
+        if (!selectedDeal.contactId) { toast.error("Link a contact to this deal before adding documents."); return }
+        const files = Array.from(e.dataTransfer.files)
+        if (files.length === 0) return
+        setIsUploadingDrop(true)
+        const dropFolderPath = `/Tenants/${sanitizeFolderSegment(selectedDeal.name)}`
+        const [{ uploadDocument }, { ensureFolderPath }] = await Promise.all([
+            import("@/lib/upload-document"),
+            import("@/app/documents/folder-actions"),
+        ])
+        await ensureFolderPath(dropFolderPath)
+        let succeeded = 0
+        const failed: string[] = []
+        for (const file of files) {
+            const res = await uploadDocument(file, { contactId: selectedDeal.contactId, folderPath: dropFolderPath })
+            if (res.success) succeeded++
+            else failed.push(`${file.name}: ${res.error}`)
+        }
+        setIsUploadingDrop(false)
+        if (failed.length === 0) toast.success(`${succeeded} file${succeeded !== 1 ? "s" : ""} uploaded`)
+        else if (succeeded === 0) toast.error(`Upload failed: ${failed[0]}${failed.length > 1 ? ` (and ${failed.length - 1} more)` : ""}`)
+        else toast.warning(`Uploaded ${succeeded} of ${files.length}. ${failed.length} failed.`, { duration: 6000 })
+        setDocsRefreshKey(k => k + 1)
+    }, [selectedDeal])
     const [showRentBreakdown, setShowRentBreakdown] = useState(false)
 
     // Workspace default profit margin (percentage 0-100). Falls back to 25
@@ -270,6 +455,31 @@ export function DealDetailSheet({
 
     const totalExpenses = proratedRent.totalRent + expensesData.cleaningFee + expensesData.petFee + expensesData.nonrefundableDeposit
 
+    // AFCrashpad: apply a calculated housing-allowance figure to this deal's
+    // Opportunity Value (faithful to the old AF deal sheet: value + 25% margin).
+    // On-base rates can come through as a daily figure; estimate monthly if so.
+    const handleApplyCalculatorValue = async (val: number) => {
+        if (!selectedDeal?.id || selectedDeal.id === "new") {
+            toast.error("Save the deal first, then apply a calculated value.")
+            return
+        }
+        // The calculators emit the total stay cost; apply it directly as the deal value.
+        const rounded = Math.round(val) || 0
+        const margin = Math.round(rounded * 0.25)
+        // Write the SAME fields the Deal Value inputs + header read (value/margin)
+        // plus their stored twins, so the sheet reflects it immediately. Do NOT call
+        // onSave() here — it re-saves from stale selectedDeal and would clobber this.
+        setSelectedDeal((prev: any) => prev ? { ...prev, value: rounded, margin, marginIsCustom: false, opportunityValue: rounded, estimatedProfit: margin } : prev)
+        setIsCalcOpen(false)
+        const res = await updateOpportunity(selectedDeal.id, { value: rounded, margin })
+        if (res?.success === false) {
+            toast.error(res.error || "Failed to apply to deal")
+            return
+        }
+        toast.success(`Applied $${rounded.toLocaleString()} to deal value`)
+        fetchPipelines()
+    }
+
     const handleSaveExpenses = async () => {
         if (!selectedDeal?.id || selectedDeal.id === "new") return
         setSavingExpenses(true)
@@ -379,7 +589,31 @@ export function DealDetailSheet({
                     }
                 }}
             >
-                <SheetContent className="lg:max-w-xl p-0 flex flex-col gap-0 border-l border-border/50 shadow-2xl safe-bottom">
+                <SheetContent
+                    className="lg:max-w-xl p-0 flex flex-col gap-0 border-l border-border/50 shadow-2xl safe-bottom"
+                    onDragEnter={handleSheetDragEnter}
+                    onDragLeave={handleSheetDragLeave}
+                    onDragOver={handleSheetDragOver}
+                    onDrop={handleSheetDrop}
+                >
+                    {/* Full-sheet file drop overlay */}
+                    {isDragOverSheet && (
+                        <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-sm border-2 border-dashed border-primary rounded-lg flex flex-col items-center justify-center gap-3 pointer-events-none animate-in fade-in duration-150">
+                            <div className="p-4 rounded-full bg-primary/20">
+                                <Upload className="h-8 w-8 text-primary" />
+                            </div>
+                            <div className="text-center">
+                                <p className="text-lg font-semibold text-primary">Drop files to upload</p>
+                                <p className="text-sm text-muted-foreground mt-1">Files will be attached to this deal&apos;s contact</p>
+                            </div>
+                        </div>
+                    )}
+                    {isUploadingDrop && (
+                        <div className="absolute inset-0 z-50 bg-background/60 backdrop-blur-sm flex flex-col items-center justify-center gap-3 pointer-events-none animate-in fade-in duration-150">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                            <p className="text-sm font-medium text-muted-foreground">Uploading files...</p>
+                        </div>
+                    )}
                     {selectedDeal && (
                         <>
                             <div className="p-4 sm:p-6 bg-muted/30 border-b" style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))' }}>
@@ -645,11 +879,11 @@ export function DealDetailSheet({
                                         {/* Period Info */}
                                         <div className="space-y-4">
                                             <div className="flex items-center justify-between">
-                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Schedule</h3>
+                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Stay Details</h3>
                                             </div>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4 sm:gap-x-8 text-sm">
                                                 <div className="space-y-1">
-                                                    <span className="text-muted-foreground text-xs">Start Date</span>
+                                                    <span className="text-muted-foreground text-xs">Check-in Date</span>
                                                     <div className="relative">
                                                         <Input type="date" value={selectedDeal.startDate || ""} onChange={(e) => {
                                                             setSelectedDeal((prev: any) => prev ? { ...prev, startDate: e.target.value } : null)
@@ -658,7 +892,7 @@ export function DealDetailSheet({
                                                     </div>
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <span className="text-muted-foreground text-xs">End Date</span>
+                                                    <span className="text-muted-foreground text-xs">Check-out Date</span>
                                                     <div className="relative">
                                                         <Input type="date" value={selectedDeal.endDate || ""} onChange={(e) => {
                                                             setSelectedDeal((prev: any) => prev ? { ...prev, endDate: e.target.value } : null)
@@ -737,6 +971,52 @@ export function DealDetailSheet({
                                                     value={selectedDeal.leadSourceId}
                                                     onChange={(val) => setSelectedDeal((prev: any) => prev ? { ...prev, leadSourceId: val === "0" ? null : val } : null)}
                                                 />
+                                            </div>
+                                        </div>
+
+                                        {/* AFCrashpad: Military Base */}
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Military Base</h3>
+                                            </div>
+                                            <BaseCombobox
+                                                value={selectedDeal.base || ""}
+                                                bases={baseNames}
+                                                onChange={(val) => setSelectedDeal((prev: any) => prev ? { ...prev, base: val } : null)}
+                                            />
+                                        </div>
+
+                                        {/* AFCrashpad: Special Accommodations */}
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Special Accommodations</h3>
+                                            </div>
+                                            <div className="space-y-2">
+                                                {specialAccommodations.length === 0 ? (
+                                                    <p className="text-xs text-muted-foreground">No accommodation options defined.</p>
+                                                ) : (
+                                                    specialAccommodations.map((acc) => (
+                                                        <label key={acc.id} className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+                                                            <input
+                                                                type="radio"
+                                                                name="specialAccommodation"
+                                                                className="accent-primary"
+                                                                checked={(selectedDeal.specialAccommodationId || "") === acc.id}
+                                                                onChange={() => setSelectedDeal((prev: any) => prev ? { ...prev, specialAccommodationId: acc.id } : null)}
+                                                            />
+                                                            <span className="text-sm flex-1">{acc.name}</span>
+                                                        </label>
+                                                    ))
+                                                )}
+                                                {selectedDeal.specialAccommodationId && (
+                                                    <button
+                                                        type="button"
+                                                        className="text-xs text-muted-foreground hover:text-foreground underline"
+                                                        onClick={() => setSelectedDeal((prev: any) => prev ? { ...prev, specialAccommodationId: null } : null)}
+                                                    >
+                                                        Clear selection
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
 
@@ -833,8 +1113,45 @@ export function DealDetailSheet({
 
                                         {/* Financials */}
                                         <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
+                                            <div className="flex items-center justify-between gap-2">
                                                 <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Deal Value</h3>
+                                                <Dialog open={isCalcOpen} onOpenChange={setIsCalcOpen}>
+                                                    <DialogTrigger asChild>
+                                                        <Button variant="outline" size="sm" className="gap-2 border-primary/20 hover:border-primary/50 text-primary" disabled={selectedDeal?.id === "new"}>
+                                                            <Calculator className="h-4 w-4" />
+                                                            Calculate Opportunity Cost
+                                                        </Button>
+                                                    </DialogTrigger>
+                                                    <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
+                                                        <DialogHeader>
+                                                            <DialogTitle>Housing Allowance Calculator</DialogTitle>
+                                                        </DialogHeader>
+                                                        <Tabs defaultValue="on-base" className="w-full">
+                                                            <TabsList className="grid w-full grid-cols-2 mb-4">
+                                                                <TabsTrigger value="on-base">On-Base</TabsTrigger>
+                                                                <TabsTrigger value="off-base">Off-Base</TabsTrigger>
+                                                            </TabsList>
+                                                            <TabsContent value="on-base">
+                                                                <OnBaseLodgingCalculator
+                                                                    embedded
+                                                                    initialBase={selectedDeal.base}
+                                                                    initialStartDate={selectedDeal.startDate}
+                                                                    initialEndDate={selectedDeal.endDate}
+                                                                    onSyncValue={(val) => handleApplyCalculatorValue(val)}
+                                                                />
+                                                            </TabsContent>
+                                                            <TabsContent value="off-base">
+                                                                <OffBaseLodgingCalculator
+                                                                    embedded
+                                                                    initialBase={selectedDeal.base}
+                                                                    initialStartDate={selectedDeal.startDate}
+                                                                    initialEndDate={selectedDeal.endDate}
+                                                                    onSyncValue={(val) => handleApplyCalculatorValue(val)}
+                                                                />
+                                                            </TabsContent>
+                                                        </Tabs>
+                                                    </DialogContent>
+                                                </Dialog>
                                             </div>
                                             <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-3">
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1130,10 +1447,57 @@ export function DealDetailSheet({
                                                                         <p className="text-xs text-muted-foreground">{isChecked ? "Complete" : "Awaiting upload"}</p>
                                                                     </div>
                                                                 </div>
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="h-8 text-xs shrink-0"
+                                                                    disabled={uploadingDocId !== null}
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault()
+                                                                        e.stopPropagation()
+                                                                        triggerRequiredDocUpload(doc)
+                                                                    }}
+                                                                    title={`Upload to /Tenants/${tenantName}/${doc.label}`}
+                                                                >
+                                                                    {uploadingDocId === doc.id ? (
+                                                                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                                                    ) : (
+                                                                        <Upload className="h-3 w-3 mr-1" />
+                                                                    )}
+                                                                    Upload
+                                                                </Button>
                                                             </label>
                                                         )
                                                     })}
                                                 </div>
+                                                {/* Shared hidden input for per-row required-doc uploads. */}
+                                                <input
+                                                    ref={requiredDocInputRef}
+                                                    type="file"
+                                                    multiple
+                                                    accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.jpg,.jpeg,.png,.gif,.webp"
+                                                    className="hidden"
+                                                    onChange={(e) => handleRequiredDocPick(e.target.files)}
+                                                />
+                                                {selectedDeal.requiredDocs?.lease && selectedDeal.requiredDocs?.tc && selectedDeal.requiredDocs?.payment && selectedDeal.id !== "new" && (
+                                                    <Button
+                                                        className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                                        onClick={async () => {
+                                                            const res = await moveToLeaseSigned(selectedDeal.id)
+                                                            if (res.success) {
+                                                                setSelectedDeal((prev: any) => prev ? { ...prev, stage: "Lease Signed" } : null)
+                                                                fetchPipelines()
+                                                                toast.success("Moved to Lease Signed")
+                                                            } else {
+                                                                toast.error(res.error || "Failed to move to Lease Signed")
+                                                            }
+                                                        }}
+                                                    >
+                                                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                                                        Move to Lease Signed
+                                                    </Button>
+                                                )}
                                             </div>
                                         )}
                                         {requiredDocsLoaded && requiredDocsList.length === 0 && (
@@ -1142,7 +1506,7 @@ export function DealDetailSheet({
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-xs font-medium">No required-doc checklist configured</p>
                                                     <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                                                        Set up a workspace-wide checklist (e.g. NDA, Statement of Work, W-9)
+                                                        Set up a workspace-wide checklist (e.g. Homeowner Lease, AF Crashpad Terms &amp; Conditions, Payment Authorization)
                                                         in <Link href="/settings/workspace/required-docs" className="text-primary hover:underline">
                                                             Workspace settings
                                                         </Link>
@@ -1164,7 +1528,7 @@ export function DealDetailSheet({
                                                 )}
                                             </div>
                                             {selectedDeal.contactId ? (
-                                                <DocumentManager contactId={selectedDeal.contactId} />
+                                                <DocumentManager key={`docs-${selectedDeal.contactId}-${docsRefreshKey}`} contactId={selectedDeal.contactId} defaultFolderPath={tenantFolderPath} />
                                             ) : (
                                                 <div className="rounded-xl border-2 border-dashed border-border py-10 px-6 text-center space-y-3">
                                                     <div className="w-12 h-12 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center">
@@ -1204,7 +1568,7 @@ export function DealDetailSheet({
                                     <TabsContent value="finance" className="flex-1 p-4 sm:p-6 m-0 outline-none overflow-y-auto space-y-6">
                                         {/* Expenses Section */}
                                         <div className="space-y-4">
-                                            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Cost of Sale</h3>
+                                            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Host Expenses</h3>
                                             {expensesLoading ? (
                                                 <div className="flex items-center justify-center py-6">
                                                     <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full" />
@@ -1213,7 +1577,7 @@ export function DealDetailSheet({
                                                 <div className="rounded-lg border bg-card p-4 space-y-3">
                                                     <div className="grid grid-cols-2 gap-3">
                                                         <div className="space-y-1">
-                                                            <label className="text-xs text-muted-foreground">Recurring Cost / mo ($)</label>
+                                                            <label className="text-xs text-muted-foreground">Monthly Host Rent ($)</label>
                                                             <Input
                                                                 type="number"
                                                                 step="0.01"
@@ -1225,7 +1589,7 @@ export function DealDetailSheet({
                                                             />
                                                         </div>
                                                         <div className="space-y-1">
-                                                            <label className="text-xs text-muted-foreground">Service Fee ($)</label>
+                                                            <label className="text-xs text-muted-foreground">Cleaning Fee ($)</label>
                                                             <Input
                                                                 type="number"
                                                                 step="0.01"
@@ -1237,7 +1601,7 @@ export function DealDetailSheet({
                                                             />
                                                         </div>
                                                         <div className="space-y-1">
-                                                            <label className="text-xs text-muted-foreground">Other Variable Cost ($)</label>
+                                                            <label className="text-xs text-muted-foreground">Pet Fee ($)</label>
                                                             <Input
                                                                 type="number"
                                                                 step="0.01"
@@ -1249,7 +1613,7 @@ export function DealDetailSheet({
                                                             />
                                                         </div>
                                                         <div className="space-y-1">
-                                                            <label className="text-xs text-muted-foreground">Fixed Setup Cost ($)</label>
+                                                            <label className="text-xs text-muted-foreground">Non-refundable Deposit ($)</label>
                                                             <Input
                                                                 type="number"
                                                                 step="0.01"
@@ -1285,7 +1649,7 @@ export function DealDetailSheet({
                                                             onClick={() => setShowRentBreakdown(!showRentBreakdown)}
                                                         >
                                                             <span className="text-muted-foreground flex items-center gap-1">
-                                                                Prorated Recurring Cost
+                                                                Prorated Rent
                                                                 <span className="text-[10px]">({proratedRent.months.length} {proratedRent.months.length === 1 ? "month" : "months"})</span>
                                                             </span>
                                                             <span className="font-semibold text-rose-500">-${proratedRent.totalRent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -1304,19 +1668,19 @@ export function DealDetailSheet({
                                                 )}
                                                 {expensesData.cleaningFee > 0 && (
                                                     <div className="flex justify-between text-sm">
-                                                        <span className="text-muted-foreground">Service Fee</span>
+                                                        <span className="text-muted-foreground">Cleaning Fee</span>
                                                         <span className="font-semibold text-rose-500">-${expensesData.cleaningFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                     </div>
                                                 )}
                                                 {expensesData.petFee > 0 && (
                                                     <div className="flex justify-between text-sm">
-                                                        <span className="text-muted-foreground">Other Variable Cost</span>
+                                                        <span className="text-muted-foreground">Pet Fee</span>
                                                         <span className="font-semibold text-rose-500">-${expensesData.petFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                     </div>
                                                 )}
                                                 {expensesData.nonrefundableDeposit > 0 && (
                                                     <div className="flex justify-between text-sm">
-                                                        <span className="text-muted-foreground">Fixed Setup Cost</span>
+                                                        <span className="text-muted-foreground">Non-refundable Deposit</span>
                                                         <span className="font-semibold text-rose-500">-${expensesData.nonrefundableDeposit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                     </div>
                                                 )}

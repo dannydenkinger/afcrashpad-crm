@@ -88,7 +88,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
     },
     {
         id: "kpi-active-customers",
-        title: "Active customers",
+        title: "Active Tenants",
         description: "Contacts currently flagged as Customer.",
         Icon: Home,
         accent: "primary",
@@ -180,8 +180,8 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
     },
     {
         id: "bases",
-        title: "Inquiry tracker",
-        description: "Where your deals come from — by location or base.",
+        title: "Inquiry Tracker — Deals per Military Base",
+        description: "Where your deals come from — by military base.",
         Icon: MapPin,
         accent: "rose",
         category: "Charts",

@@ -5,7 +5,7 @@ import { adminDb } from "@/lib/firebase-admin"
 import { redirect } from "next/navigation"
 
 export const dynamic = "force-dynamic"
-export const metadata = { title: "Workspace suspended · Vesta" }
+export const metadata = { title: "Workspace suspended · AFCrashpad" }
 
 function toIso(ts: unknown): string | null {
     if (!ts) return null
@@ -65,7 +65,7 @@ export default async function SuspendedPage() {
                 </p>
                 <div className="flex justify-center gap-2">
                     <a
-                        href="mailto:growwithvesta@gmail.com"
+                        href="mailto:afcrashpad@gmail.com"
                         className="text-xs px-3 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white font-medium"
                     >
                         Contact support

@@ -46,7 +46,7 @@ import { ALL_WEBHOOK_EVENTS, type WebhookEvent, type WebhookSubscription, type W
  *   - A list of events it cares about (multi-select)
  *   - An HMAC secret used to sign every payload — receivers verify with
  *     `HMAC-SHA256(secret, request_body)` and compare against the
- *     X-Vesta-Signature header.
+ *     X-AFCrashpad-Signature header.
  *   - Toggle to enable/disable without deleting
  *   - "Send test" button so the operator can verify their receiver
  *     works without waiting for a real CRM event.
@@ -170,9 +170,9 @@ export function WebhooksManager() {
                         <p className="font-medium text-foreground">How webhooks work</p>
                         <p className="mt-1">
                             Register a URL and pick events. Whenever something happens in this workspace
-                            (a contact is created, a deal moves stage, a task is completed), Vesta POSTs
+                            (a contact is created, a deal moves stage, a task is completed), AFCrashpad POSTs
                             a JSON payload to your URL. Each request is signed with the subscription&apos;s
-                            secret using HMAC-SHA256 — verify the <code className="px-1 py-0.5 rounded bg-muted text-foreground">X-Vesta-Signature</code> header matches{" "}
+                            secret using HMAC-SHA256 — verify the <code className="px-1 py-0.5 rounded bg-muted text-foreground">X-AFCrashpad-Signature</code> header matches{" "}
                             <code className="px-1 py-0.5 rounded bg-muted text-foreground">sha256=&lt;hmac&gt;</code> before trusting the payload.
                             Failed deliveries retry up to 3 times with exponential backoff.
                         </p>
@@ -319,7 +319,7 @@ export function WebhooksManager() {
                     <DialogHeader>
                         <DialogTitle>New webhook</DialogTitle>
                         <DialogDescription>
-                            Vesta will POST signed JSON payloads to your URL whenever the selected events
+                            AFCrashpad will POST signed JSON payloads to your URL whenever the selected events
                             happen in this workspace.
                         </DialogDescription>
                     </DialogHeader>
@@ -331,7 +331,7 @@ export function WebhooksManager() {
                                 type="url"
                                 value={newUrl}
                                 onChange={(e) => setNewUrl(e.target.value)}
-                                placeholder="https://example.com/hooks/vesta"
+                                placeholder="https://example.com/hooks/afcrashpad"
                                 disabled={creating}
                             />
                         </div>
@@ -345,7 +345,7 @@ export function WebhooksManager() {
                                         newFormat === "vesta" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40"
                                     }`}
                                 >
-                                    <div className="text-xs font-semibold">Vesta JSON</div>
+                                    <div className="text-xs font-semibold">AFCrashpad JSON</div>
                                     <div className="text-[10px] text-muted-foreground mt-0.5">
                                         Standard signed envelope. Use this for your own backend, Zapier, n8n, Make.
                                     </div>

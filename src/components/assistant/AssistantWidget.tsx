@@ -140,7 +140,7 @@ export function AssistantWidget() {
                             <div>
                                 <div className="text-sm font-semibold">Assistant</div>
                                 <div className="text-[10px] text-muted-foreground">
-                                    {session?.user?.name ? `for ${session.user.name}` : "Vesta CRM"}
+                                    {session?.user?.name ? `for ${session.user.name}` : "AFCrashpad CRM"}
                                 </div>
                             </div>
                         </div>

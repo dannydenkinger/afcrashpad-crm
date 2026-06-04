@@ -1,7 +1,7 @@
 {
-  "name": "Vesta CRM",
-  "short_name": "Vesta",
-  "description": "Modern sales CRM",
+  "name": "AFCrashpad CRM",
+  "short_name": "AFCrashpad",
+  "description": "CRM for Air Force crashpad and military lodging management",
   "start_url": "/pipeline",
   "display": "standalone",
   "background_color": "#0a0a0a",

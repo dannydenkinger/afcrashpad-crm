@@ -64,7 +64,7 @@ export function FeedbackWelcomeModal() {
                         <Sparkles className="h-5 w-5" />
                     </div>
                     <DialogTitle className="text-center text-xl">
-                        Help shape Vesta
+                        Help shape AFCrashpad
                     </DialogTitle>
                     <DialogDescription className="text-center pt-1">
                         You&apos;re one of our first users — your feedback drives what we

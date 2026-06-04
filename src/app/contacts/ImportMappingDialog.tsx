@@ -25,6 +25,7 @@ const CRM_FIELDS = [
     { value: "name", label: "Name" },
     { value: "email", label: "Email" },
     { value: "phone", label: "Phone" },
+    { value: "militaryBase", label: "Military Base" },
     { value: "businessName", label: "Business Name" },
     { value: "status", label: "Status" },
 ]
@@ -89,6 +90,7 @@ export function ImportMappingDialog({ isOpen, onClose, onImportComplete }: Impor
                     if (h.includes("name") && !h.includes("business")) autoMapping[header] = "name"
                     else if (h.includes("email") || h.includes("e-mail")) autoMapping[header] = "email"
                     else if (h.includes("phone") || h.includes("mobile") || h.includes("cell")) autoMapping[header] = "phone"
+                    else if (h.includes("base") || h.includes("military") || h.includes("installation")) autoMapping[header] = "militaryBase"
                     else if (h.includes("business") || h.includes("company") || h.includes("organization")) autoMapping[header] = "businessName"
                     else if (h.includes("status")) autoMapping[header] = "status"
                     else autoMapping[header] = "skip"

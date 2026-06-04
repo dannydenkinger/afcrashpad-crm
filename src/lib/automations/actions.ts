@@ -122,7 +122,7 @@ async function handleSendEmail(
 
 // ── AI-generated email ─────────────────────────────────────────────────
 
-const AI_SYSTEM_PROMPT = `You write personalized marketing/transactional emails on behalf of small-business operators using Vesta CRM.
+const AI_SYSTEM_PROMPT = `You write personalized marketing/transactional emails on behalf of small-business operators using AFCrashpad CRM.
 
 Output rules (strict):
 - Output ONLY the email body as clean inline-styled HTML. No subject line, no preamble, no "Sure, here's…", no markdown fences.
@@ -812,7 +812,7 @@ async function handleSendInternalEmail(
     const subject = renderTokens(node.subject || "Automation update", tokenCtx)
     const body = renderTokensHtml(node.body || "", tokenCtx)
     const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;color:#0f172a;">
-<p style="font-size:14px;color:#64748b;margin:0 0 12px 0;">Internal notification from Vesta automation</p>
+<p style="font-size:14px;color:#64748b;margin:0 0 12px 0;">Internal notification from AFCrashpad automation</p>
 <div style="font-size:15px;line-height:1.6;">${body.replace(/\n/g, "<br>")}</div>
 </div>`
     let any = false

@@ -7,7 +7,7 @@ export default function AIRoutingPage() {
     return (
         <SettingsSubPage
             title="AI routing"
-            description="Pick which AI provider and model handles each AI feature in Vesta."
+            description="Pick which AI provider and model handles each AI feature in AFCrashpad."
         >
             <AIRoutingManager />
         </SettingsSubPage>

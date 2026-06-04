@@ -23,7 +23,7 @@ const INTEGRATIONS_NAV: SubPageItem[] = [
     {
         slug: "api-keys",
         label: "API keys",
-        description: "Programmatic access to Vesta",
+        description: "Programmatic access to AFCrashpad",
         icon: <KeyRound className="w-4 h-4" />,
         accent: "amber",
     },
@@ -60,7 +60,7 @@ export default async function IntegrationsSettingsLayout({ children }: { childre
         <SettingsSubPageLayout
             basePath="/settings/integrations"
             areaTitle="Integrations & API"
-            areaDescription="Connect external services and grant programmatic access to Vesta."
+            areaDescription="Connect external services and grant programmatic access to AFCrashpad."
             items={INTEGRATIONS_NAV}
         >
             {children}

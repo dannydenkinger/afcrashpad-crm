@@ -9,6 +9,7 @@ export type DuplicateContact = {
     name: string;
     email: string;
     phone: string;
+    militaryBase: string;
     businessName: string;
     status: string;
     tags: any[];

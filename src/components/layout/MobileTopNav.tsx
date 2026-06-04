@@ -1,7 +1,7 @@
 "use client"
 
 import { usePathname, useRouter } from "next/navigation"
-import { Bell, Search, Hexagon } from "lucide-react"
+import { Bell, Search } from "lucide-react"
 import { useBranding } from "@/hooks/useBranding"
 import { useHapticFeedback } from "@/hooks/useHapticFeedback"
 import { FeedbackHeaderButton } from "@/components/FeedbackHeaderButton"
@@ -36,7 +36,7 @@ export function MobileTopNav({ onNotificationsClick, unreadCount = 0 }: MobileTo
 
     const pageTitle = PAGE_TITLES[pathname] ||
         Object.entries(PAGE_TITLES).find(([prefix]) => pathname.startsWith(prefix))?.[1] ||
-        companyName || "Vesta CRM"
+        companyName || "AFCrashpad CRM"
 
     return (
         <header
@@ -44,9 +44,8 @@ export function MobileTopNav({ onNotificationsClick, unreadCount = 0 }: MobileTo
             style={{ minHeight: 'calc(3rem + env(safe-area-inset-top, 0px))' }}
         >
             <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 shrink-0">
-                    <Hexagon className="h-3.5 w-3.5 text-primary" />
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo.png" alt="AFCrashpad" className="h-7 w-7 shrink-0 rounded-lg object-contain" />
                 <span className="text-sm font-semibold text-foreground truncate">{pageTitle}</span>
             </div>
 

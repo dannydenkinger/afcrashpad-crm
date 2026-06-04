@@ -4,8 +4,8 @@ import { PublicFooter } from "@/components/marketing/PublicFooter"
 import { Changelog } from "@/components/marketing/Changelog"
 
 export const metadata = {
-    title: "Changelog | Vesta CRM",
-    description: "Recent updates and improvements to Vesta CRM.",
+    title: "Changelog | AFCrashpad CRM",
+    description: "Recent updates and improvements to AFCrashpad CRM.",
 }
 
 export default function ChangelogPage() {
@@ -21,7 +21,7 @@ export default function ChangelogPage() {
                             Changelog
                         </div>
                         <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
-                            What&rsquo;s new in Vesta
+                            What&rsquo;s new in AFCrashpad
                         </h1>
                         <p className="text-base text-muted-foreground mt-4 max-w-xl mx-auto">
                             Every release notes new features, fixes, and improvements.

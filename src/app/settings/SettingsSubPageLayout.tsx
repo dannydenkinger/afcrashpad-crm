@@ -14,6 +14,9 @@ export interface SubPageItem {
     /** Pre-rendered icon JSX — pass <Foo className="w-4 h-4" />. */
     icon?: ReactNode
     accent?: SectionAccent
+    /** Absolute href override — for items that live outside the parent
+     *  area's slug tree (e.g. /settings/bases under the Workspace nav). */
+    href?: string
 }
 
 const ACCENT_TILE_ACTIVE: Record<SectionAccent, string> = {
@@ -84,7 +87,7 @@ export function SettingsSubPageLayout({
                 >
                     <ul className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible no-scrollbar">
                         {items.map((item) => {
-                            const href = `${basePath}/${item.slug}`
+                            const href = item.href ?? `${basePath}/${item.slug}`
                             const active =
                                 pathname === href || pathname.startsWith(href + "/")
                             const accent = item.accent || "muted"

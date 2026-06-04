@@ -93,6 +93,7 @@ export function BulkEmailDialog({ isOpen, onClose, contacts }: BulkEmailDialogPr
         { tag: "{{name}}", label: "Name" },
         { tag: "{{email}}", label: "Email" },
         { tag: "{{phone}}", label: "Phone" },
+        { tag: "{{militaryBase}}", label: "Base" },
         { tag: "{{businessName}}", label: "Business" },
         { tag: "{{status}}", label: "Status" },
     ]

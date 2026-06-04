@@ -8,6 +8,32 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
     if (typeof window === "undefined") return null
     if (!("serviceWorker" in navigator)) return null
 
+    // The caching service worker is a PRODUCTION-only feature. In development
+    // its cache-first strategy for /_next/static serves STALE JS chunks, which
+    // breaks soft navigations and forces a hard refresh on every page. So in
+    // dev we don't register it — and we proactively unregister + purge any SW
+    // and caches left over from a previous dev session so existing installs
+    // self-heal without the user having to clear site data manually.
+    if (process.env.NODE_ENV !== "production") {
+        try {
+            const regs = await navigator.serviceWorker.getRegistrations()
+            await Promise.all(
+                regs
+                    .filter((r) => (r.active || r.waiting || r.installing)?.scriptURL?.endsWith("/sw.js"))
+                    .map((r) => r.unregister()),
+            )
+            if ("caches" in window) {
+                const keys = await caches.keys()
+                await Promise.all(
+                    keys.filter((k) => /^(vesta|afcrashpad)-/.test(k)).map((k) => caches.delete(k)),
+                )
+            }
+        } catch {
+            // best-effort cleanup; nothing to do if it fails
+        }
+        return null
+    }
+
     try {
         const registration = await navigator.serviceWorker.register("/sw.js", {
             scope: "/",

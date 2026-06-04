@@ -85,7 +85,7 @@ function MobileDashboard({
 }) {
     const { refreshing, pullDistance } = usePullToRefresh(onRefresh)
     const kpiCards = [
-        { label: "Active Customers", value: kpi.activeStayCount.toString(), icon: Home, color: "text-primary", href: "/contacts?status=Customer" },
+        { label: "Active Tenants", value: kpi.activeStayCount.toString(), icon: Home, color: "text-primary", href: "/contacts?status=Active+Stay" },
         { label: "Revenue", value: formatCurrency(kpi.monthlyRevenue), icon: DollarSign, color: "text-emerald-400", href: "/finance", trend: kpi.revenueTrend },
         { label: "Conversion", value: `${kpi.conversionRate}%`, icon: TrendingUp, color: "text-emerald-400", href: "/pipeline" },
         { label: "Pipeline", value: formatCurrency(kpi.totalPipelineValue), icon: Target, color: "text-primary", href: "/pipeline" },

@@ -68,7 +68,7 @@ export async function sendEmailToEligibleUsers(workspaceId: string, notification
                         ${linkHtml}
                     </div>
                     <p style="color: #737373; font-size: 12px; margin-top: 16px; text-align: center;">
-                        Vesta CRM &bull; You can manage email preferences in Settings
+                        AFCrashpad CRM &bull; You can manage email preferences in Settings
                     </p>
                 </div>
             `;

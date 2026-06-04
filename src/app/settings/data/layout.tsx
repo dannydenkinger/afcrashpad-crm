@@ -9,7 +9,7 @@ const DATA_NAV: SubPageItem[] = [
     {
         slug: "import",
         label: "Import",
-        description: "Upload CSVs into Vesta",
+        description: "Upload CSVs into AFCrashpad",
         icon: <Upload className="w-4 h-4" />,
         accent: "emerald",
     },
@@ -39,7 +39,7 @@ export default async function DataSettingsLayout({ children }: { children: React
         <SettingsSubPageLayout
             basePath="/settings/data"
             areaTitle="Data import & export"
-            areaDescription="Move data into and out of Vesta — CSV imports, CSV exports, and full JSON backups."
+            areaDescription="Move data into and out of AFCrashpad — CSV imports, CSV exports, and full JSON backups."
             items={DATA_NAV}
         >
             {children}

@@ -72,7 +72,7 @@ export async function getRevenueForecast(pipelineId: string, months: number = 6)
         const stageMap = new Map(stages.map(s => [s.id, s]))
 
         // Closed stage names — covers won + lost across common CRM templates
-        const closedNames = new Set(["Closed Won", "Won", "Booked", "Signed", "Closed", "Closed Lost", "Lost", "Abandoned"])
+        const closedNames = new Set(["Closed Won", "Won", "Booked", "Signed", "Closed", "Closed Lost", "Lost", "Abandoned", "Current Tenant"])
 
         // Get pipeline opps
         const oppsSnap = await db.collection("opportunities").get()

@@ -420,7 +420,7 @@ export async function sendPayoutFormEmail(referralId: string) {
                     </p>
                 </div>
                 <p style="color: #737373; font-size: 12px; margin-top: 16px; text-align: center;">
-                    Vesta CRM &bull; Referral Program
+                    AFCrashpad CRM &bull; Referral Program
                 </p>
             </div>
         `

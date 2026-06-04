@@ -26,6 +26,8 @@ const markOpportunitySeenSchema = z.object({
     id: firestoreIdSchema,
 });
 
+const moveToLeaseSignedSchema = z.object({ opportunityId: firestoreIdSchema });
+
 const bulkCreateOpportunitiesSchema = z.object({
     opportunities: z.array(z.object({
         name: z.string().max(200).optional(),
@@ -64,6 +66,7 @@ const createNewDealSchema = z.object({
     email: z.string().email().optional().or(z.literal("")),
     phone: z.string().max(50).optional().or(z.literal("")),
     base: z.string().max(200).optional().or(z.literal("")),
+    specialAccommodationId: z.string().optional().nullable(),
     stage: z.string().max(100).optional(),
     value: z.union([z.string(), z.number()]).optional(),
     margin: z.union([z.string(), z.number()]).optional(),
@@ -86,6 +89,7 @@ const updateOpportunitySchema = z.object({
     startDate: z.string().optional().or(z.literal("")),
     endDate: z.string().optional().or(z.literal("")),
     base: z.string().max(200).optional().or(z.literal("")),
+    specialAccommodationId: z.string().optional().nullable(),
     notes: z.string().max(5000).optional().nullable(),
     contactId: z.string().optional(),
     assigneeId: z.string().optional().nullable(),
@@ -252,7 +256,8 @@ export async function getPipelines() {
                 name: contact?.name || data.name || "Unknown",
                 email: contact?.email || data.email || null,
                 phone: contact?.phone || data.phone || null,
-                base: null,
+                base: data.militaryBase || null,
+                specialAccommodationId: data.specialAccommodationId || null,
                 stage: stageInfo?.stageName || (data.status && data.status !== "open" ? "—" : "Unknown"),
                 value: Number(data.opportunityValue) || 0,
                 margin: Number(data.estimatedProfit) || 0,
@@ -724,6 +729,8 @@ export async function createNewDeal(data: any, pipelineId?: string) {
             estimatedProfit: Number(data.margin) || 0,
             priority: data.priority || "MEDIUM",
             assigneeId: data.assigneeId || null,
+            militaryBase: data.base || null,
+            specialAccommodationId: data.specialAccommodationId || null,
             stayStartDate: data.startDate ? new Date(data.startDate).toISOString() : null,
             stayEndDate: data.endDate ? new Date(data.endDate).toISOString() : null,
             notes: data.notes || null,
@@ -838,6 +845,7 @@ export async function updateOpportunity(id: string, data: {
     collectedDate?: string;
     paymentStatus?: "unpaid" | "partial" | "paid";
     status?: "open" | "closed_won" | "closed_lost" | "archive";
+    specialAccommodationId?: string | null;
 }) {
     const idParsed = firestoreIdSchema.safeParse(id);
     if (!idParsed.success) return { success: false, error: "Invalid opportunity id" };
@@ -874,6 +882,8 @@ export async function updateOpportunity(id: string, data: {
         if (data.priority !== undefined) updateData.priority = data.priority;
         if (data.assigneeId !== undefined) updateData.assigneeId = data.assigneeId;
         if (data.leadSourceId !== undefined) updateData.leadSourceId = data.leadSourceId;
+        if (data.base !== undefined) updateData.militaryBase = data.base || null;
+        if (data.specialAccommodationId !== undefined) updateData.specialAccommodationId = data.specialAccommodationId || null;
         if (data.startDate !== undefined) updateData.stayStartDate = data.startDate && String(data.startDate).trim() ? new Date(data.startDate).toISOString() : null;
         if (data.endDate !== undefined) updateData.stayEndDate = data.endDate && String(data.endDate).trim() ? new Date(data.endDate).toISOString() : null;
         if (data.notes !== undefined) updateData.notes = data.notes != null ? String(data.notes) : null;
@@ -963,7 +973,7 @@ export async function updateOpportunity(id: string, data: {
         // Auto-record commission + check referral conversion on stage change
         if (data.pipelineStageId !== undefined && data.pipelineStageId !== beforeData.pipelineStageId) {
             try {
-                const bookedNames = new Set(["Closed Won", "Won", "Booked", "Signed"]);
+                const bookedNames = new Set(["Closed Won", "Won", "Booked", "Signed", "Lease Signed"]);
                 const pipelines = await db.collection('pipelines').get();
                 for (const pDoc of pipelines.docs) {
                     const stageDoc = await pDoc.ref.collection('stages').doc(data.pipelineStageId).get();
@@ -1305,7 +1315,33 @@ export async function permanentlyDeleteOpportunity(id: string) {
 
 /** @deprecated Locations are now managed via custom fields. */
 export async function getBaseNames(): Promise<string[]> {
-    return [];
+    try {
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
+        const snap = await db.collection('military_bases').get();
+        return snap.docs
+            .map(d => (d.data().name as string) || "")
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+    } catch {
+        return [];
+    }
+}
+
+// AFCrashpad: special accommodation options (Spouse, Traveling with Pet, EV, …), ordered.
+export async function getSpecialAccommodations(): Promise<{ id: string; name: string }[]> {
+    try {
+        const session = await requireAuth();
+        const db = tenantDb(session.user.workspaceId);
+        const snap = await db.collection('special_accommodations').get();
+        return snap.docs
+            .map(d => ({ id: d.id, name: (d.data().name as string) || "", order: typeof d.data().order === "number" ? d.data().order : 999 }))
+            .filter(a => a.name)
+            .sort((a, b) => a.order - b.order)
+            .map(({ id, name }) => ({ id, name }));
+    } catch {
+        return [];
+    }
 }
 
 export async function getUsers() {
@@ -1336,7 +1372,7 @@ export async function getPipelinePageData() {
         const { workspaceId } = session.user;
         const db = tenantDb(workspaceId);
 
-        const [pipelinesResult, baseNames, usersResult, priorityResult] = await Promise.all([
+        const [pipelinesResult, baseNames, usersResult, priorityResult, specialAccommodations] = await Promise.all([
             getPipelines(),
             getBaseNames(),
             getUsers(),
@@ -1348,6 +1384,7 @@ export async function getPipelinePageData() {
                     soonDays: typeof data?.prioritySoonDays === "number" ? data.prioritySoonDays : 30,
                 };
             })(),
+            getSpecialAccommodations(),
         ]);
 
         // Fire-and-forget: stay reminders
@@ -1357,6 +1394,7 @@ export async function getPipelinePageData() {
             success: true,
             pipelines: pipelinesResult.success ? pipelinesResult.pipelines : {},
             baseNames,
+            specialAccommodations,
             users: usersResult.success ? usersResult.users : [],
             priorityRanges: priorityResult,
             advancedCount: 0,
@@ -1367,6 +1405,7 @@ export async function getPipelinePageData() {
             success: false,
             pipelines: {},
             baseNames: [],
+            specialAccommodations: [],
             users: [],
             priorityRanges: { urgentDays: 14, soonDays: 30 },
             advancedCount: 0,
@@ -1391,6 +1430,150 @@ export async function updateRequiredDocs(opportunityId: string, field: string, v
     } catch (error) {
         console.error("Failed to update required docs:", error);
         return { success: false, error: "Failed to update required docs" };
+    }
+}
+
+// ── Lifecycle: move a deal to the "Lease Signed" stage in its own pipeline ────
+export async function moveToLeaseSigned(opportunityId: string) {
+    const parsed = moveToLeaseSignedSchema.safeParse({ opportunityId });
+    if (!parsed.success) return { success: false, error: "Invalid input" };
+
+    try {
+        const session = await requireAuth();
+        const { workspaceId } = session.user;
+        const db = tenantDb(workspaceId);
+        const currentUserId = (session.user as any).id;
+
+        // Find the opportunity to get its current stage
+        const docRef = db.doc('opportunities', parsed.data.opportunityId);
+        const oppDoc = await docRef.get();
+        if (!oppDoc.exists) return { success: false, error: "Opportunity not found" };
+
+        const oppData = oppDoc.data()!;
+        const currentStageId = oppData.pipelineStageId;
+
+        // Resolve the "Lease Signed" stage within the deal's own pipeline
+        const pipelines = await db.collection('pipelines').get();
+        let leaseSignedStageId: string | null = null;
+
+        for (const pDoc of pipelines.docs) {
+            const stages = await db.subcollection('pipelines', pDoc.id, 'stages').get();
+            const hasCurrentStage = stages.docs.some(s => s.id === currentStageId);
+            if (hasCurrentStage) {
+                const leaseStage = stages.docs.find(s => s.data().name === "Lease Signed");
+                if (leaseStage) leaseSignedStageId = leaseStage.id;
+                break;
+            }
+        }
+
+        if (!leaseSignedStageId) return { success: false, error: "Lease Signed stage not found in this pipeline" };
+
+        const history = Array.isArray(oppData.stageHistory) ? [...oppData.stageHistory] : [];
+        history.push({ stageId: leaseSignedStageId, enteredAt: new Date() });
+        await docRef.update({
+            pipelineStageId: leaseSignedStageId,
+            stageHistory: history,
+            updatedAt: new Date()
+        });
+
+        // Execute stage automation rules for Lease Signed
+        try {
+            const userId = currentUserId || oppData.claimedBy || oppData.assigneeId || "";
+            executeStageAutomations(workspaceId, parsed.data.opportunityId, leaseSignedStageId, userId).catch(() => {});
+        } catch { /* ignore stage automation errors */ }
+
+        revalidatePath("/pipeline");
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to move to Lease Signed:", error);
+        return { success: false, error: "Failed to move to Lease Signed" };
+    }
+}
+
+// ── Lifecycle: auto-advance Lease Signed / Move-in Scheduled deals whose stay
+// has started to "Current Tenant" (fires referral conversion). Tenant-scoped so
+// the daily cron can invoke it per workspace.
+export async function autoAdvanceOpportunities(workspaceId: string) {
+    try {
+        const db = tenantDb(workspaceId);
+        const now = new Date();
+        const today = now.toISOString().split("T")[0];
+
+        // Find "Lease Signed"/"Move In Scheduled" trigger stages + "Current Tenant" target per pipeline
+        const pipelinesSnap = await db.collection('pipelines').get();
+
+        let advancedCount = 0;
+
+        for (const pDoc of pipelinesSnap.docs) {
+            const stagesSnap = await db.subcollection('pipelines', pDoc.id, 'stages').get();
+
+            const triggerStageIds = new Set<string>();
+            let currentTenantStageId: string | null = null;
+
+            for (const s of stagesSnap.docs) {
+                const nameLower = String(s.data().name || "").toLowerCase();
+                if (nameLower === "lease signed" || nameLower === "move in scheduled") {
+                    triggerStageIds.add(s.id);
+                }
+                if (nameLower === "current tenant") {
+                    currentTenantStageId = s.id;
+                }
+            }
+
+            if (triggerStageIds.size === 0 || !currentTenantStageId) continue;
+
+            for (const stageId of triggerStageIds) {
+                const oppsSnap = await db.collection('opportunities')
+                    .where('pipelineStageId', '==', stageId)
+                    .get();
+
+                for (const oppDoc of oppsSnap.docs) {
+                    const data = oppDoc.data();
+                    // Skip non-open deals
+                    if (data.status && data.status !== "open") continue;
+                    let startDate = data.stayStartDate;
+
+                    // Fall back to the contact's stay start date if the deal has none
+                    if (!startDate && data.contactId) {
+                        const contactDoc = await db.doc('contacts', data.contactId).get();
+                        if (contactDoc.exists) {
+                            startDate = contactDoc.data()?.stayStartDate;
+                        }
+                    }
+
+                    if (!startDate) continue;
+
+                    // Normalize to YYYY-MM-DD for comparison
+                    const startStr = typeof startDate === 'string'
+                        ? startDate.split("T")[0]
+                        : startDate.toDate ? startDate.toDate().toISOString().split("T")[0]
+                        : null;
+
+                    if (startStr && startStr <= today) {
+                        const history = Array.isArray(data.stageHistory) ? [...data.stageHistory] : [];
+                        history.push({ stageId: currentTenantStageId, enteredAt: new Date() });
+                        await oppDoc.ref.update({
+                            pipelineStageId: currentTenantStageId,
+                            stageHistory: history,
+                            updatedAt: new Date()
+                        });
+                        advancedCount++;
+
+                        // Check if this advancement triggers a referral payout
+                        if (data.contactId) {
+                            const dealValue = Number(data.opportunityValue) || 0;
+                            checkReferralConversion(oppDoc.id, data.contactId, dealValue).catch(() => {});
+                        }
+                    }
+                }
+            }
+        }
+
+        revalidatePath("/pipeline");
+        return { success: true, advancedCount };
+    } catch (error) {
+        console.error("Failed to auto-advance opportunities:", error);
+        return { success: false, error: "Failed to auto-advance opportunities" };
     }
 }
 

@@ -117,7 +117,7 @@ const GROUPS: GroupSpec[] = [
             { label: "Documents + e-signature", value: (t) => PLANS[t].features.documentsAndEsign },
             { label: "Finance (forecasting, commissions)", value: (t) => PLANS[t].features.finance },
             { label: "Custom domain on forms/booking", value: (t) => PLANS[t].features.customDomainForms },
-            { label: "White-label (remove Vesta branding)", value: (t) => PLANS[t].features.whiteLabel },
+            { label: "White-label (remove AFCrashpad branding)", value: (t) => PLANS[t].features.whiteLabel },
             { label: "Multiple workspaces", value: (t) => PLANS[t].features.multipleWorkspaces },
         ],
     },

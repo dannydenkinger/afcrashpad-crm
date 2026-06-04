@@ -32,7 +32,7 @@ export function useBranding() {
     return {
         branding,
         loading,
-        companyName: branding?.companyName || "Vesta CRM",
+        companyName: branding?.companyName || "AFCrashpad CRM",
         primaryColor: branding?.primaryColor,
         logoUrl: branding?.logoUrl,
     }

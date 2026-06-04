@@ -788,7 +788,9 @@ function MonthView({
                                         "text-[10px] px-2 py-1.5 rounded-lg border truncate font-bold shadow-sm transition-all active:scale-95 cursor-pointer hover:brightness-110 hover:shadow-md",
                                         event.source === "TASK" && "cursor-grab active:cursor-grabbing"
                                     )}
-                                    style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
+                                    style={event.source === "SYSTEM"
+                                        ? { backgroundColor: `${event.color}2e`, color: "var(--foreground)", borderColor: "transparent", fontWeight: 500 }
+                                        : { backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
                                 >
                                     {event.title}
                                 </div>
@@ -802,7 +804,9 @@ function MonthView({
                                     data-event
                                     onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
                                     className="text-[11px] px-1.5 py-1 rounded-md border truncate font-bold shadow-sm transition-all active:scale-95 cursor-pointer min-h-[24px] touch-manipulation"
-                                    style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
+                                    style={event.source === "SYSTEM"
+                                        ? { backgroundColor: `${event.color}2e`, color: "var(--foreground)", borderColor: "transparent", fontWeight: 500 }
+                                        : { backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
                                 >
                                     {event.title}
                                 </div>
@@ -821,13 +825,13 @@ function MonthView({
             )
             day = addDays(day, 1)
         }
-        rows.push(<div className="grid grid-cols-7" key={day.toString()}>{days}</div>)
+        rows.push(<div className="grid grid-cols-7 flex-1 min-h-0" key={day.toString()}>{days}</div>)
         days = []
     }
 
     return (
-        <div className="rounded-2xl border border-border overflow-hidden shadow-2xl">
-            <div className="grid grid-cols-7 bg-muted/20 border-b border-border">
+        <div className="rounded-2xl border border-border overflow-hidden shadow-2xl h-full flex flex-col">
+            <div className="grid grid-cols-7 bg-muted/20 border-b border-border shrink-0">
                 {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
                     <div key={d} className="py-2 sm:py-4 text-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
                         <span className="sm:hidden">{d.slice(0, 1)}</span>
@@ -884,7 +888,9 @@ function WeekView({
                                 "text-[10px] p-1.5 rounded-lg border font-bold truncate mb-0.5 cursor-pointer hover:brightness-110",
                                 event.source === "TASK" && "cursor-grab active:cursor-grabbing"
                             )}
-                            style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
+                            style={event.source === "SYSTEM"
+                                ? { backgroundColor: `${event.color}2e`, color: "var(--foreground)", borderColor: "transparent", fontWeight: 500 }
+                                : { backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
                         >
                             {event.title}
                         </div>
@@ -941,7 +947,9 @@ function WeekView({
                                             "text-[10px] p-2 rounded-lg border font-bold shadow-md transition-all hover:brightness-110 cursor-pointer mb-1",
                                             event.source === "TASK" && "cursor-grab active:cursor-grabbing"
                                         )}
-                                        style={{ backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
+                                        style={event.source === "SYSTEM"
+                                        ? { backgroundColor: `${event.color}2e`, color: "var(--foreground)", borderColor: "transparent", fontWeight: 500 }
+                                        : { backgroundColor: `${event.color}15`, borderColor: `${event.color}40`, color: event.color }}
                                     >
                                         <div className="flex items-center gap-1 opacity-60 mb-0.5">
                                             <Clock className="h-2.5 w-2.5" />

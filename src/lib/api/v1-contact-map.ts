@@ -6,6 +6,7 @@ export interface ContactPayload {
     email: string | null
     phone: string | null
     status: string | null
+    militaryBase: string | null
     businessName: string | null
     tags: Array<{ tagId: string; name?: string; color?: string }>
     createdAt: string
@@ -28,6 +29,7 @@ export function mapContact(id: string, data: Record<string, unknown>): ContactPa
         email: (data.email as string) ?? null,
         phone: (data.phone as string) ?? null,
         status: (data.status as string) ?? null,
+        militaryBase: (data.militaryBase as string) ?? null,
         businessName: (data.businessName as string) ?? null,
         tags: ((data.tags as ContactPayload["tags"]) ?? []) as ContactPayload["tags"],
         createdAt: tsToISO(data.createdAt),

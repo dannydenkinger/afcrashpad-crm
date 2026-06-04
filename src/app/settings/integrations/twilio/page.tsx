@@ -89,7 +89,7 @@ export default async function TwilioIntegrationPage() {
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
                         <p className="text-muted-foreground">
-                            To receive SMS replies in Vesta, set this URL as the &ldquo;A
+                            To receive SMS replies in AFCrashpad, set this URL as the &ldquo;A
                             message comes in&rdquo; webhook on your Twilio number:
                         </p>
                         <pre className="text-xs bg-muted p-3 rounded font-mono break-all">

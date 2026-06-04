@@ -63,7 +63,7 @@ export function SesIntegrationCard({ initialIdentity, initialBalance }: Props) {
     const [fromName, setFromName] = useState("")
     const [grantAmount, setGrantAmount] = useState("1000")
     const [testTo, setTestTo] = useState("")
-    const [testSubject, setTestSubject] = useState("Test from Vesta CRM")
+    const [testSubject, setTestSubject] = useState("Test from AFCrashpad CRM")
     const [testMessage, setTestMessage] = useState("Hello! This is a test email from your SES integration.")
     const [stripeConfigured, setStripeConfigured] = useState(false)
     const [packs, setPacks] = useState<{ sku: string; label: string; credits: number; priceDisplay: string }[]>([])
@@ -177,7 +177,7 @@ export function SesIntegrationCard({ initialIdentity, initialBalance }: Props) {
         startTransition(async () => {
             const result = await sendTestEmail({
                 to: testTo.trim(),
-                subject: testSubject.trim() || "Test from Vesta CRM",
+                subject: testSubject.trim() || "Test from AFCrashpad CRM",
                 message: testMessage.trim() || "Hello!",
             })
             if (!result.success) {

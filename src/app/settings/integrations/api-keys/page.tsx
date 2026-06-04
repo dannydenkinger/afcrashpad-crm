@@ -17,7 +17,7 @@ export default async function ApiKeysPage() {
     return (
         <SettingsSubPage
             title="API keys"
-            description="Generate keys to talk to Vesta from your own code or third-party tools."
+            description="Generate keys to talk to AFCrashpad from your own code or third-party tools."
         >
             {meetsPlan(plan.tier, "pro") ? (
                 <ApiKeyManager />

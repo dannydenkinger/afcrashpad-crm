@@ -27,7 +27,7 @@ export function PublicNav() {
                                 aria-label="home"
                                 className="flex items-center gap-2">
                                 <Hexagon className="h-6 w-6 text-violet-500" />
-                                <span className="text-lg font-semibold tracking-tight">Vesta CRM</span>
+                                <span className="text-lg font-semibold tracking-tight">AFCrashpad CRM</span>
                             </Link>
 
                             <button

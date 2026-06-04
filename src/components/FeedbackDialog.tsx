@@ -119,7 +119,7 @@ export function FeedbackDialog({
                             kind === "bug"
                                 ? "What went wrong? Include steps if you can — \"clicked Save on a contact, page froze, no toast\"."
                                 : kind === "idea"
-                                  ? "What would make Vesta better for you? It can be small — a button, a shortcut, a missing field."
+                                  ? "What would make AFCrashpad better for you? It can be small — a button, a shortcut, a missing field."
                                   : "Tell us anything — what's working, what's not, what's confusing."
                         }
                         value={message}

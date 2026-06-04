@@ -696,6 +696,14 @@ export function ContactDetailSheet({
                                                     onBlurSave={handleValidatedSave}
                                                     colSpan
                                                 />
+                                                <InlineField
+                                                    label="Military Base"
+                                                    value={editingContact?.militaryBase || ""}
+                                                    onChange={(val) => setEditingContact((prev: any) => prev ? { ...prev, militaryBase: val } : null)}
+                                                    onBlurSave={handleValidatedSave}
+                                                    placeholder="e.g. Luke AFB"
+                                                    colSpan
+                                                />
                                             </div>
                                         </div>
 
@@ -713,9 +721,10 @@ export function ContactDetailSheet({
                                                     >
                                                         {contactStatuses.length === 0 ? (
                                                             <>
+                                                                <option value="Active Stay">Active Stay</option>
                                                                 <option value="Lead">Lead</option>
-                                                                <option value="Customer">Customer</option>
-                                                                <option value="Past Customer">Past Customer</option>
+                                                                <option value="Forms Pending">Forms Pending</option>
+                                                                <option value="Booked">Booked</option>
                                                             </>
                                                         ) : (
                                                             contactStatuses.map((s) => (
@@ -725,21 +734,21 @@ export function ContactDetailSheet({
                                                     </select>
                                                 </div>
                                                 <InlineField
-                                                    label="Period Start (optional)"
+                                                    label="Stay Start (optional)"
                                                     type="date"
                                                     value={editingContact?.stayStartDate?.split?.('T')?.[0] || editingContact?.stayStartDate || ""}
                                                     onChange={(val) => setEditingContact((prev: any) => prev ? { ...prev, stayStartDate: val || null } : null)}
                                                     onBlurSave={handleValidatedSave}
                                                 />
                                                 <InlineField
-                                                    label="Period End (optional)"
+                                                    label="Stay End (optional)"
                                                     type="date"
                                                     value={editingContact?.stayEndDate?.split?.('T')?.[0] || editingContact?.stayEndDate || ""}
                                                     onChange={(val) => setEditingContact((prev: any) => prev ? { ...prev, stayEndDate: val || null } : null)}
                                                     onBlurSave={handleValidatedSave}
                                                 />
                                             </div>
-                                            <p className="text-xs text-muted-foreground">Period dates pre-fill new opportunities — useful for engagement, project, or service durations.</p>
+                                            <p className="text-xs text-muted-foreground">Stay dates are used when creating an opportunity and will pre-fill the deal form.</p>
                                         </div>
 
                                         {/* Do Not Disturb */}
@@ -924,8 +933,8 @@ export function ContactDetailSheet({
 
                                             <div className="space-y-3 mt-4">
                                                 {[
-                                                    { label: "Master Agreement", field: "homeownerLeaseSigned" },
-                                                    { label: "Terms & Conditions", field: "termsConditionsSigned" },
+                                                    { label: "Homeowner Lease", field: "homeownerLeaseSigned" },
+                                                    { label: "AF Crashpad Terms & Conditions", field: "termsConditionsSigned" },
                                                     { label: "Payment Authorization Form", field: "paymentAuthSigned" }
                                                 ].map((doc) => (
                                                     <div key={doc.field} className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-muted/10 hover:bg-muted/20 transition-colors">

@@ -108,7 +108,7 @@ export const PLANS: Record<PlanTier, PlanDef> = {
             webhooks: false,
             prioritySupport: false,
         },
-        tagline: "Try Vesta with no time limit",
+        tagline: "Try AFCrashpad with no time limit",
         description: "Solo plan for trying the workflow before you commit. 1 seat, 1,000 contacts, all the table-stakes CRM features.",
     },
     pro: {

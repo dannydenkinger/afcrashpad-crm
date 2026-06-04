@@ -19,7 +19,7 @@ const CHANGELOG: ChangelogEntry[] = [
         version: "1.0.0",
         date: "2026-03-19",
         type: "feature",
-        title: "Vesta CRM Launch",
+        title: "AFCrashpad CRM Launch",
         description:
             "Full-featured CRM with pipeline management, contacts, calendar integration, communications, document management, and optional marketing and finance modules.",
     },

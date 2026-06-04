@@ -22,7 +22,7 @@ export interface RequiredDoc {
 }
 
 const DEFAULT_DOCS: { id: string; label: string }[] = [
-    { id: "lease", label: "Signed Contract" },
+    { id: "lease", label: "Homeowner Lease" },
     { id: "tc", label: "Terms & Conditions" },
     { id: "payment", label: "Payment Authorization" },
 ]

@@ -138,6 +138,7 @@ export async function generateDocumentFromTemplate(templateId: string, contactId
             contactName: contact.name || "",
             contactEmail: contact.email || "",
             contactPhone: contact.phone || "",
+            militaryBase: contact.militaryBase || "",
             businessName: contact.businessName || "",
             currentDate: new Date().toLocaleDateString(),
         }

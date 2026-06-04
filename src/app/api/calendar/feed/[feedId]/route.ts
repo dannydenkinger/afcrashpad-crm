@@ -37,7 +37,7 @@ export async function GET(
         const lines = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
-            `PRODID:-//Vesta CRM//Calendar Sync//EN`,
+            `PRODID:-//AFCrashpad CRM//Calendar Sync//EN`,
             "CALSCALE:GREGORIAN",
             "METHOD:PUBLISH",
             `X-WR-CALNAME:${(user as any).name || 'Agent'}'s CRM Schedule`,

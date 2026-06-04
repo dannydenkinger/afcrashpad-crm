@@ -82,6 +82,10 @@ export async function POST(req: NextRequest) {
                 url: signedUrl,
                 status: "LINK",
                 folder,
+                // Persist the full hierarchical path (when provided) so these
+                // contact-attached docs surface at their nested location in the
+                // workspace /documents page — not just the flat `folder` leaf.
+                ...(folderPathRaw ? { folderPath } : {}),
                 createdAt: new Date(),
                 updatedAt: new Date(),
                 storagePath,

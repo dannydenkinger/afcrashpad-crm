@@ -5,7 +5,7 @@ import { SupportRedeemForm } from "./SupportRedeemForm"
 
 export const dynamic = "force-dynamic"
 
-export const metadata = { title: "Support session · Vesta" }
+export const metadata = { title: "Support session · AFCrashpad" }
 
 export default async function SupportPage() {
     const session = await getAuthSession()

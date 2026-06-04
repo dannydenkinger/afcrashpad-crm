@@ -84,6 +84,68 @@ export async function createFolder(parentPath: string, name: string): Promise<{ 
     }
 }
 
+// ── Ensure Folder Path (idempotent, creates any missing segments) ──
+
+/**
+ * Given a full folder path like "/Tenants/John Smith/Payment Authorization",
+ * creates a `document_folders` row for every segment that doesn't already
+ * exist ("/Tenants", then "/Tenants/John Smith", then the leaf). Existing
+ * segments are skipped, so this is safe to call on every upload.
+ *
+ * Each created row matches the schema written by createFolder():
+ * { name, path, parentPath, createdAt, createdBy }. The /documents FolderTree
+ * is built solely from these rows (getFolders → buildFolderTree), so without
+ * them the nested folders would never appear even though docs carry folderPath.
+ */
+export async function ensureFolderPath(
+    path: string,
+): Promise<{ success: boolean; error?: string }> {
+    const session = await requireAuth()
+    const workspaceId = session.user.workspaceId
+    const db = tenantDb(workspaceId)
+
+    // Split into sanitized segments, ignoring empty parts from leading/trailing
+    // or doubled slashes. Each segment is sanitized the same way createFolder
+    // sanitizes a single name (no slashes — they're the path delimiter).
+    const segments = path
+        .split("/")
+        .map((s) => s.trim().replace(/\//g, "-"))
+        .filter(Boolean)
+
+    if (segments.length === 0) return { success: true }
+
+    try {
+        let parentPath = "/"
+        for (const segment of segments) {
+            const segPath = parentPath === "/" ? `/${segment}` : `${parentPath}/${segment}`
+
+            // Skip if this segment already exists (idempotent).
+            const existing = await db.collection("document_folders")
+                .where("path", "==", segPath)
+                .limit(1)
+                .get()
+
+            if (existing.empty) {
+                await db.add("document_folders", {
+                    name: segment,
+                    path: segPath,
+                    parentPath,
+                    createdAt: new Date(),
+                    createdBy: session.user.email || "",
+                })
+            }
+
+            parentPath = segPath
+        }
+
+        revalidatePath("/documents")
+        return { success: true }
+    } catch (error) {
+        console.error("Failed to ensure folder path:", error)
+        return { success: false, error: "Failed to create folder path" }
+    }
+}
+
 // ── Rename Folder ──
 
 export async function renameFolder(folderPath: string, newName: string): Promise<{ success: boolean; error?: string }> {

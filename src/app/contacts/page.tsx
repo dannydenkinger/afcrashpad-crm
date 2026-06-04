@@ -746,6 +746,7 @@ function ContactsContent() {
             name: 'New Contact',
             email: '',
             phone: '',
+            militaryBase: '',
             businessName: '',
             status: 'Lead',
             opportunities: [],
@@ -813,6 +814,7 @@ function ContactsContent() {
             name: selectedContact.name,
             email: selectedContact.email,
             phone: selectedContact.phone,
+            base: selectedContact.militaryBase || '',
             startDate: selectedContact.stayStartDate || '',
             endDate: selectedContact.stayEndDate || ''
         });
@@ -840,6 +842,7 @@ function ContactsContent() {
                         name: editingContact.name,
                         email: editingContact.email,
                         phone: editingContact.phone,
+                        militaryBase: editingContact.militaryBase,
                         businessName: editingContact.businessName,
                         status: editingContact.status || 'Lead',
                         stayStartDate: editingContact.stayStartDate || null,
@@ -863,6 +866,7 @@ function ContactsContent() {
                         name: editingContact.name,
                         email: editingContact.email,
                         phone: editingContact.phone,
+                        militaryBase: editingContact.militaryBase,
                         businessName: editingContact.businessName,
                         status: editingContact.status || 'Lead',
                         stayStartDate: editingContact.stayStartDate || null,
@@ -1239,6 +1243,7 @@ function ContactsContent() {
                                     Email: c.email || "",
                                     Phone: c.phone || "",
                                     Status: c.status || "",
+                                    "Military Base": c.militaryBase || "",
                                     "Business Name": c.businessName || "",
                                     "Stay Start": c.stayStartDate ? new Date(c.stayStartDate).toLocaleDateString() : "",
                                     "Stay End": c.stayEndDate ? new Date(c.stayEndDate).toLocaleDateString() : "",
@@ -1279,7 +1284,7 @@ function ContactsContent() {
                         <DropdownMenuContent align="start" className="w-[200px]">
                             <DropdownMenuLabel>Set Status</DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            {(contactStatuses.length > 0 ? contactStatuses.map(s => s.name) : ["Lead", "Customer", "Past Customer"]).map(status => (
+                            {(contactStatuses.length > 0 ? contactStatuses.map(s => s.name) : ["Active Stay", "Lead", "Forms Pending", "Booked"]).map(status => (
                                 <DropdownMenuItem key={status} onClick={() => handleBulkStatusChange(status)}>
                                     {status}
                                 </DropdownMenuItem>
@@ -1380,7 +1385,7 @@ function ContactsContent() {
                                     <DropdownMenuLabel>Filter by Status</DropdownMenuLabel>
                                     <DropdownMenuSeparator />
                                     <div className="flex flex-col gap-1 p-1">
-                                        {(contactStatuses.length > 0 ? contactStatuses.map(s => s.name) : ["Lead", "Customer", "Past Customer"]).map(status => (
+                                        {(contactStatuses.length > 0 ? contactStatuses.map(s => s.name) : ["Active Stay", "Lead", "Forms Pending", "Booked"]).map(status => (
                                             <div key={status} className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted rounded-sm transition-colors cursor-pointer" onClick={() => {
                                                 setStatusFilter(prev =>
                                                     prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
@@ -1670,9 +1675,11 @@ function ContactsContent() {
                                                         )}
                                                     </div>
                                                     <p className="text-xs text-muted-foreground truncate">{contact.email || contact.phone || "—"}</p>
-                                                    {contact.dealStage !== "—" && (
+                                                    {(contact.militaryBase || contact.dealStage !== "—") && (
                                                         <div className="flex items-center gap-1.5 mt-0.5">
-                                                            <span className="text-[10px] text-muted-foreground">{contact.dealStage}</span>
+                                                            {contact.militaryBase && <span className="text-[10px] text-muted-foreground">{contact.militaryBase}</span>}
+                                                            {contact.militaryBase && contact.dealStage !== "—" && <span className="text-[10px] text-muted-foreground/40">·</span>}
+                                                            {contact.dealStage !== "—" && <span className="text-[10px] text-muted-foreground">{contact.dealStage}</span>}
                                                         </div>
                                                     )}
                                                 </div>
@@ -1866,6 +1873,7 @@ function ContactsContent() {
                             { key: 'name', label: 'Name' },
                             { key: 'email', label: 'Email' },
                             { key: 'phone', label: 'Phone' },
+                            { key: 'militaryBase', label: 'Military Base' },
                             { key: 'businessName', label: 'Business' },
                             { key: 'status', label: 'Status' },
                         ];

@@ -7,6 +7,7 @@ import { determineAssignee } from '@/lib/auto-assign';
 import * as z from 'zod';
 import { rateLimit, getRateLimitKey } from '@/lib/rate-limit';
 import { validateApiKey } from '@/lib/api-auth';
+import { calculateOnBaseLodging, lodgingData } from '@/lib/calculators/on-base';
 
 function normalizeDateToYmd(input: unknown): string | null {
     if (!input) return null;
@@ -46,6 +47,29 @@ function ymdToIsoNoon(ymd: string): string | null {
     return d.toISOString();
 }
 
+// Normalize an incoming base/location string against the known on-base lodging
+// keys (e.g. "Luke AFB" -> "Luke AFB, AZ"). Falls back to the raw value when
+// no confident match is found (the value calc returns 0 for unknown bases).
+function normalizeBaseName(input: unknown): string | null {
+    const raw = String(input ?? '').trim();
+    if (!raw) return null;
+    const keys = Object.keys(lodgingData);
+    const rawLower = raw.toLowerCase();
+
+    const exact = keys.find(k => k.toLowerCase() === rawLower);
+    if (exact) return exact;
+
+    // If the form sends "Luke AFB" (no state), try a single unambiguous match.
+    const starts = keys.filter(k => k.toLowerCase().startsWith(`${rawLower},`));
+    if (starts.length === 1) return starts[0];
+
+    const includes = keys.filter(k => k.toLowerCase().includes(rawLower));
+    if (includes.length === 1) return includes[0];
+
+    // Fall back to the raw value (value calc will be 0 if unknown)
+    return raw;
+}
+
 // Define the expected schema from the webhook
 const webhookSchema = z.object({
     name: z.string().optional(),
@@ -55,9 +79,12 @@ const webhookSchema = z.object({
     phone: z.string().optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
-    location: z.string().optional(),
+    base: z.string().optional(),
+    location: z.string().optional(), // legacy/fallback alias for base
     notes: z.string().optional(),
     value: z.number().optional(),
+    special_accommodations: z.union([z.string(), z.array(z.string())]).nullish(),
+    reason_for_stay: z.string().optional(),
 });
 
 export async function POST(req: Request) {
@@ -72,9 +99,11 @@ export async function POST(req: Request) {
         const rawBody = await req.json();
 
         // 1. Authenticate Request
-        // Supports: Authorization header, x-api-key header, _auth field in body (for sendBeacon)
+        // Supports: Authorization header, x-api-key header, ?api_key= query param
+        // (for Elementor which can't set headers), and _auth body field (for sendBeacon)
         const authHeader = req.headers.get('authorization');
         const expectedApiKey = process.env.WEBHOOK_API_KEY;
+        const queryApiKey = new URL(req.url).searchParams.get('api_key');
 
         let authenticated = false;
         let workspaceId: string | null = null;
@@ -84,9 +113,27 @@ export async function POST(req: Request) {
             workspaceId = process.env.DEFAULT_WORKSPACE_ID || null;
         }
 
+        // Support api_key query param matching the static env key (for Elementor)
+        if (!authenticated && expectedApiKey && queryApiKey === expectedApiKey) {
+            authenticated = true;
+            workspaceId = process.env.DEFAULT_WORKSPACE_ID || null;
+        }
+
         // Fall back to managed API key authentication (header-based)
         if (!authenticated) {
             const apiKeyResult = await validateApiKey(req);
+            if (apiKeyResult) {
+                authenticated = true;
+                workspaceId = apiKeyResult.workspaceId;
+            }
+        }
+
+        // Support managed API key passed via ?api_key= query param (Elementor can't set headers)
+        if (!authenticated && queryApiKey) {
+            const fakeReq = new Request(req.url, {
+                headers: { "authorization": `Bearer ${queryApiKey}` },
+            });
+            const apiKeyResult = await validateApiKey(fakeReq);
             if (apiKeyResult) {
                 authenticated = true;
                 workspaceId = apiKeyResult.workspaceId;
@@ -130,11 +177,37 @@ export async function POST(req: Request) {
             last_name: raw.last_name ?? raw.lastName ?? raw.LastName ?? raw.lname ?? null,
             email: raw.email ?? raw.Email ?? null,
             phone: raw.phone ?? raw.Phone ?? raw.phone_number ?? raw.phoneNumber ?? null,
-            startDate: raw.startDate ?? raw.start_date ?? raw.arrival_date ?? raw.arrivalDate ?? null,
-            endDate: raw.endDate ?? raw.end_date ?? raw.departure_date ?? raw.departureDate ?? null,
+            startDate:
+                raw.startDate ??
+                raw.start_date ??
+                raw.estimated_arrival_date ??
+                raw.estimatedArrivalDate ??
+                raw.arrival_date ??
+                raw.arrivalDate ??
+                null,
+            endDate:
+                raw.endDate ??
+                raw.end_date ??
+                raw.estimated_departure_date ??
+                raw.estimatedDepartureDate ??
+                raw.departure_date ??
+                raw.departureDate ??
+                null,
+            // AF: prefer base, fall back to location alias
+            base: raw.base ?? raw.Base ?? raw.location ?? raw.Location ?? null,
             location: raw.location ?? raw.Location ?? raw.base ?? raw.Base ?? null,
             notes: raw.notes ?? raw.message ?? raw.Message ?? raw.comment ?? raw.Comment ?? null,
             value: raw.value ?? raw.dealValue ?? raw.deal_value ?? null,
+            special_accommodations:
+                raw.special_accommodations ??
+                raw.specialAccommodation ??
+                raw.special_accommodation ??
+                null,
+            reason_for_stay:
+                raw.reason_for_stay ??
+                raw.reasonForStay ??
+                raw.reason ??
+                null,
         };
 
         const parseResult = webhookSchema.safeParse(body);
@@ -154,8 +227,11 @@ export async function POST(req: Request) {
             'name', 'first_name', 'last_name', 'email', 'phone', 'notes', 'message', 'comment',
             'firstName', 'lastName', 'FirstName', 'LastName', 'fname', 'lname', 'Email', 'Phone',
             'phone_number', 'phoneNumber', 'startDate', 'start_date', 'arrival_date', 'arrivalDate',
+            'estimated_arrival_date', 'estimatedArrivalDate', 'estimated_departure_date', 'estimatedDepartureDate',
             'endDate', 'end_date', 'departure_date', 'departureDate', 'location', 'Location', 'base', 'Base',
             'value', 'dealValue', 'deal_value', 'Message', 'Comment',
+            'special_accommodations', 'specialAccommodation', 'special_accommodation',
+            'reason_for_stay', 'reasonForStay', 'reason',
             'utm_source', 'utmSource', 'UTM_Source', 'utm_medium', 'utmMedium', 'UTM_Medium',
             'utm_campaign', 'utmCampaign', 'UTM_Campaign', 'utm_term', 'utmTerm', 'UTM_Term',
             'utm_content', 'utmContent', 'UTM_Content',
@@ -174,6 +250,32 @@ export async function POST(req: Request) {
         const formattedStartDate = startYmd ? ymdToIsoNoon(startYmd) : null;
         const formattedEndDate = endYmd ? ymdToIsoNoon(endYmd) : null;
 
+        // AF: resolve military base. Prefer base, fall back to location alias.
+        const rawBase = data.base ?? data.location ?? null;
+        const baseName = normalizeBaseName(rawBase);
+
+        // AF: normalize special accommodations into an array of labels, then map
+        // the first label to an existing option in the special_accommodations collection.
+        const specialAccommodationLabels = (Array.isArray(data.special_accommodations) ? data.special_accommodations : [data.special_accommodations])
+            .filter(Boolean)
+            .map(v => String(v).trim())
+            .filter(v => v && v !== "- None -" && v.toLowerCase() !== "none");
+
+        let specialAccommodationId: string | null = null;
+        if (specialAccommodationLabels.length > 0) {
+            try {
+                const accSnap = await db.collection('special_accommodations')
+                    .where('name', '==', specialAccommodationLabels[0])
+                    .limit(1)
+                    .get();
+                if (!accSnap.empty) {
+                    specialAccommodationId = accSnap.docs[0].id;
+                }
+            } catch (accErr) {
+                console.error("Special accommodation lookup failed (non-blocking):", accErr);
+            }
+        }
+
         // 3. Find or Create Contact
         let contactId: string;
 
@@ -188,6 +290,9 @@ export async function POST(req: Request) {
                 email: data.email,
                 phone: data.phone || null,
                 status: 'Lead',
+                militaryBase: baseName,
+                stayStartDate: formattedStartDate,
+                stayEndDate: formattedEndDate,
                 ...(data.location && { location: data.location }),
                 ...(utmSource && { utmSource }),
                 ...(utmMedium && { utmMedium }),
@@ -202,7 +307,8 @@ export async function POST(req: Request) {
 
             // Trigger new_contact email sequence for new contacts
             triggerSequence(workspaceId, "new_contact", contactId, data.email, finalName, {
-                location: data.location || "",
+                base: baseName || "",
+                location: data.location || baseName || "",
                 startDate: startYmd || "",
                 endDate: endYmd || "",
             }).catch(() => {});
@@ -213,6 +319,9 @@ export async function POST(req: Request) {
             await db.doc('contacts', contactId).update({
                 name: finalName || contactData.name,
                 phone: data.phone || contactData.phone,
+                militaryBase: baseName || contactData.militaryBase,
+                stayStartDate: formattedStartDate || contactData.stayStartDate,
+                stayEndDate: formattedEndDate || contactData.stayEndDate,
                 updatedAt: new Date()
             });
         }
@@ -246,12 +355,25 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'No pipeline stages found to assign the opportunity.' }, { status: 500 });
         }
 
-        // 5. Set opportunity value
-        const opportunityValue = data.value || 0;
+        // 5. Set opportunity value.
+        // If the payload supplies an explicit value, use it. Otherwise compute the
+        // on-base lodging total from the base + stay dates (AF behavior), and set
+        // estimatedProfit to 25% of that total.
+        let opportunityValue = data.value || 0;
+        let estimatedProfit = 0;
+        if (data.value != null) {
+            estimatedProfit = Math.round(opportunityValue * 0.25);
+        } else if (baseName && startYmd && endYmd) {
+            const calc = calculateOnBaseLodging(baseName, startYmd, endYmd);
+            opportunityValue = calc.totalCost;
+            estimatedProfit = Math.round(opportunityValue * 0.25);
+        }
 
         // Build notes — include known notes field plus any extra/custom fields
         const noteParts: string[] = [];
         if (data.notes && data.notes.trim().length > 0) noteParts.push(`Notes: ${data.notes}`);
+        if (specialAccommodationLabels.length > 0) noteParts.push(`Special Accommodations: ${specialAccommodationLabels.join(", ")}`);
+        if (data.reason_for_stay && data.reason_for_stay.trim()) noteParts.push(`Reason for Stay: ${data.reason_for_stay}`);
 
         // Add extra fields to notes with readable labels
         for (const [key, val] of Object.entries(extraFields)) {
@@ -272,9 +394,16 @@ export async function POST(req: Request) {
             name: opportunityName,
             priority: "MEDIUM",
             opportunityValue,
+            estimatedProfit,
             source: 'webhook',
             startDate: formattedStartDate,
             endDate: formattedEndDate,
+            stayStartDate: formattedStartDate,
+            stayEndDate: formattedEndDate,
+            militaryBase: baseName,
+            reasonForStay: data.reason_for_stay?.trim?.() ? data.reason_for_stay.trim() : null,
+            specialAccommodationId,
+            specialAccommodationLabels: specialAccommodationLabels.length > 0 ? specialAccommodationLabels : [],
             ...(data.location && { location: data.location }),
             notes: sharedNotes,
             ...(utmSource && { utmSource }),
@@ -295,7 +424,7 @@ export async function POST(req: Request) {
         try {
             const assignee = await determineAssignee(workspaceId, {
                 leadSource: utmSource || 'webhook',
-                base: data.location || null,
+                base: baseName || null,
                 source: utmSource || 'webhook',
             });
             if (assignee) {
@@ -350,7 +479,7 @@ export async function POST(req: Request) {
         try {
             await db.add('notifications', {
                 title: "New Website Inquiry",
-                message: `${finalName}${data.location ? ` - ${data.location}` : ""}`,
+                message: `${finalName}${baseName ? ` - ${baseName}` : ""}`,
                 type: "opportunity",
                 linkUrl: `/pipeline?deal=${oppRef.id}`,
                 read: false,
@@ -373,18 +502,22 @@ export async function POST(req: Request) {
                     const template = templateDoc.data()!;
                     const replyBody = (template.body || "")
                         .replace(/\{\{name\}\}/g, finalName)
-                        .replace(/\{\{location\}\}/g, data.location || "your requested location");
+                        .replace(/\{\{base\}\}/g, baseName || "your requested location")
+                        .replace(/\{\{location\}\}/g, baseName || data.location || "your requested location");
                     const replySubject = (template.subject || "")
                         .replace(/\{\{name\}\}/g, finalName)
-                        .replace(/\{\{location\}\}/g, data.location || "your requested location");
+                        .replace(/\{\{base\}\}/g, baseName || "your requested location")
+                        .replace(/\{\{location\}\}/g, baseName || data.location || "your requested location");
 
                     const inquiryParts: string[] = [];
                     if (finalName) inquiryParts.push(`<strong>Name:</strong> ${finalName}`);
                     inquiryParts.push(`<strong>Email:</strong> ${data.email}`);
                     if (data.phone) inquiryParts.push(`<strong>Phone:</strong> ${data.phone}`);
-                    if (data.location) inquiryParts.push(`<strong>Location:</strong> ${data.location}`);
-                    if (startYmd) inquiryParts.push(`<strong>Start Date:</strong> ${startYmd}`);
-                    if (endYmd) inquiryParts.push(`<strong>End Date:</strong> ${endYmd}`);
+                    if (baseName) inquiryParts.push(`<strong>Base:</strong> ${baseName}`);
+                    if (startYmd) inquiryParts.push(`<strong>Arrival:</strong> ${startYmd}`);
+                    if (endYmd) inquiryParts.push(`<strong>Departure:</strong> ${endYmd}`);
+                    if (data.reason_for_stay) inquiryParts.push(`<strong>Reason for Stay:</strong> ${data.reason_for_stay}`);
+                    if (specialAccommodationLabels.length > 0) inquiryParts.push(`<strong>Special Accommodations:</strong> ${specialAccommodationLabels.join(", ")}`);
                     if (data.notes) inquiryParts.push(`<strong>Notes:</strong> ${data.notes}`);
 
                     const replyBodyHtml = replyBody.replace(/\n/g, "<br>");

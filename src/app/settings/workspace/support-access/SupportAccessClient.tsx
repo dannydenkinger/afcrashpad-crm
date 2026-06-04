@@ -252,7 +252,7 @@ export function SupportAccessClient({
                                 type="email"
                                 value={supportEmail}
                                 onChange={(e) => setSupportEmail(e.target.value)}
-                                placeholder="support@vestacrm.com"
+                                placeholder="support@afcrashpad.com"
                                 className="mt-1 w-full px-3 py-2 text-sm rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                             />
                             <p className="text-[11px] text-muted-foreground mt-1">

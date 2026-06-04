@@ -1,7 +1,5 @@
 "use client"
 
-import { Hexagon } from "lucide-react"
-
 interface Branding {
     logoUrl?: string
     primaryColor?: string
@@ -31,12 +29,12 @@ export function WorkspaceSwitcher({
             className="h-10 w-10 shrink-0 rounded-lg object-cover shadow"
         />
     ) : (
-        <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 shadow"
-            style={branding?.primaryColor ? { backgroundColor: branding.primaryColor } : undefined}
-        >
-            <Hexagon className="h-6 w-6 text-violet-500" />
-        </div>
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+            src="/logo.png"
+            alt={displayName}
+            className="h-10 w-10 shrink-0 rounded-lg object-contain shadow"
+        />
     )
 
     return (

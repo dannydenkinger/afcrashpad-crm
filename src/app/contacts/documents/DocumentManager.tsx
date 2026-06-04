@@ -46,7 +46,7 @@ interface Document {
     signatureUrl?: string
 }
 
-export function DocumentManager({ contactId }: { contactId: string }) {
+export function DocumentManager({ contactId, defaultFolderPath }: { contactId: string; defaultFolderPath?: string }) {
     const [documents, setDocuments] = useState<Document[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
@@ -114,8 +114,20 @@ export function DocumentManager({ contactId }: { contactId: string }) {
         setIsUploading(true)
         setUploadError(null)
         const { uploadDocument } = await import("@/lib/upload-document")
+        // Make sure the target folder rows exist so the doc surfaces at the
+        // nested path in the /documents FolderTree (which is built from
+        // document_folders rows, not derived from doc folderPaths).
+        if (defaultFolderPath) {
+            const { ensureFolderPath } = await import("@/app/documents/folder-actions")
+            await ensureFolderPath(defaultFolderPath)
+        }
         for (const file of files) {
-            const res = await uploadDocument(file, { contactId })
+            // When a defaultFolderPath is set (e.g. the deal's /Tenants/{name}
+            // folder), route uploads there. Unset preserves prior behavior.
+            const res = await uploadDocument(file, {
+                contactId,
+                ...(defaultFolderPath ? { folderPath: defaultFolderPath } : {}),
+            })
             if (!res.success) {
                 setUploadError(`${file.name}: ${res.error}`)
                 break

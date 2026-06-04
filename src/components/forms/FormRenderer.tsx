@@ -387,7 +387,7 @@ export function FormRenderer({ form, mode, selectedFieldId, onFieldSelect, submi
 
                 {/* Powered by */}
                 <p style={{ textAlign: "center", fontSize: "11px", color: "#9ca3af", marginTop: "32px" }}>
-                    Powered by Vesta CRM
+                    Powered by AFCrashpad CRM
                 </p>
             </div>
         </div>

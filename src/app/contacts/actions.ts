@@ -105,6 +105,7 @@ const createContactSchema = z.object({
     name: z.string().max(200).optional(),
     email: z.string().email().optional().or(z.literal("")).nullable(),
     phone: z.string().max(50).optional().or(z.literal("")).nullable(),
+    militaryBase: z.string().max(200).optional().or(z.literal("")).nullable(),
     businessName: z.string().max(200).optional().or(z.literal("")).nullable(),
     status: z.string().max(50).optional(),
     stayStartDate: z.string().optional().or(z.literal("")).nullable(),
@@ -117,6 +118,7 @@ const updateContactSchema = z.object({
     name: z.string().max(200).optional(),
     email: z.string().email().optional().or(z.literal("")).nullable(),
     phone: z.string().max(50).optional().or(z.literal("")).nullable(),
+    militaryBase: z.string().max(200).optional().or(z.literal("")).nullable(),
     businessName: z.string().max(200).optional().or(z.literal("")).nullable(),
     status: z.string().max(50).optional(),
     stayStartDate: z.string().optional().or(z.literal("")).nullable(),
@@ -713,6 +715,7 @@ export async function createContact(data: any) {
             name: otherData.name ?? '',
             email: otherData.email ?? null,
             phone: otherData.phone ?? null,
+            militaryBase: otherData.militaryBase ?? null,
             businessName: otherData.businessName ?? null,
             status: otherData.status || 'Lead',
             createdAt: new Date(),
@@ -812,7 +815,7 @@ export async function updateContact(id: string, data: any) {
         const updateData: any = { updatedAt: new Date() };
 
         // Only include defined, non-undefined fields (Firestore rejects undefined)
-        const allowedKeys = ['name', 'email', 'phone', 'businessName', 'status', 'stayStartDate', 'stayEndDate', 'dndUntil'];
+        const allowedKeys = ['name', 'email', 'phone', 'militaryBase', 'businessName', 'status', 'stayStartDate', 'stayEndDate', 'dndUntil'];
         for (const k of allowedKeys) {
             if (otherData[k] !== undefined) {
                 let val = otherData[k];
@@ -886,6 +889,7 @@ export async function getContactsList() {
                 name: d.name ?? "",
                 email: d.email ?? "",
                 phone: d.phone ?? "",
+                militaryBase: d.militaryBase ?? "",
             };
         });
         return { success: true, contacts };
@@ -927,6 +931,7 @@ export async function getContactDetail(id: string) {
             name: data.name ?? null,
             email: data.email ?? null,
             phone: data.phone ?? null,
+            militaryBase: data.militaryBase ?? null,
             businessName: data.businessName ?? null,
             status: data.status ?? null,
             stayStartDate: tsToISO(data.stayStartDate),
@@ -1374,6 +1379,7 @@ export async function findDuplicateContacts(): Promise<{ success: boolean; dupli
                 name: d.name || "",
                 email: (d.email || "").toLowerCase().trim(),
                 phone: d.phone || "",
+                militaryBase: d.militaryBase || "",
                 businessName: d.businessName || "",
                 status: d.status || "",
                 tags: d.tags || [],
@@ -1500,7 +1506,7 @@ export async function mergeMultipleContacts(primaryId: string, duplicateIds: str
         if (!primarySnap.exists) return { success: false, error: "Primary contact not found" };
 
         const primary = primarySnap.data()!;
-        const mergeFields = ['name', 'email', 'phone', 'businessName', 'status', 'stayStartDate', 'stayEndDate'];
+        const mergeFields = ['name', 'email', 'phone', 'militaryBase', 'businessName', 'status', 'stayStartDate', 'stayEndDate'];
         const merged: Record<string, unknown> = { updatedAt: new Date() };
 
         // Start with primary values
@@ -1787,6 +1793,7 @@ export async function sendBulkEmail(contactIds: string[], subject: string, body:
                 .replace(/\{\{name\}\}/gi, contact.name || "")
                 .replace(/\{\{email\}\}/gi, contact.email || "")
                 .replace(/\{\{phone\}\}/gi, contact.phone || "")
+                .replace(/\{\{militaryBase\}\}/gi, contact.militaryBase || "")
                 .replace(/\{\{businessName\}\}/gi, contact.businessName || "")
                 .replace(/\{\{status\}\}/gi, contact.status || "");
 
@@ -1949,6 +1956,7 @@ export async function importMappedContacts(rows: Record<string, any>[], mapping:
                         name: item.contact.name || "",
                         email: item.contact.email || null,
                         phone: item.contact.phone || null,
+                        militaryBase: item.contact.militaryBase || null,
                         businessName: item.contact.businessName || null,
                         status: item.contact.status || "Lead",
                         workspaceId,
@@ -2037,7 +2045,7 @@ export async function mergeContacts(primaryId: string, secondaryId: string, fiel
         const secondary = secondarySnap.data()!;
 
         // Merge fields: use override selections, else primary wins, else secondary
-        const mergeFields = ['name', 'email', 'phone', 'businessName', 'status', 'stayStartDate', 'stayEndDate'];
+        const mergeFields = ['name', 'email', 'phone', 'militaryBase', 'businessName', 'status', 'stayStartDate', 'stayEndDate'];
         const merged: Record<string, unknown> = { updatedAt: new Date() };
 
         for (const field of mergeFields) {

@@ -24,7 +24,7 @@ export function AdminNav() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center gap-6">
                 <Link href="/admin/insights" className="flex items-center gap-2 font-semibold">
                     <ShieldCheck className="h-5 w-5 text-violet-500" />
-                    <span>Vesta Admin</span>
+                    <span>AFCrashpad Admin</span>
                 </Link>
                 <nav className="flex items-center gap-1 overflow-x-auto">
                     {items.map((item) => {

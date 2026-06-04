@@ -123,8 +123,8 @@ export function ApiDocs() {
                     <p>
                         All endpoints require an API key. Pass via either header:
                     </p>
-                    <pre className="text-xs bg-muted p-2 rounded">{`x-api-key: vesta_…
-Authorization: Bearer vesta_…`}</pre>
+                    <pre className="text-xs bg-muted p-2 rounded">{`x-api-key: afcrashpad_…
+Authorization: Bearer afcrashpad_…`}</pre>
                     <p>
                         Responses are JSON. Errors come back as{" "}
                         <code>{"{ \"error\": { \"code\", \"message\" } }"}</code> with

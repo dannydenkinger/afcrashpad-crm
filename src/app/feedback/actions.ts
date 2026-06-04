@@ -89,7 +89,7 @@ export async function submitFeedback(input: z.infer<typeof feedbackSchema>) {
     const to =
         process.env.FEEDBACK_EMAIL ||
         process.env.BUG_REPORT_EMAIL ||
-        "growwithvesta@gmail.com"
+        "afcrashpad@gmail.com"
     const label = KIND_LABEL[parsed.data.kind]
     const html = `
         <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
@@ -110,7 +110,7 @@ export async function submitFeedback(input: z.infer<typeof feedbackSchema>) {
     try {
         await sendEmail({
             to,
-            subject: `[Vesta ${label}] ${parsed.data.message.slice(0, 60).replace(/\s+/g, " ")}`,
+            subject: `[AFCrashpad ${label}] ${parsed.data.message.slice(0, 60).replace(/\s+/g, " ")}`,
             html,
         })
     } catch (err) {

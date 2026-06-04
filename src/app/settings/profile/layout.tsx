@@ -44,7 +44,7 @@ export default async function ProfileSettingsLayout({ children }: { children: Re
         <SettingsSubPageLayout
             basePath="/settings/profile"
             areaTitle="Profile"
-            areaDescription="Your personal info and how Vesta tells you about things."
+            areaDescription="Your personal info and how AFCrashpad tells you about things."
             items={PROFILE_NAV}
         >
             {children}

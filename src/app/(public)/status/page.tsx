@@ -3,8 +3,8 @@ import Link from "next/link"
 import { CheckCircle2, AlertTriangle, XCircle, Activity, ArrowLeft } from "lucide-react"
 
 export const metadata: Metadata = {
-    title: "Status | Vesta CRM",
-    description: "Real-time status of Vesta CRM core services.",
+    title: "Status | AFCrashpad CRM",
+    description: "Real-time status of AFCrashpad CRM core services.",
 }
 
 // Status pages should never serve cached results.
@@ -159,10 +159,10 @@ export default async function StatusPage() {
                     className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-6"
                 >
                     <ArrowLeft className="h-3 w-3" />
-                    Back to Vesta CRM
+                    Back to AFCrashpad CRM
                 </Link>
 
-                <h1 className="text-2xl font-semibold tracking-tight mb-1">Vesta CRM Status</h1>
+                <h1 className="text-2xl font-semibold tracking-tight mb-1">AFCrashpad CRM Status</h1>
                 <p className="text-sm text-muted-foreground mb-8">
                     Live health check of core services. Refresh the page for an updated reading.
                 </p>

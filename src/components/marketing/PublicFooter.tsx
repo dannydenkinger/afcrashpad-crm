@@ -8,7 +8,7 @@ export function PublicFooter() {
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
                     <Link href="/" className="flex items-center gap-2">
                         <Hexagon className="h-5 w-5 text-violet-500" />
-                        <span className="text-sm font-semibold tracking-tight">Vesta CRM</span>
+                        <span className="text-sm font-semibold tracking-tight">AFCrashpad CRM</span>
                     </Link>
 
                     <div className="flex items-center gap-x-6 gap-y-2 flex-wrap justify-center sm:justify-end">
@@ -29,7 +29,7 @@ export function PublicFooter() {
 
                 <div className="mt-8 text-center sm:text-left">
                     <p className="text-xs text-muted-foreground">
-                        &copy; {new Date().getFullYear()} Vesta CRM. All rights reserved.
+                        &copy; {new Date().getFullYear()} AFCrashpad CRM. All rights reserved.
                     </p>
                 </div>
             </div>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { autoAdvanceOpportunities } from "@/app/pipeline/actions";
 import { checkStayReminders } from "@/lib/reminders";
 import { checkStaleOpportunities } from "@/lib/stale-opportunities";
 import { processScheduledEmails } from "@/lib/email-sequences";
@@ -17,8 +18,8 @@ async function getActiveWorkspaceIds(): Promise<string[]> {
     return snap.docs.map(d => d.id);
 }
 
-// Daily cron: send reminders, check stale deals, scheduled emails & messages,
-// follow-up reminders, scheduled reports.
+// Daily cron: auto-advance opportunities, send reminders, check stale deals,
+// scheduled emails & messages, follow-up reminders, scheduled reports.
 export async function GET(request: Request) {
     const started = Date.now();
     if (process.env.NODE_ENV !== "development") {
@@ -39,7 +40,8 @@ export async function GET(request: Request) {
         const allResults: Record<string, unknown> = {};
 
         for (const workspaceId of workspaceIds) {
-            const [remindersResult, staleResult, emailsResult, scheduledMsgsResult, followUpResult, reportsResult] = await Promise.all([
+            const [advanceResult, remindersResult, staleResult, emailsResult, scheduledMsgsResult, followUpResult, reportsResult] = await Promise.all([
+                autoAdvanceOpportunities(workspaceId).catch(err => ({ error: String(err) })),
                 checkStayReminders(workspaceId),
                 checkStaleOpportunities(workspaceId),
                 processScheduledEmails(workspaceId),
@@ -49,6 +51,7 @@ export async function GET(request: Request) {
             ]);
 
             allResults[workspaceId] = {
+                advance: advanceResult,
                 reminders: remindersResult,
                 stale: staleResult,
                 scheduledEmails: emailsResult,
