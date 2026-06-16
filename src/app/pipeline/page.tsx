@@ -4,7 +4,7 @@ import { useState, useMemo, Suspense } from "react"
 import { useDebounce } from "@/hooks/useDebounce"
 import { Button } from "@/components/ui/button"
 import { FirstVisitHint } from "@/components/FirstVisitHint"
-import { Search, Plus, ListFilter, CheckCircle2, Settings, ChevronDown, LayoutGrid, List as ListIcon, ChevronRight, User, Building2, Upload, BarChart3, Download, Trash2, ArrowRightLeft, UserPlus, X, Phone, MessageSquare, MapPin } from "lucide-react"
+import { Search, Plus, ListFilter, CheckCircle2, Settings, ChevronDown, LayoutGrid, List as ListIcon, ChevronRight, User, Building2, Upload, BarChart3, Download, Trash2, ArrowRightLeft, UserPlus, X, Phone, MessageSquare, MapPin, ArrowUpDown, Check } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -684,6 +684,7 @@ function PipelineContent() {
     const [showBase, setShowBase] = useState(false)
     const [showLengthOfStay, setShowLengthOfStay] = useState(false)
     const [showQuickActions, setShowQuickActions] = useState(true)
+    const [showTags, setShowTags] = useState(true)
     /**
      * Kanban column density. "comfortable" preserves the 340px columns
      * (1–4 stages fit on a typical laptop screen, the rest scroll). "cozy"
@@ -722,6 +723,7 @@ function PipelineContent() {
                 if (typeof v.showBase === "boolean") setShowBase(v.showBase)
                 if (typeof v.showLengthOfStay === "boolean") setShowLengthOfStay(v.showLengthOfStay)
                 if (typeof v.showQuickActions === "boolean") setShowQuickActions(v.showQuickActions)
+                if (typeof v.showTags === "boolean") setShowTags(v.showTags)
                 if (v.sortConfig === null || (v.sortConfig && typeof v.sortConfig === "object")) setSortConfig(v.sortConfig)
             }
         } catch { /* ignore */ }
@@ -732,10 +734,10 @@ function PipelineContent() {
         if (viewOptionsFirstPersist.current) { viewOptionsFirstPersist.current = false; return }
         try {
             localStorage.setItem("pipeline:view-options", JSON.stringify({
-                viewMode, showValue, showPriority, showDates, showEndDate, showBase, showLengthOfStay, showQuickActions, sortConfig,
+                viewMode, showValue, showPriority, showDates, showEndDate, showBase, showLengthOfStay, showQuickActions, showTags, sortConfig,
             }))
         } catch { /* ignore */ }
-    }, [viewMode, showValue, showPriority, showDates, showEndDate, showBase, showLengthOfStay, showQuickActions, sortConfig])
+    }, [viewMode, showValue, showPriority, showDates, showEndDate, showBase, showLengthOfStay, showQuickActions, showTags, sortConfig])
 
     const currentPipeline = pipelines[activePipelineKey] || { name: "", stages: [], deals: [] }
     const pipelineKeys = Object.keys(pipelines)
@@ -776,6 +778,9 @@ function PipelineContent() {
                 } else if (sortConfig.key === 'startDate' || sortConfig.key === 'endDate') {
                     aValue = new Date(aValue as string).getTime();
                     bValue = new Date(bValue as string).getTime();
+                } else if (sortConfig.key === 'name') {
+                    aValue = (a.name || a.contactName || '').toString().toLowerCase();
+                    bValue = (b.name || b.contactName || '').toString().toLowerCase();
                 }
 
                 if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -811,6 +816,7 @@ function PipelineContent() {
         showBase,
         showLengthOfStay,
         showQuickActions,
+        showTags,
         sortConfig,
     }
 
@@ -827,6 +833,7 @@ function PipelineContent() {
         setShowBase(state.showBase ?? false)
         setShowLengthOfStay(state.showLengthOfStay)
         setShowQuickActions(state.showQuickActions)
+        setShowTags(state.showTags ?? true)
         setSortConfig(state.sortConfig)
     }
 
@@ -1003,7 +1010,7 @@ function PipelineContent() {
     // ─── Desktop Pipeline ───────────────────────────────────────────
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-4 sm:pb-6 flex flex-col min-h-0">
+            <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6 pb-4 sm:pb-6 flex flex-col flex-1 min-h-0">
                 <FirstVisitHint
                     pageKey="pipeline"
                     text="Drag deals between stages to move them through your pipeline. Click + to create a new deal or use Import to bring in a CSV."
@@ -1078,6 +1085,9 @@ function PipelineContent() {
                             <DropdownMenuCheckboxItem checked={showQuickActions} onCheckedChange={setShowQuickActions} className="cursor-pointer">
                                 Show Quick Actions
                             </DropdownMenuCheckboxItem>
+                            <DropdownMenuCheckboxItem checked={showTags} onCheckedChange={setShowTags} className="cursor-pointer">
+                                Show Tags &amp; Labels
+                            </DropdownMenuCheckboxItem>
 
                             <DropdownMenuSeparator />
                             <DropdownMenuLabel className="text-xs uppercase text-muted-foreground tracking-wider">
@@ -1109,6 +1119,43 @@ function PipelineContent() {
                                     Columns stretch to fill the screen; this sets the smallest they can shrink to.
                                 </p>
                             </div>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="touch-manipulation min-h-[44px] sm:min-h-0 shrink-0">
+                                <ArrowUpDown className="mr-2 h-4 w-4" />
+                                <span className="hidden sm:inline">Sort</span>
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                            <DropdownMenuLabel className="text-xs uppercase text-muted-foreground tracking-wider">Sort By</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {([
+                                { id: "default", label: "Default order", key: null, dir: "asc" },
+                                { id: "name-asc", label: "Name (A–Z)", key: "name", dir: "asc" },
+                                { id: "name-desc", label: "Name (Z–A)", key: "name", dir: "desc" },
+                                { id: "start-asc", label: "Check-in (soonest)", key: "startDate", dir: "asc" },
+                                { id: "start-desc", label: "Check-in (latest)", key: "startDate", dir: "desc" },
+                                { id: "value-desc", label: "Deal value (high → low)", key: "value", dir: "desc" },
+                                { id: "value-asc", label: "Deal value (low → high)", key: "value", dir: "asc" },
+                                { id: "duration-desc", label: "Duration (longest)", key: "lengthOfStay", dir: "desc" },
+                            ] as const).map((opt) => {
+                                const active = opt.key === null
+                                    ? sortConfig === null
+                                    : (sortConfig?.key === opt.key && sortConfig?.direction === opt.dir)
+                                return (
+                                    <DropdownMenuItem
+                                        key={opt.id}
+                                        className="cursor-pointer justify-between gap-2"
+                                        onClick={() => setSortConfig(opt.key === null ? null : { key: opt.key, direction: opt.dir })}
+                                    >
+                                        {opt.label}
+                                        {active && <Check className="h-4 w-4 text-primary" />}
+                                    </DropdownMenuItem>
+                                )
+                            })}
                         </DropdownMenuContent>
                     </DropdownMenu>
 
@@ -1338,7 +1385,7 @@ function PipelineContent() {
                 <div className={`flex-1 min-h-0 overflow-x-auto overflow-y-auto ${(statusFilter === "open" && viewMode === "kanban") ? "sm:overflow-y-hidden" : ""}`}>
                 {isLoading ? (
                     (statusFilter === "open" && viewMode === "kanban") ? (
-                        <div className="flex min-h-[400px] sm:min-h-[calc(100vh-220px)] h-[400px] sm:h-[calc(100vh-220px)] gap-3 sm:gap-4 pb-4 w-max">
+                        <div className="flex h-full min-h-[400px] sm:min-h-0 gap-3 sm:gap-4 pb-4 w-max">
                             {[1, 2, 3, 4, 5].map((i) => (
                                 <div key={i} className="flex flex-col w-[340px] shrink-0 bg-muted/40 rounded-xl border h-full overflow-hidden">
                                     <div className="p-4 border-b bg-muted/60 flex items-center justify-between">
@@ -1417,6 +1464,7 @@ function PipelineContent() {
                         showEndDate={showEndDate}
                         showLengthOfStay={showLengthOfStay}
                         showQuickActions={showQuickActions}
+                        showTags={showTags}
                         priorityRanges={priorityRanges}
                         draggedDealId={draggedDealId}
                         dragOverStageId={dragOverStageId}

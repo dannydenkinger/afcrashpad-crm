@@ -85,6 +85,7 @@ describe('KanbanView', () => {
     showEndDate: false,
     showLengthOfStay: false,
     showQuickActions: false,
+    showTags: true,
     priorityRanges: { urgentDays: 7, soonDays: 14 },
     draggedDealId: null,
     dragOverStageId: null,

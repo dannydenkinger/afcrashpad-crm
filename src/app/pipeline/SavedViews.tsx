@@ -34,6 +34,7 @@ export interface PipelineViewState {
     showBase?: boolean
     showLengthOfStay: boolean
     showQuickActions: boolean
+    showTags?: boolean
     sortConfig: { key: string; direction: "asc" | "desc" } | null
 }
 

@@ -18,6 +18,7 @@ interface DealCardProps {
     showEndDate: boolean
     showLengthOfStay: boolean
     showQuickActions: boolean
+    showTags: boolean
     priorityRanges: { urgentDays: number; soonDays: number }
     /** From the stage's `stalenessThresholdDays` setting. When the deal has
      *  been in this stage longer than this number of days, we render a
@@ -42,6 +43,7 @@ const DealCard = React.memo(function DealCard({
     showEndDate,
     showLengthOfStay: showLengthOfStayProp,
     showQuickActions,
+    showTags,
     priorityRanges,
     stageThresholdDays,
     isDragged,
@@ -299,6 +301,22 @@ const DealCard = React.memo(function DealCard({
                     </Tooltip>
                 </div>
             )}
+
+            {/* Tags / labels — always visible (no hover), bottom-right of the card */}
+            {showTags && Array.isArray(deal.tags) && deal.tags.length > 0 && (
+                <div className="flex flex-wrap items-center justify-end gap-1 pl-1">
+                    {deal.tags.map((t: any, i: number) => (
+                        <span
+                            key={t.id || t.name || i}
+                            className="inline-flex max-w-[130px] items-center rounded-full border border-border/60 bg-muted/70 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground truncate"
+                            style={t.color ? { backgroundColor: `${t.color}22`, color: t.color, borderColor: `${t.color}55` } : undefined}
+                            title={t.name}
+                        >
+                            {t.name}
+                        </span>
+                    ))}
+                </div>
+            )}
         </div>
         </TooltipProvider>
     );
@@ -373,6 +391,7 @@ interface KanbanViewProps {
     showEndDate: boolean
     showLengthOfStay: boolean
     showQuickActions: boolean
+    showTags: boolean
     priorityRanges: { urgentDays: number; soonDays: number }
     draggedDealId: string | null
     dragOverStageId: string | null
@@ -411,6 +430,7 @@ export const KanbanView = React.memo(function KanbanView({
     showEndDate,
     showLengthOfStay: showLengthOfStayProp,
     showQuickActions,
+    showTags,
     priorityRanges,
     draggedDealId,
     dragOverStageId,
@@ -538,7 +558,7 @@ export const KanbanView = React.memo(function KanbanView({
             min-width exceeds the viewport, the parent overflows horizontally
             with edge-fade gradients + chevron buttons so users notice they
             can scroll to more stages. */}
-        <div className="hidden md:block relative min-h-[calc(100vh-220px)] h-[calc(100vh-220px)]">
+        <div className="hidden md:block relative h-full min-h-0">
             {/* Left scroll affordance — chevron button + fade gradient,
                 visible only when there's hidden content to the left. */}
             <div
@@ -635,6 +655,7 @@ export const KanbanView = React.memo(function KanbanView({
                                     showEndDate={showEndDate}
                                     showLengthOfStay={showLengthOfStayProp}
                                     showQuickActions={showQuickActions}
+                                    showTags={showTags}
                                     priorityRanges={priorityRanges}
                                     stageThresholdDays={(stage as any).stalenessThresholdDays || null}
                                     isDragged={draggedDealId === deal.id}

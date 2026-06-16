@@ -1635,7 +1635,20 @@ function ContactsContent() {
                     </div>
                     {/* Mobile: virtualized card list */}
                     <div className="md:hidden">
-                        {filteredAndSortedContacts.length > 0 ? (
+                        {isLoading ? (
+                            <div className="space-y-2 py-2">
+                                {[1, 2, 3, 4, 5, 6].map((i) => (
+                                    <div key={i} className="flex items-center gap-3 p-4 rounded-xl border border-border/60 bg-card animate-pulse">
+                                        <div className="h-10 w-10 rounded-full bg-muted shrink-0" />
+                                        <div className="flex-1 space-y-2">
+                                            <div className="h-4 w-32 bg-muted rounded" />
+                                            <div className="h-3 w-24 bg-muted rounded" />
+                                        </div>
+                                        <div className="h-5 w-14 bg-muted rounded-full shrink-0" />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : filteredAndSortedContacts.length > 0 ? (
                             <VirtualList
                                 items={filteredAndSortedContacts}
                                 estimateSize={76}
@@ -1712,7 +1725,20 @@ function ContactsContent() {
                     </div>
                     {/* Desktop: virtualized table */}
                     <div className="hidden md:block">
-                    {filteredAndSortedContacts.length > 0 ? (
+                    {isLoading ? (
+                    <div className="space-y-2 py-4">
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                            <div key={i} className="flex items-center gap-4 px-3 py-2.5 animate-pulse">
+                                <div className="h-4 w-4 rounded bg-muted shrink-0" />
+                                <div className="h-9 w-9 rounded-full bg-muted shrink-0" />
+                                <div className="h-4 bg-muted rounded flex-1 max-w-[200px]" />
+                                <div className="hidden lg:block h-4 bg-muted rounded w-28" />
+                                <div className="hidden lg:block h-4 bg-muted rounded w-20" />
+                                <div className="h-5 bg-muted rounded-full w-16 shrink-0" />
+                            </div>
+                        ))}
+                    </div>
+                    ) : filteredAndSortedContacts.length > 0 ? (
                     <ContactsVirtualTable
                         contacts={filteredAndSortedContacts}
                         columns={columns}
